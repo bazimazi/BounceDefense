@@ -1,0 +1,10 @@
+{
+  "name": "Bounce Defense",
+  "short_name": "Bounce",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#07060f",
+  "theme_color": "#07060f",
+  "start_url": "./",
+  "icons": []
+}
