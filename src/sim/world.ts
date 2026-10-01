@@ -6,6 +6,7 @@ import { ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACT_MAP } from '../data/arenas';
 import { CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
 import { ENEMY_MAP } from '../data/enemies';
 import { WORKSHOP_MAP } from '../data/meta';
+import { normalizeTalents, TALENTS, talentModifiers, type TalentRanks } from '../data/talents';
 import { EVOLUTION_MAP, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADE_MAP } from '../data/upgrades';
 import type { ArenaDef, DifficultyDef, EnemyDef } from '../data/types';
@@ -32,6 +33,7 @@ export interface RunConfig {
   parts: string[];
   pacts: string[];
   workshop: Record<string, number>;
+  talents?: TalentRanks;
   /** Unlocked upgrade pool. */
   pool: string[];
   /** Research flags (reroll1, banish, fourth_card, codex, bounty, scope...). */
@@ -109,6 +111,8 @@ export class World {
   readonly diff: DifficultyDef;
   readonly bus = new EventBus<WorldEvents>();
   readonly build: Build;
+  readonly talents: Readonly<TalentRanks>;
+  talentBankReadyAt = 0;
   readonly director: Director;
   readonly grid = new SpatialHash<Enemy>(W, H, 64);
 
@@ -183,7 +187,8 @@ export class World {
   readonly q2: Enemy[] = [];
 
   constructor(cfg: RunConfig) {
-    this.cfg = cfg;
+    this.talents = Object.freeze(normalizeTalents(cfg.talents));
+    this.cfg = { ...cfg, talents: { ...this.talents } };
     this.rng = new Rng(cfg.seed);
     this.arena = ARENA_MAP[cfg.arena] ?? ARENA_MAP.proving;
     this.diff = DIFFICULTIES[clamp(cfg.difficulty, 0, DIFFICULTIES.length - 1)];
@@ -204,7 +209,7 @@ export class World {
       arenas: new Set(cfg.known.arenas), events: new Set(cfg.known.events),
     };
 
-    // ---- build: core + parts + workshop + pacts
+    // ---- build: core + parts + workshop + pacts + talents
     const core = CORE_MAP[cfg.core] ?? CORE_MAP.striker;
     const mods: Modifier[] = [...core.mods];
     const behaviors: string[] = core.behavior ? [core.behavior] : [];
@@ -219,6 +224,8 @@ export class World {
       if (wdef && lvl > 0) mods.push(...wdef.mods(lvl));
     }
     for (const p of pacts) if (p.mods) mods.push(...p.mods);
+    mods.push(...talentModifiers(this.talents));
+    for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
     this.build = new Build(core.id, mods, behaviors);
     for (const u of core.startUpgrades) this.build.addUpgrade(u);
     this.refreshBehaviors();
@@ -399,7 +406,8 @@ export class World {
       this.emit({ t: 'sfx', name: 'shield' });
       return;
     }
-    const amount = Math.max(1, dmg - this.build.stats.armor);
+    let amount = Math.max(1, dmg - this.build.stats.armor);
+    if (this.talents.last_bastion && this.hp <= this.maxHp * 0.35) amount *= 0.75;
     this.hp -= amount;
     this.run.damageTaken += amount;
     if (this.director.bossActive) this.run.bossNoDamage = false;

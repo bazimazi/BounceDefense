@@ -39,6 +39,13 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
   const crit = w.rng.chance(cc);
   if (crit) dmg *= st.critMult;
   const procBase = dmg;
+  // Talent amplification stays on the direct hit: no recursive proc scaling.
+  let talentMult = 1;
+  if (w.talents.convergence) {
+    const statuses = Number(e.st.burnT > 0) + Number(e.st.chill > 0 || e.st.frozenT > 0) + Number(e.st.bleed > 0);
+    talentMult = 1 + 0.08 * statuses;
+    dmg *= talentMult;
+  }
   if (e.def.directMult) dmg *= e.def.directMult;
 
   let shattered = false;
@@ -72,7 +79,7 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
     w.grid.query(e.x, e.y, 85, list);
     for (const o of list) {
       if (o === e || !o.alive) continue;
-      damageEnemy(w, o, dmg * 0.4, { src: 'shatter', crit: false, depth: 1 });
+      damageEnemy(w, o, dmg / talentMult * 0.4, { src: 'shatter', crit: false, depth: 1 });
       applyChill(w, o, 1, 1);
     }
   }
@@ -86,7 +93,7 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
   procs(w, e, procBase, crit, 0, b);
 
   if (b.splitGen < 2 && w.rng.chance(st.splitChance)) splitBall(w, b, st.splitCount);
-  for (const [bh, p] of w.bh) bh.onHit?.(w, b, e, crit, dmg, p);
+  for (const [bh, p] of w.bh) bh.onHit?.(w, b, e, crit, dmg / talentMult, p);
 
   if (e.boss || e.def.directMult) return false;
   if (w.build.has('evo_railgun')) return true;

@@ -52,6 +52,8 @@ export interface Profile {
   loadout: Loadout;
   presets: (Loadout & { name: string })[];
   mastery: Record<string, number>;
+  /** Account-wide specialization, snapshotted when a run begins. */
+  talents: Record<string, number>;
   discoveries: Record<DiscoveryCat, string[]>;
   achievements: string[];
   challenges: string[];

@@ -28,6 +28,13 @@ function ready(w: World, b: Ball, key: string, cd: number): boolean {
 }
 
 export const BEHAVIORS: Record<string, Behavior> = {
+  talent_banked_power: {
+    onWall(w, b) {
+      if (b.kind !== 'main' || w.surge.active > 0 || w.time < w.talentBankReadyAt) return;
+      w.talentBankReadyAt = w.time + 2;
+      w.surge.charge = Math.min(w.surge.max, w.surge.charge + 4);
+    },
+  },
   static_charge: {
     onHit(w, _b, e, _crit, _dmg, power) {
       w.staticCounter++;

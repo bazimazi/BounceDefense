@@ -1,6 +1,6 @@
 /**
  * Every tunable number of a build lives here. Upgrades, parts, cores, synergies,
- * evolutions, workshop levels, pacts and temporary buffs all contribute
+ * evolutions, workshop levels, talents, pacts and temporary buffs all contribute
  * Modifiers; the combat engine only ever reads the resolved Stats.
  */
 export const STAT_DEFAULTS = {

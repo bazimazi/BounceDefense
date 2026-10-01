@@ -1,6 +1,8 @@
 import type { DiscoveryCat, Profile } from './types';
+import { normalizeTalents } from '../data/talents';
+import { talentProgress } from './talents';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const SAVE_KEY = 'bounce-defense-save';
 
 export const DISCOVERY_CATS: DiscoveryCat[] = ['enemies', 'bosses', 'synergies', 'evolutions', 'reactions', 'upgrades', 'arenas', 'events'];
@@ -19,6 +21,7 @@ export function defaultProfile(): Profile {
     loadout: { core: 'striker', shell: 'shell_std', impact: 'impact_std', momentum: 'mom_std', trail: 'classic' },
     presets: [],
     mastery: {},
+    talents: {},
     discoveries: { enemies: [], bosses: [], synergies: [], evolutions: [], reactions: [], upgrades: [], arenas: [], events: [] },
     achievements: [],
     challenges: [],
@@ -73,6 +76,7 @@ export function migrate(raw: unknown): Profile {
   }
   const p = mergeDefaults(base, data);
   p.version = SAVE_VERSION;
+  p.talents = normalizeTalents(p.talents, talentProgress(p).total);
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');
   if (!p.cosmetics.includes('classic')) p.cosmetics.unshift('classic');
   return p;

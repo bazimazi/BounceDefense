@@ -18,6 +18,9 @@ import { STAT_LABELS, type StatKey } from '../sim/stats';
 import type { World } from '../sim/world';
 import type { Game } from '../game';
 import { bar, h } from './dom';
+import { talentScreen } from './talents';
+import { TALENTS, talentSpent } from '../data/talents';
+import { talentProgress } from '../meta/talents';
 
 const RARITY_LABEL = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
 
@@ -124,6 +127,7 @@ export class UI {
           h('div', { class: 'core-readout' }, h('span', { class: 'status-dot', style: `background:${coreDef.color}` }),
             `${coreDef.name} equipped`, h('span', { class: 'spacer' }), `MASTERY ${masteryLevel(p.mastery[p.loadout.core] ?? 0).level}`),
           p.tutorialDone ? h('button', { onclick: () => { this.click(); this.dailyRun(); } }, '📅 Daily Seed') : null,
+          nav(`✦ Talents · ${talentProgress(p).total - talentSpent(p.talents)} points available`, () => this.talents(), talentProgress(p).total > talentSpent(p.talents)),
           p.tutorialDone ? h('div', { class: 'grid2 home-nav' },
             nav('⚙️ Loadout', () => this.loadout(), canAffordCore),
             nav('🔧 Workshop', () => this.workshop()),
@@ -152,6 +156,10 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ run setup
+  talents(back: () => void = () => this.home()): void {
+    this.show(talentScreen(this.p, () => { this.click(); this.game.save(); }, back));
+  }
+
   runSetup(): void {
     const p = this.p;
     const s = this.setup;
@@ -164,6 +172,9 @@ export class UI {
     this.show(h('div', { class: 'screen' },
       this.topbar('New Run'),
       h('div', { class: 'scroll' },
+        h('div', { class: 'card' }, h('div', { class: 'name' }, `✦ Talents · ${talentSpent(p.talents)}/${talentProgress(p).total} allocated`),
+          h('div', { class: 'desc' }, 'Your saved specialization will apply to this run.'),
+          h('button', { style: 'margin-top:8px', onclick: () => this.talents(() => this.runSetup()) }, 'Edit talents')),
         h('h3', {}, 'Arena'),
         h('div', { class: 'col' }, ARENAS.map((a) => {
           const ok = isArenaUnlocked(p, a.id);
@@ -605,6 +616,9 @@ export class UI {
           h('div', { class: 'small muted' }, 'CURRENT BUILD'),
           h('div', { class: 'buildname' }, this.game.buildName()),
           h('div', { class: 'statgrid' }, keys.filter((k) => st[k] > 0 && STAT_LABELS[k]).map((k) => h('div', {}, h('span', { class: 'muted' }, STAT_LABELS[k]![0]), h('b', {}, STAT_LABELS[k]![1](st[k])))))),
+        h('h3', {}, 'Talents'),
+        h('div', { class: 'row wrap' }, talentSpent(w.talents) ? TALENTS.filter(t => w.talents[t.id]).map(t =>
+          h('span', { class: 'chip', title: t.desc(w.talents[t.id]) }, `${t.icon} ${t.name} ${w.talents[t.id]}/${t.maxRank}`)) : h('span', { class: 'small muted' }, 'No talents allocated for this run.')),
         h('h3', {}, 'Upgrades'),
         h('div', { class: 'row wrap' }, [...w.build.upgrades.entries()].map(([id, lv]) => h('span', { class: 'chip' }, `${UPGRADE_MAP[id].icon} ${UPGRADE_MAP[id].name} ${lv}`))),
         w.build.synergies.size ? [h('h3', {}, 'Synergies'), h('div', { class: 'col' }, [...w.build.synergies].map((id) => h('div', { class: 'card' }, h('div', { class: 'name' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`), h('div', { class: 'desc' }, SYNERGY_MAP[id].desc))))] : null,

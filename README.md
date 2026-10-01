@@ -23,6 +23,7 @@ Browser smoke test (headless Chrome or Edge, with screenshots and console-error 
 npm run build && npx vite preview --port 4173 &
 node scripts/smoke.mjs          # writes screenshots to smoke-shots/
 node scripts/visual-check.mjs   # responsive layouts, all arenas, motion settings, draw benchmark
+node scripts/talent-check.mjs   # talent allocation, saves, refunds, mobile/desktop layouts
 ```
 
 The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables. It captures
@@ -62,6 +63,7 @@ reduced-motion preference disables decorative movement and shake; Settings also 
 | Run upgrades | 45 across offense, physics, multiplication, elemental, defense, utility and core signatures |
 | Synergies | 13 (known, hidden and legendary), discovered automatically |
 | Evolutions | 6 (Inferno, Tesla Storm, Glacier, Blood Moon, Hydra Swarm, Railgun) |
+| Talents | 3 persistent trees, 15 ranked nodes, 3 capstones; shared point budget and free respecs |
 | Elemental reactions | 3 (Steam Burst, Overload, Supercharge) |
 | Enemies | 12 behaviours plus fragments and a golden wisp; composition squads |
 | Elite modifiers | 6, stackable |
@@ -76,6 +78,28 @@ Core feel systems: constant-speed readable physics with an aim preview that uses
 reflection code, combo meter with diversity rules, momentum tiers (Charged → Overcharged → Hyper → Unstable),
 the Surge active ability, hit-stop and slow-motion moments, pooled particles, aggregated damage numbers,
 and layered, voice-limited SFX with adaptive music.
+
+## Talent specializations
+
+Open **Talents** from Home or **Edit talents** during run setup. Spend a shared budget
+across three trees: **Kinetics** rewards bank shots and combos, **Conduit** amplifies
+elements acquired during the run, and **Warden** improves defense and recovery.
+Each tree has five ranked nodes, prerequisite connections, and a distinct capstone.
+You start with 3 points and earn another per 500 total Mastery XP across all cores,
+up to 15. Existing saves receive credit for their accumulated XP.
+
+Higher tiers require 3 / 8 points in earlier tiers of that tree and a maxed prerequisite.
+The 15-point budget allows a focused specialization with supporting talents, but not
+two capstones. Changes are a draft until **Apply talents**; Back discards the draft.
+Refunds and resets are free between runs. Refunding a prerequisite also refunds
+dependent nodes. Each run snapshots the allocation, shown in its pause menu.
+
+Talents spend no Coins, Cores or Research. Their modifiers compose through the existing
+stat pipeline, while capstones use isolated effects: wall bounces charge Surge on a
+shared cooldown, existing statuses increase direct-hit damage, or low HP reduces
+incoming damage. Talents never supply upgrade levels, elemental proc chances, synergy
+tags or evolution ingredients. Risk Pacts remain authoritative, including Bloodless
+disabling talent regeneration. Saves migrate automatically to version 3.
 
 ## Architecture
 

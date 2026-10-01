@@ -20,9 +20,9 @@ export class Build implements BuildView {
 
   constructor(
     public core: string,
-    /** Permanent modifiers: core, parts, workshop, pacts. */
+    /** Permanent modifiers: core, parts, workshop, pacts, talents. */
     private baseMods: Modifier[],
-    /** Permanent behaviors: core, parts. */
+    /** Permanent behaviors: core, parts, talent capstones. */
     private baseBehaviors: string[],
     /** Temporary modifiers (arena events etc.), may be mutated then recompute(). */
     public tempMods: Modifier[] = [],

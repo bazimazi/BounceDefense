@@ -10,6 +10,8 @@ import { EVOLUTION_MAP, REACTION_MAP, SYNERGY_MAP } from '../data/synergies';
 import { DEFAULT_UNLOCKED_UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import type { RunConfig } from '../sim/world';
 import type { DiscoveryCat, Profile, RunSummary, Unlock } from './types';
+import { normalizeTalents } from '../data/talents';
+import { talentProgress } from './talents';
 
 // ------------------------------------------------------------------ queries
 export function researchFlags(p: Profile): string[] {
@@ -111,6 +113,7 @@ export function runConfig(p: Profile, opts: { arena: string; difficulty: number;
     parts: [l.shell, l.impact, l.momentum].filter((id) => isPartUnlocked(p, id)),
     pacts: opts.pacts.filter((id) => PACT_MAP[id]),
     workshop: { ...p.workshop },
+    talents: normalizeTalents(p.talents, talentProgress(p).total),
     pool: upgradePool(p),
     flags: researchFlags(p),
     trail: p.cosmetics.includes(l.trail) ? l.trail : 'classic',
@@ -333,7 +336,10 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
 
   // ---- mastery
   const before = masteryLevel(p.mastery[s.core] ?? 0);
+  const talentPointsBefore = talentProgress(p).total;
   p.mastery[s.core] = (p.mastery[s.core] ?? 0) + rewards.masteryXp;
+  const newTalentPoints = talentProgress(p).total - talentPointsBefore;
+  if (newTalentPoints > 0) unlocks.push(`+${newTalentPoints} Talent point${newTalentPoints === 1 ? '' : 's'}! Spend them in Talents.`);
   const after = masteryLevel(p.mastery[s.core]);
   const masteryTexts: string[] = [];
   for (const r of masteryRewards(s.core)) {
