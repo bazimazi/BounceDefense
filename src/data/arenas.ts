@@ -17,7 +17,7 @@ const COMMON_SQUADS: SquadDef[] = [
 export const ARENAS: ArenaDef[] = [
   {
     id: 'proving', name: 'Proving Grounds', desc: 'Bumpers and bank walls. Learn the angles.',
-    theme: { bg0: '#0b0a1f', bg1: '#161238', grid: 'rgba(120,110,255,0.07)', wall: '#7b6cff', accent: '#8fa8ff' },
+    theme: { bg0: '#07111d', bg1: '#122b3b', grid: 'rgba(130,220,210,0.07)', wall: '#63bfb9', accent: '#9aeadb' },
     bossId: 'fortress',
     layouts: [
       [

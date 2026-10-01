@@ -51,6 +51,7 @@ export class Game {
     const onResize = () => this.ui.layout(this.renderer.resize());
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
+    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => this.applySettings());
     onResize();
     this.bindInput();
     this.applySettings();
@@ -74,9 +75,12 @@ export class Game {
   applySettings(): void {
     const s = this.profile.settings;
     this.audio.setVolumes(s.sfx, s.music);
-    this.renderer.opts.shake = s.shake;
+    const reducedMotion = s.reducedFlashes || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.renderer.opts.shake = s.shake && !reducedMotion;
     this.renderer.opts.damageNumbers = s.damageNumbers;
     this.renderer.opts.reducedFlashes = s.reducedFlashes;
+    this.renderer.opts.reducedMotion = reducedMotion;
+    document.documentElement.toggleAttribute('data-reduced-motion', reducedMotion);
     this.renderer.opts.previewBounces = this.flags().includes('scope') ? 2 : 1;
     const wantDebug = s.debug || new URLSearchParams(location.search).has('debug');
     if (wantDebug && !this.debugEl) {

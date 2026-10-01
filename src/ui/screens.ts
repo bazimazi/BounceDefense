@@ -451,7 +451,7 @@ export class UI {
         slider('Music', 'music'),
         toggle('Screen shake', 'shake'),
         toggle('Damage numbers', 'damageNumbers'),
-        toggle('Reduce flashes', 'reducedFlashes'),
+        toggle('Reduce flashes & motion', 'reducedFlashes'),
         h('div', { class: 'toggle' }, h('span', {}, 'Aim mode'),
           h('div', { class: 'row' }, (['direct', 'slingshot'] as const).map((m) => h('button', {
             style: s.aimMode === m ? 'background:var(--accent);color:#0a0612' : '',

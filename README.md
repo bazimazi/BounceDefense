@@ -22,7 +22,25 @@ Browser smoke test (headless Chrome or Edge, with screenshots and console-error 
 ```bash
 npm run build && npx vite preview --port 4173 &
 node scripts/smoke.mjs          # writes screenshots to smoke-shots/
+node scripts/visual-check.mjs   # responsive layouts, all arenas, motion settings, draw benchmark
 ```
+
+The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables. It captures
+320px, 390px and desktop home screens plus seeded enemy/boss fixtures in all three arenas,
+and checks that paused drawing does not accumulate ambient particles.
+
+## Visual direction
+
+The interface uses a mint-lit kinetic reactor motif, with an animated core on the launch screen,
+layered upgrade cards, segmented hull telemetry, and responsive touch controls. The arenas have
+cached hexagonal floors and armored rails: calibration rings in Proving Grounds, furnace channels
+in The Foundry, and orbital contours in Void Rift.
+
+Combat uses shaded enemy shells and visors, material details, dimensional ball cores, tapered
+energy trails, launcher recoil, rotating bumper mechanisms, ricochet rings, and velocity-stretched
+sparks. Ambient emissions are frame-rate independent and stop while paused. The operating system's
+reduced-motion preference disables decorative movement and shake; Settings also offers
+**Reduce flashes & motion**. All artwork remains procedural, with no downloaded assets or new dependencies.
 
 ### Controls
 
@@ -92,8 +110,9 @@ src/
   collision (no tunnelling at any speed), per-depth scratch arrays so there are no allocations in hot loops,
   a bounded proc depth, and a per-step explosion budget. The renderer uses cached glow sprites instead of
   `shadowBlur`, a struct-of-arrays particle pool with priority dropping, and merged damage numbers.
-  Measured under stress (14+ balls, hundreds of enemies, about 1,000 particles): about 0.2 ms sim and
-  2.6 ms draw per frame.
+  Static arena architecture is cached separately from live effects. The visual check reports median
+  and p95 canvas command submission time with 153 enemies; this is a CPU-side diagnostic, not a GPU
+  frame-rate measurement. The full smoke test also exercises live combat under load.
 
 ## Adding content
 

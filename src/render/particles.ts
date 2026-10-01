@@ -91,7 +91,19 @@ export class Particles {
       ctx.globalAlpha = t;
       ctx.fillStyle = this.color[i];
       const s = this.size[i] * (0.4 + 0.6 * t);
-      ctx.fillRect(this.x[i] - s / 2, this.y[i] - s / 2, s, s);
+      const speed = Math.hypot(this.vx[i], this.vy[i]);
+      if (speed > 65) {
+        // Fast fragments stretch into sparks; slowing embers resolve into points.
+        const stretch = Math.min(14, speed * .035);
+        ctx.strokeStyle = this.color[i];
+        ctx.lineWidth = Math.max(.7, s * .65);
+        ctx.beginPath();
+        ctx.moveTo(this.x[i], this.y[i]);
+        ctx.lineTo(this.x[i] - this.vx[i] / speed * stretch, this.y[i] - this.vy[i] / speed * stretch);
+        ctx.stroke();
+      } else {
+        ctx.fillRect(this.x[i] - s / 2, this.y[i] - s / 2, s, s);
+      }
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
