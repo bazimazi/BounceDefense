@@ -1062,11 +1062,13 @@ export class Renderer {
       const pop = t.max - t.life < 0.08 ? 1.3 : 1;
       ctx.globalAlpha = a;
       ctx.font = `900 ${Math.round(t.size * pop)}px ${FONT}`;
+      const width = Math.min(W - 40, ctx.measureText(t.text).width);
+      const x = clamp(t.x, 20 + width / 2, W - 20 - width / 2);
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      ctx.strokeText(t.text, t.x, t.y);
+      ctx.strokeText(t.text, x, t.y, W - 40);
       ctx.fillStyle = t.color;
-      ctx.fillText(t.text, t.x, t.y);
+      ctx.fillText(t.text, x, t.y, W - 40);
     }
     ctx.globalAlpha = 1;
   }
@@ -1074,83 +1076,90 @@ export class Renderer {
   // ------------------------------------------------------------------ HUD
   private drawHud(w: World): void {
     const ctx = this.ctx;
+    const compact = W * this.scale < 300 && innerWidth > innerHeight;
+    const smallText = (size: number) => Math.max(size, 8 / this.scale);
+    // DOM controls keep a physical touch size while canvas telemetry scales.
+    const right = Math.min(W - 88, W - 64 / this.scale);
     ctx.textBaseline = 'middle';
-    // HP
-    const hpFrac = clamp(w.hp / w.maxHp, 0, 1);
-    const hpColor = hpFrac > .5 ? '#9aeadb' : hpFrac > .25 ? '#ffd166' : '#ff5d73';
-    ctx.textAlign = 'left';
-    ctx.font = `700 9px ${FONT}`; ctx.fillStyle = '#9bb3bf';
-    ctx.fillText('HULL INTEGRITY', 16, 18);
-    ctx.textAlign = 'right'; ctx.fillStyle = hpColor; ctx.font = `800 11px ${FONT}`;
-    ctx.fillText(`${Math.ceil(w.hp)} / ${Math.round(w.maxHp)}`, 202, 18);
-    ctx.fillStyle = '#20333f'; roundRect(ctx, 16, 29, 186, 7, 2); ctx.fill();
-    const health = ctx.createLinearGradient(16, 0, 202, 0);
-    health.addColorStop(0, hpColor + '88'); health.addColorStop(1, hpColor);
-    ctx.fillStyle = health; roundRect(ctx, 16, 29, 186 * hpFrac, 7, 2); ctx.fill();
-    ctx.fillStyle = '#07111d';
-    for (let i = 1; i < 10; i++) ctx.fillRect(16 + i * 18.6, 29, 2, 7);
-    // level + timer
-    ctx.textAlign = 'left'; ctx.fillStyle = '#d9f8ef';
-    ctx.font = `800 12px ${FONT}`;
-    ctx.fillText(`LV ${String(w.level).padStart(2, '0')}`, 16, 53);
-    ctx.fillStyle = '#92aebb'; ctx.font = `600 10px ${FONT}`;
-    ctx.fillText(`${w.run.kills} ELIMINATED`, 70, 53);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fff';
-    ctx.font = '700 23px Consolas, monospace';
-    ctx.fillText(formatTime(w.time), W / 2, 24);
-    const dLeft = w.director.bossTime - w.time;
-    if (!w.director.bossActive && dLeft > 0 && dLeft < 400) {
-      ctx.font = `700 11px ${FONT}`;
-      ctx.fillStyle = '#e7a88c';
-      const anomaly = w.director.eventTime - w.time;
-      ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? `ANOMALY IN ${formatTime(anomaly)}` : `BOSS IN ${formatTime(dLeft)}`, W / 2, 44);
+    if (!compact) {
+      // HP
+      const hpFrac = clamp(w.hp / w.maxHp, 0, 1);
+      const hpColor = hpFrac > .5 ? '#9aeadb' : hpFrac > .25 ? '#ffd166' : '#ff5d73';
+      ctx.textAlign = 'left';
+      ctx.font = `700 ${smallText(9)}px ${FONT}`; ctx.fillStyle = '#9bb3bf';
+      ctx.fillText('HULL', 16, 18);
+      ctx.textAlign = 'right'; ctx.fillStyle = hpColor; ctx.font = `800 ${smallText(11)}px ${FONT}`;
+      ctx.fillText(`${formatNum(Math.ceil(w.hp))} / ${formatNum(w.maxHp)}`, 202, 18, 92);
+      ctx.fillStyle = '#20333f'; roundRect(ctx, 16, 29, 186, 7, 2); ctx.fill();
+      const health = ctx.createLinearGradient(16, 0, 202, 0);
+      health.addColorStop(0, hpColor + '88'); health.addColorStop(1, hpColor);
+      ctx.fillStyle = health; roundRect(ctx, 16, 29, 186 * hpFrac, 7, 2); ctx.fill();
+      ctx.fillStyle = '#07111d';
+      for (let i = 1; i < 10; i++) ctx.fillRect(16 + i * 18.6, 29, 2, 7);
+      // level + timer
+      ctx.textAlign = 'left'; ctx.fillStyle = '#d9f8ef';
+      ctx.font = `800 ${smallText(12)}px ${FONT}`;
+      ctx.fillText(`LV ${String(w.level).padStart(2, '0')}`, 16, 53);
+      ctx.fillStyle = '#92aebb'; ctx.font = `600 ${smallText(10)}px ${FONT}`;
+      ctx.fillText(`${formatNum(w.run.kills)} ELIMINATED`, 70, 53, 132);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 23px Consolas, monospace';
+      ctx.fillText(formatTime(w.time), W / 2, 24, 116);
+      const dLeft = w.director.bossTime - w.time;
+      if (!w.director.bossActive && dLeft > 0 && dLeft < 400) {
+        ctx.font = `700 ${smallText(11)}px ${FONT}`;
+        ctx.fillStyle = '#e7a88c';
+        const anomaly = w.director.eventTime - w.time;
+        ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? `ANOMALY IN ${formatTime(anomaly)}` : `BOSS IN ${formatTime(dLeft)}`, W / 2, 44, 116);
+      }
+      // combo
+      if (w.combo.count >= 3) {
+        const c = Math.floor(w.combo.count);
+        const pulse = this.opts.reducedMotion ? 1 : 1 + Math.max(0, w.combo.timer - w.build.stats.comboWindow + 0.15) * 3;
+        ctx.textAlign = 'right';
+        ctx.fillStyle = c >= 100 ? '#ff7ad9' : c >= 50 ? '#ffb13b' : c >= 25 ? '#ffe066' : '#ffffff';
+        ctx.font = `900 ${Math.round(24 * pulse)}px ${FONT}`;
+        ctx.fillText(`${formatNum(c)}x`, right, 26, Math.min(110, right - W / 2 - 64));
+        ctx.font = `700 ${smallText(10)}px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillText(`COMBO +${Math.round((w.comboMult() - 1) * 100)}%`, right, 48, 110);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(right - 86, 58, 86, 3);
+        ctx.fillStyle = '#ffe066';
+        ctx.fillRect(right - 86, 58, 86 * clamp(w.combo.timer / w.build.stats.comboWindow, 0, 1), 3);
+      }
+      // XP bar
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.fillRect(0, FIELD_TOP - 8, W, 5);
+      const xp = ctx.createLinearGradient(0, 0, W, 0);
+      xp.addColorStop(0, '#499cb4'); xp.addColorStop(1, '#b7ffdb');
+      ctx.fillStyle = xp;
+      ctx.fillRect(0, FIELD_TOP - 8, W * clamp(w.xp / w.xpNext, 0, 1), 5);
+      if (!w.event) {
+        ctx.textAlign = 'left'; ctx.font = `600 ${smallText(9)}px ${FONT}`; ctx.fillStyle = '#6e929f';
+        ctx.fillText(w.arena.name.toUpperCase(), 16, 75, 245);
+      }
+      ctx.textAlign = 'right'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
+      ctx.fillStyle = w.resonance.overdrive > 0 ? '#ffe3a3' : '#bca7ff';
+      const circuit = w.resonance;
+      ctx.fillText(circuit.overdrive > 0 ? `OVERDRIVE / ${Math.ceil(circuit.overdrive)}s` :
+        circuit.nodes.length ? `CIRCUIT ${circuit.lit}/3 / ${Math.ceil(circuit.remaining)}s` : `SIGNAL IN ${Math.max(0, Math.ceil(circuit.cooldown))}s`, right, 75, 155);
+      // event
+      if (w.event) {
+        const ev = EVENT_MAP[w.event.id];
+        ctx.textAlign = 'left';
+        ctx.font = `800 ${smallText(12)}px ${FONT}`;
+        ctx.fillStyle = ev.color;
+        ctx.fillText(`${ev.icon} ${ev.name}  ${Math.ceil(w.event.dur - w.event.t)}s`, 14, 75, 245);
+      }
     }
-    // combo
-    if (w.combo.count >= 3) {
-      const c = Math.floor(w.combo.count);
-      const pulse = this.opts.reducedMotion ? 1 : 1 + Math.max(0, w.combo.timer - w.build.stats.comboWindow + 0.15) * 3;
-      ctx.textAlign = 'right';
-      ctx.fillStyle = c >= 100 ? '#ff7ad9' : c >= 50 ? '#ffb13b' : c >= 25 ? '#ffe066' : '#ffffff';
-      ctx.font = `900 ${Math.round(24 * pulse)}px ${FONT}`;
-      ctx.fillText(`${c}x`, W - 88, 26);
-      ctx.font = `700 10px ${FONT}`;
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillText(`COMBO +${Math.round((w.comboMult() - 1) * 100)}%`, W - 88, 48);
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.fillRect(W - 174, 58, 86, 3);
-      ctx.fillStyle = '#ffe066';
-      ctx.fillRect(W - 174, 58, 86 * clamp(w.combo.timer / w.build.stats.comboWindow, 0, 1), 3);
-    }
-    // XP bar
-    ctx.fillStyle = 'rgba(255,255,255,0.1)';
-    ctx.fillRect(0, FIELD_TOP - 8, W, 5);
-    const xp = ctx.createLinearGradient(0, 0, W, 0);
-    xp.addColorStop(0, '#499cb4'); xp.addColorStop(1, '#b7ffdb');
-    ctx.fillStyle = xp;
-    ctx.fillRect(0, FIELD_TOP - 8, W * clamp(w.xp / w.xpNext, 0, 1), 5);
-    if (!w.event) {
-      ctx.textAlign = 'left'; ctx.font = `600 9px ${FONT}`; ctx.fillStyle = '#6e929f';
-      ctx.fillText(w.arena.name.toUpperCase(), 16, 75);
-    }
-    ctx.textAlign = 'right'; ctx.font = `700 10px ${FONT}`;
-    ctx.fillStyle = w.resonance.overdrive > 0 ? '#ffe3a3' : '#bca7ff';
     const circuit = w.resonance;
-    ctx.fillText(circuit.overdrive > 0 ? `OVERDRIVE / ${Math.ceil(circuit.overdrive)}s` :
-      circuit.nodes.length ? `CIRCUIT ${circuit.lit}/3 / ${Math.ceil(circuit.remaining)}s` : `SIGNAL IN ${Math.max(0, Math.ceil(circuit.cooldown))}s`, W - 88, 75);
-    ctx.textAlign = 'center'; ctx.font = `700 10px ${FONT}`;
+    ctx.textAlign = 'center'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
     ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#8ca8bf';
     ctx.fillText(w.isPowerWindow() ? 'RELEASE / POWER SHOT' : w.aim.active && w.hand > 0 ?
       w.aim.holdTime < POWER_START ? 'HOLD FOR THE GOLD ARC' : w.aim.streamed ? 'STREAM FIRE' : 'RELEASE / NORMAL SHOT' :
-      circuit.overdrive > 0 ? '+25% DAMAGE / +10% SPEED' : 'LINK 3 SIGNALS / CALL STARFALL', W / 2, H - 33);
-    // event
-    if (w.event) {
-      const ev = EVENT_MAP[w.event.id];
-      ctx.textAlign = 'left';
-      ctx.font = `800 12px ${FONT}`;
-      ctx.fillStyle = ev.color;
-      ctx.fillText(`${ev.icon} ${ev.name}  ${Math.ceil(w.event.dur - w.event.t)}s`, 14, 72);
-    }
+      circuit.overdrive > 0 ? '+25% DAMAGE / +10% SPEED' : 'LINK 3 SIGNALS / CALL STARFALL', W / 2, H - 33, W - 40);
     // boss bar
     if (w.director.bossActive) {
       const bosses = w.enemies.filter((e) => e.alive && e.boss);
@@ -1164,10 +1173,10 @@ export class Renderer {
       roundRect(ctx, 40, y, (W - 80) * clamp(hp / max, 0, 1), 14, 7);
       ctx.fill();
       ctx.textAlign = 'center';
-      ctx.font = `800 11px ${FONT}`;
+      ctx.font = `800 ${smallText(11)}px ${FONT}`;
       ctx.fillStyle = '#fff';
       const name = BOSS_MAP[w.director.bossId]?.name ?? '';
-      ctx.fillText(bosses.length > 1 ? `${name.toUpperCase()} ×${bosses.length}` : name.toUpperCase(), W / 2, y + 7.5);
+      ctx.fillText(bosses.length > 1 ? `${name.toUpperCase()} ×${bosses.length}` : name.toUpperCase(), W / 2, y + 7.5, W - 80);
     }
     // momentum readout of the lead ball
     const lead = w.balls.find((b) => b.kind === 'main' && b.state === 'flight');
@@ -1175,7 +1184,7 @@ export class Renderer {
       const t = momentumTier(lead.momentum);
       if (t > 0) {
         ctx.textAlign = 'center';
-        ctx.font = `800 10px ${FONT}`;
+        ctx.font = `800 ${smallText(10)}px ${FONT}`;
         ctx.fillStyle = MOMENTUM_COLORS[t];
         ctx.fillText(MOMENTUM_NAMES[t].toUpperCase(), W / 2, H - 59);
       }
@@ -1206,13 +1215,13 @@ export class Renderer {
     ctx.font = `900 ${b.big ? 38 : 28}px ${FONT}`;
     ctx.lineWidth = 5;
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    ctx.strokeText(b.text, 0, 0);
+    ctx.strokeText(b.text, 0, 0, W - 40);
     ctx.fillStyle = b.color;
-    ctx.fillText(b.text, 0, 0);
+    ctx.fillText(b.text, 0, 0, W - 40);
     if (b.sub) {
       ctx.font = `700 ${b.big ? 20 : 15}px ${FONT}`;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(b.sub, 0, b.big ? 34 : 28);
+      ctx.fillText(b.sub, 0, b.big ? 34 : 28, W - 40);
     }
     ctx.restore();
   }

@@ -25,11 +25,18 @@ node scripts/smoke.mjs          # writes screenshots to smoke-shots/
 node scripts/visual-check.mjs   # responsive layouts, all arenas, motion settings, draw benchmark
 node scripts/resonance-check.mjs # power-shot input, recall controls, circuit and starfall screenshots
 node scripts/talent-check.mjs   # talent allocation, saves, refunds, mobile/desktop layouts
+npm run test:ui                # Playwright audit: all menus, overlays and HUD at seven viewport sizes
 ```
 
 The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables. It captures
 320px, 390px and desktop home screens plus seeded enemy/boss fixtures in all three arenas,
 and checks that paused drawing does not accumulate ambient particles.
+
+The Playwright UI audit uses the same environment variables and writes screenshots, contact sheets,
+and a layout report to `smoke-shots/ui-audit/`. It checks currency rows, clipping, preset labels,
+stat collisions, reachable dialogs, and combat text/control overlaps from 320px phones to landscape
+and desktop layouts. It also verifies Settings switches, keyboard/drag volume controls, aim selection,
+and saved preferences after a reload. Set `AUDIT_ONLY=1` to record findings without failing the run.
 
 ## Visual direction
 

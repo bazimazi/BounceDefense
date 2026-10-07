@@ -2,7 +2,7 @@ import { formatNum, formatTime } from '../core/math';
 import { dailySeed } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS } from '../data/arenas';
 import { CORES, CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
-import { BOSSES, CODEX_ENEMIES } from '../data/enemies';
+import { BOSSES, BOSS_MAP, CODEX_ENEMIES } from '../data/enemies';
 import { ACHIEVEMENTS, CHALLENGES, RESEARCH, WORKSHOP, masteryLevel, masteryRewards } from '../data/meta';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
@@ -29,6 +29,7 @@ export class UI {
   private hudEl: HTMLElement | null = null;
   private surgeBtn: HTMLButtonElement | null = null;
   private recallBtn: HTMLButtonElement | null = null;
+  private compactTelemetry: HTMLElement | null = null;
   private hintEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
@@ -43,6 +44,8 @@ export class UI {
   layout(rect: { x: number; y: number; w: number; h: number }): void {
     Object.assign(this.root.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px` });
     this.root.style.setProperty('--s', String(rect.w / 540));
+    this.root.toggleAttribute('data-compact-hud', rect.w < 300 && innerWidth > innerHeight);
+    this.root.toggleAttribute('data-small-controls', rect.w < 360);
   }
 
   private get p() {
@@ -72,16 +75,16 @@ export class UI {
 
   private currency(): HTMLElement {
     const p = this.p;
-    return h('div', { class: 'chips' },
-      h('span', { class: 'chip coins' }, `🪙 ${formatNum(p.coins)}`),
-      h('span', { class: 'chip cores' }, `💠 ${p.cores}`),
-      h('span', { class: 'chip research' }, `🔬 ${p.research}`),
+    return h('div', { class: 'chips wallet', 'aria-label': 'Currencies' },
+      h('span', { class: 'chip coins', title: `${p.coins.toLocaleString()} Coins` }, `🪙 ${formatNum(p.coins)}`),
+      h('span', { class: 'chip cores', title: `${p.cores.toLocaleString()} Cores` }, `💠 ${formatNum(p.cores)}`),
+      h('span', { class: 'chip research', title: `${p.research.toLocaleString()} Research` }, `🔬 ${formatNum(p.research)}`),
     );
   }
 
   private topbar(title: string, back: () => void = () => this.home()): HTMLElement {
-    return h('div', { class: 'topbar' },
-      h('button', { class: 'ghost', onclick: () => { this.click(); back(); } }, '←'),
+    return h('div', { class: 'topbar menu-topbar' },
+      h('button', { class: 'ghost', 'aria-label': 'Back', onclick: () => { this.click(); back(); } }, '←'),
       h('h2', {}, title),
       this.currency(),
     );
@@ -266,7 +269,7 @@ export class UI {
         slot('Impact', 'impact'),
         slot('Momentum', 'momentum'),
         h('h3', {}, 'Trail'),
-        h('div', { class: 'row wrap' }, TRAILS.map((t) => {
+        h('div', { class: 'row wrap trail-options' }, TRAILS.map((t) => {
           const owned = p.cosmetics.includes(t.id);
           return h('button', {
             disabled: !owned,
@@ -275,11 +278,11 @@ export class UI {
           }, owned ? t.name : '🔒');
         })),
         h('h3', {}, 'Build Presets'),
-        h('div', { class: 'grid3' }, [0, 1, 2].map((i) => {
+        h('div', { class: 'grid3 presets' }, [0, 1, 2].map((i) => {
           const pr = p.presets[i];
           return h('div', { class: 'card center' },
             h('div', { class: 'small' }, pr ? `${CORE_MAP[pr.core]?.icon} ${pr.name}` : `Slot ${i + 1}`),
-            h('div', { class: 'row', style: 'justify-content:center;margin-top:6px' },
+            h('div', { class: 'row preset-actions', style: 'justify-content:center;margin-top:6px' },
               h('button', { class: 'small', onclick: () => { p.presets[i] = { ...l, name: `${CORE_MAP[l.core].name.split(' ')[0]} ${PART_MAP[l.impact]?.name.split(' ')[0] ?? ''}` }; this.toast('Preset saved'); rerender(); } }, 'Save'),
               pr ? h('button', { class: 'small', onclick: () => { Object.assign(l, { core: pr.core, shell: pr.shell, impact: pr.impact, momentum: pr.momentum, trail: pr.trail }); rerender(); } }, 'Load') : null,
             ));
@@ -452,26 +455,59 @@ export class UI {
   settings(onBack: () => void = () => this.home()): void {
     const s = this.p.settings;
     const apply = () => { this.game.applySettings(); this.game.save(); };
-    const toggle = (label: string, key: 'shake' | 'damageNumbers' | 'reducedFlashes' | 'debug') =>
-      h('label', { class: 'toggle' }, h('span', {}, label), h('input', { type: 'checkbox', checked: s[key], onchange: (e: Event) => { s[key] = (e.target as HTMLInputElement).checked; apply(); } }));
-    const slider = (label: string, key: 'sfx' | 'music') =>
-      h('div', { class: 'toggle', style: 'flex-direction:column;align-items:stretch' }, h('span', {}, label),
-        h('input', { class: 'slider', type: 'range', min: 0, max: 1, step: 0.05, value: s[key], oninput: (e: Event) => { s[key] = Number((e.target as HTMLInputElement).value); apply(); } }));
-    this.show(h('div', { class: 'screen solid' },
+    const toggle = (label: string, desc: string, key: 'shake' | 'damageNumbers' | 'reducedFlashes' | 'debug') =>
+      h('button', {
+        type: 'button', class: 'setting-switch', role: 'switch', 'aria-label': label, 'aria-checked': String(s[key]), 'data-setting': key,
+        onclick: (e: MouseEvent) => {
+          this.click(); s[key] = !s[key]; apply();
+          const button = e.currentTarget as HTMLButtonElement;
+          button.setAttribute('aria-checked', String(s[key]));
+          button.querySelector('.switch-state')!.textContent = s[key] ? 'ON' : 'OFF';
+        },
+      },
+      h('span', { class: 'setting-copy' }, h('span', { class: 'setting-name' }, label), h('small', { class: 'setting-desc' }, desc)),
+      h('span', { class: 'switch-rail', 'aria-hidden': 'true' }, h('span', { class: 'switch-state' }, s[key] ? 'ON' : 'OFF'), h('span', { class: 'switch-knob' })));
+    const slider = (label: string, key: 'sfx' | 'music') => {
+      const percent = Math.round(s[key] * 100), id = `setting-${key}`;
+      const readout = h('output', { class: 'setting-value', for: id }, `${percent}%`);
+      return h('div', { class: 'setting-volume' },
+        h('div', { class: 'setting-volume-head' }, h('label', { for: id, class: 'setting-name' }, label), readout),
+        h('input', {
+          id, class: 'setting-range', type: 'range', min: 0, max: 100, step: 5, value: percent,
+          'aria-valuetext': `${percent}%`, style: `--volume:${percent}%`,
+          oninput: (e: Event) => {
+            const input = e.target as HTMLInputElement, value = Number(input.value);
+            s[key] = value / 100; readout.textContent = `${value}%`;
+            input.style.setProperty('--volume', `${value}%`); input.setAttribute('aria-valuetext', `${value}%`); apply();
+          },
+        }));
+    };
+    const section = (title: string, ...controls: HTMLElement[]) =>
+      h('section', { class: 'settings-section', 'aria-label': title }, h('h3', { class: 'settings-heading' }, title), ...controls);
+    this.show(h('div', { class: 'screen solid settings-screen' },
       this.topbar('Settings', onBack),
-      h('div', { class: 'scroll' },
-        slider('Sound effects', 'sfx'),
-        slider('Music', 'music'),
-        toggle('Screen shake', 'shake'),
-        toggle('Damage numbers', 'damageNumbers'),
-        toggle('Reduce flashes & motion', 'reducedFlashes'),
-        h('div', { class: 'toggle' }, h('span', {}, 'Aim mode'),
-          h('div', { class: 'row' }, (['direct', 'slingshot'] as const).map((m) => h('button', {
-            style: s.aimMode === m ? 'background:var(--accent);color:#0a0612' : '',
-            onclick: () => { s.aimMode = m; apply(); this.settings(onBack); },
-          }, m === 'direct' ? 'Point' : 'Slingshot')))),
-        toggle('Debug tools', 'debug'),
-        h('div', { style: 'margin-top:24px' },
+      h('div', { class: 'scroll settings-content' },
+        section('Audio', h('div', { class: 'settings-audio' }, slider('Sound effects', 'sfx'), slider('Music', 'music'))),
+        section('Combat feedback',
+          toggle('Screen shake', 'Camera kick on heavy impacts.', 'shake'),
+          toggle('Damage numbers', 'See the damage from every hit.', 'damageNumbers'),
+          toggle('Reduce flashes & motion', 'Calmer effects and animations.', 'reducedFlashes')),
+        section('Aim mode', h('div', { class: 'aim-modes', role: 'group', 'aria-label': 'Aim mode' },
+          (['direct', 'slingshot'] as const).map((m) => h('button', {
+            type: 'button', class: 'aim-option', 'data-mode': m, 'aria-pressed': String(s.aimMode === m),
+            onclick: (e: MouseEvent) => {
+              if (s.aimMode === m) return;
+              this.click(); s.aimMode = m; apply();
+              for (const button of (e.currentTarget as HTMLElement).parentElement!.querySelectorAll<HTMLButtonElement>('button'))
+                button.setAttribute('aria-pressed', String(button.dataset.mode === m));
+            },
+          },
+          h('span', { class: 'aim-icon', 'aria-hidden': 'true' }, m === 'direct' ? '↗' : '↶'),
+          h('span', { class: 'aim-check', 'aria-hidden': 'true' }, '✓'),
+          h('span', { class: 'setting-name' }, m === 'direct' ? 'Point' : 'Slingshot'),
+          h('small', { class: 'setting-desc' }, m === 'direct' ? 'Aim toward your target' : 'Pull back, then release'))))),
+        section('System', toggle('Debug tools', 'Show diagnostics during a run.', 'debug')),
+        h('div', { class: 'settings-footer' },
           h('button', {
             class: 'danger',
             onclick: () => {
@@ -483,7 +519,7 @@ export class UI {
               }
             },
           }, 'Reset progress')),
-        h('div', { class: 'small muted', style: 'margin-top:16px' }, 'Bounce Defense v0.1 — Desktop: drag with the mouse, Space = Surge, Esc = Pause.'),
+        h('div', { class: 'settings-help' }, 'Desktop: drag to aim · Space to Surge · R to Recall · Esc to pause.'),
       ),
     ));
   }
@@ -498,7 +534,19 @@ export class UI {
       h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, '↶'), h('span', { class: 'recall-label' }, 'RECALL'), h('small', {}, 'R / READY')) as HTMLButtonElement;
     this.surgeBtn = surge;
     this.recallBtn = recall;
-    this.hudEl = h('div', { style: 'position:absolute;inset:0;pointer-events:none' }, pause, surge, recall);
+    const telemetry = h('div', { class: 'compact-telemetry' },
+      h('div', { class: 'compact-main' },
+        h('div', {}, h('small', {}, 'HULL'), h('b', { class: 'compact-hull' })),
+        h('div', {}, h('small', {}, 'RUN'), h('b', { class: 'compact-run' })),
+        h('div', {}, h('small', {}, 'COMBO'), h('b', { class: 'compact-combo' })),
+        h('div', {}, h('small', {}, 'RESONANCE'), h('b', { class: 'compact-signal' }))),
+      h('div', { class: 'compact-details' },
+        h('div', {}, h('small', {}, 'RUN DETAILS'), h('b', { class: 'compact-level' })),
+        h('div', {}, h('small', {}, 'EVENT'), h('b', { class: 'compact-event' })),
+        h('div', {}, h('small', {}, 'BOSS'), h('b', { class: 'compact-boss' })),
+        h('div', {}, h('small', {}, 'NEXT UPGRADE'), h('div', { class: 'compact-xp' }, h('span')))));
+    this.compactTelemetry = telemetry;
+    this.hudEl = h('div', { class: 'game-hud', style: 'position:absolute;inset:0;pointer-events:none' }, pause, surge, recall, telemetry);
     for (const c of [pause, surge, recall]) c.style.pointerEvents = 'auto';
     this.root.append(this.hudEl);
   }
@@ -508,6 +556,7 @@ export class UI {
     this.hudEl = null;
     this.surgeBtn = null;
     this.recallBtn = null;
+    this.compactTelemetry = null;
     this.hint(null);
   }
 
@@ -527,6 +576,27 @@ export class UI {
       const small = this.recallBtn.querySelector('small')!;
       const status = w.recallCooldown > 0 ? `${Math.ceil(w.recallCooldown)}s` : w.canRecall() ? 'R / READY' : 'R / NO BALLS';
       if (small.textContent !== status) small.textContent = status;
+    }
+    if (this.compactTelemetry && this.root.hasAttribute('data-compact-hud')) {
+      const signal = w.resonance.overdrive > 0 ? `OVERDRIVE ${Math.ceil(w.resonance.overdrive)}s` :
+        w.resonance.nodes.length ? `${w.resonance.lit}/3 · ${Math.ceil(w.resonance.remaining)}s` : `IN ${Math.max(0, Math.ceil(w.resonance.cooldown))}s`;
+      const bosses = w.enemies.filter(e => e.alive && e.boss);
+      const bossHp = bosses.reduce((sum, e) => sum + e.hp, 0), bossMax = bosses.reduce((sum, e) => sum + e.maxHp, 0);
+      const labels: Record<string, string> = {
+        hull: `${formatNum(Math.ceil(w.hp))} / ${formatNum(w.maxHp)}`,
+        run: formatTime(w.time),
+        combo: `${formatNum(w.combo.count)}×`, signal,
+        level: `LV ${w.level} / ${formatNum(w.run.kills)} KILLS`,
+        event: w.event ? `${EVENT_MAP[w.event.id].name} · ${Math.ceil(w.event.dur - w.event.t)}s` : 'CLEAR',
+        boss: w.director.bossActive ? `${BOSS_MAP[w.director.bossId]?.name ?? 'BOSS'} · ${Math.ceil(bossHp / (bossMax || 1) * 100)}%` :
+          `IN ${formatTime(Math.max(0, w.director.bossTime - w.time))}`,
+      };
+      for (const [key, value] of Object.entries(labels)) {
+        const el = this.compactTelemetry.querySelector(`.compact-${key}`)!;
+        if (el.textContent !== value) el.textContent = value;
+      }
+      const xp = this.compactTelemetry.querySelector('.compact-xp > span') as HTMLElement;
+      xp.style.width = `${Math.min(100, w.xp / w.xpNext * 100)}%`;
     }
   }
 
@@ -576,7 +646,7 @@ export class UI {
       if (codex) for (const f of feeds) {
         const e = EVOLUTION_MAP[f];
         const r = e.recipe.find((x) => x.id === o.id)!;
-        hints.push(h('div', { class: 'ohint', style: 'color:var(--legendary)' }, `🧬 ${e.name} ingredient${r.level > 1 ? ` (needs Lv ${r.level})` : ''}`));
+        hints.push(h('div', { class: 'ohint', style: 'color:var(--legendary)' }, `🧬 ${e.name} ingredient${r.level > 1 ? ` (needs Lv\u00a0${r.level})` : ''}`));
       }
       return h('button', {
         class: `offer ${u.rarity} ${this.banishMode ? 'banish-mode' : ''}`, style: delay,
@@ -600,7 +670,7 @@ export class UI {
       h('div', { class: 'lvtitle' }, `LEVEL ${w.level - w.pendingLevels + 1}`),
       tutorial ? h('div', { class: 'center small', style: 'color:var(--gold)' }, 'Pick an upgrade. Most change HOW your ball behaves — look for combinations!') : null,
       h('div', { class: 'col' }, w.offers.map(card)),
-      h('div', { class: 'row', style: 'justify-content:center;margin-top:6px' },
+      h('div', { class: 'row offer-actions', style: 'justify-content:center;margin-top:6px' },
         h('button', { disabled: w.rerolls <= 0, onclick: () => { this.click(); w.reroll(); } }, `🎲 Reroll (${w.rerolls})`),
         w.banishes > 0 || w.flags.has('banish') ? h('button', {
           class: this.banishMode ? 'danger' : '', disabled: w.banishes <= 0,
