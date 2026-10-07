@@ -96,6 +96,10 @@ export class Game {
     return this.world ? buildName(this.world.build) : '';
   }
 
+  get controlsEnabled(): boolean {
+    return this.mode === 'run' && !this.paused && this.world?.state === 'playing' && this.world.endTimer < 0;
+  }
+
   // ------------------------------------------------------------------ modes
   toMenu(): void {
     this.mode = 'menu';
@@ -250,10 +254,11 @@ export class Game {
           this.resume();
         } else this.pause();
       }
-      if (e.code === 'Space' && w && !this.paused) {
+      if (e.code === 'Space' && w && !this.paused && w.state === 'playing') {
         e.preventDefault();
         w.activateSurge();
       }
+      if (e.code === 'KeyR' && w && !this.paused && !e.repeat && w.state === 'playing') w.activateRecall();
       if (e.code === 'Backquote') {
         this.profile.settings.debug = !this.profile.settings.debug;
         this.applySettings();
@@ -344,7 +349,9 @@ export class Game {
     let hint: string | null = null;
     if (w.state !== 'playing' || this.paused) hint = null;
     else if (!t.launched) hint = this.profile.settings.aimMode === 'slingshot' ? 'Pull back and release to launch' : 'Drag to aim · Release to launch';
-    else if (t.t < 9 && w.run.kills < 3) hint = 'Your ball bounces on its own. Stop enemies before they reach the line!';
+    else if (t.t < 9 && w.run.kills < 3) hint = 'Release when the dial turns gold for a POWER SHOT.';
+    else if (t.t < 20 && w.resonance.nodes.length && !w.resonance.completed) hint = 'Hit all 3 diamond signals to unleash STARFALL.';
+    else if (t.t >= 20 && t.t < 26 && inFlight) hint = 'Bad angle? RECALL brings your balls home. Tap ↶ or press R.';
     else if (t.eliteHint > 0) hint = 'Elites are tough — but drop 💠 Cores for permanent unlocks.';
     else if (w.canSurge() && !t.surgeHinted) {
       hint = 'SURGE is charged! Tap it (or Space) to supercharge every ball.';

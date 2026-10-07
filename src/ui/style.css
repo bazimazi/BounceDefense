@@ -393,6 +393,23 @@ h3 { margin: 16px 0 8px; font-size: 14px; letter-spacing: 1.5px; color: var(--mu
 .hudbtn { backdrop-filter: blur(8px); background: #112639cf; border-color: #97cedb40; }
 .surge { box-shadow: 0 0 24px #ffe06615; }
 .surge span { background: #0b1b2a; }
+.surge:disabled { opacity: 1; cursor: default; }
+.recall { position: absolute; left: 12px; bottom: 12px; width: 74px; height: 74px; padding: 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 18px 6px; border-color: #8debdc66; background: linear-gradient(155deg, #183c49, #091729); color: #a9f5e5; box-shadow: inset 0 1px 0 #bcffed18, 0 6px 24px #0004; }
+.recall-icon { font-size: 28px; line-height: 27px; font-weight: 400; }
+.recall-label { font-size: 10px; letter-spacing: 1px; }
+.recall small { font: 8px Consolas, monospace; color: #c3dbe9; }
+.recall::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 5px; height: 2px; border-radius: 2px; background: linear-gradient(to right, #8debdc var(--recall-p, 100%), #395262 0); }
+.recall:disabled { opacity: .6; }
+.combat-guide { padding: 12px 14px; border: 1px solid #bca7ff40; border-radius: 12px; background: linear-gradient(130deg, #bca7ff12, #0a192a); }
+.combat-guide > b { color: #d2c3ff; font-size: 10px; letter-spacing: 1.5px; }
+.combat-guide p { font-size: 12px; line-height: 1.5; color: #bed0de; margin: 8px 0 0; }
+.home { background: radial-gradient(ellipse at 65% 30%, #61509c24, transparent 55%), linear-gradient(155deg, #102638ed, #07111aee 65%); }
+.hero-kicker { color: #c9baff; }
+.signal-orbit { position: absolute; width: 196px; height: 196px; left: calc(50% - 98px); top: calc(50% - 98px); border: 1px dashed #bca7ff40; border-radius: 50%; animation: orbit-spin 28s linear infinite reverse; }
+.signal-orbit i { position: absolute; width: 12px; height: 12px; border: 1px solid #e1d6ff; background: #aa8cff; box-shadow: 0 0 16px #bca7ff99; transform: rotate(45deg); }
+.signal-orbit i:nth-child(1) { left: 91px; top: -6px; }
+.signal-orbit i:nth-child(2) { left: 176px; top: 140px; }
+.signal-orbit i:nth-child(3) { left: 8px; top: 140px; }
 .hint { background: #0b1b2aeb; border-color: #9adacb40; font-size: 12px; font-weight: 500; box-shadow: 0 8px 25px #0005; }
 @keyframes orbit-spin { to { transform: rotate(360deg); } }
 @keyframes reactor-shadow { 50% { transform: scale(.8); opacity: .5; } }

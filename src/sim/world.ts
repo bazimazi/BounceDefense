@@ -18,6 +18,7 @@ import { Director } from './director';
 import { updateEnemy } from './enemies';
 import { makeOffers, type Offer } from './offers';
 import { stepBall } from './physics';
+import { ResonanceCircuit } from './resonance';
 import type { Modifier } from './stats';
 import {
   DEFENSE_Y, FIELD_TOP, H, LAUNCHER_X, LAUNCHER_Y, MAX_BALLS_TOTAL, MAX_ENEMIES, W,
@@ -65,6 +66,9 @@ export const TIER_DMG = [1, 1.15, 1.35, 1.7, 2.0];
 export const TIER_CRIT = [0, 0, 0.05, 0.1, 0.12];
 export const TIER_SPEED = [1, 1, 1.05, 1.15, 1.2];
 export const COMBO_MILESTONES = [10, 25, 50, 100, 150, 200, 300];
+export const POWER_START = 0.55;
+export const POWER_END = 0.95;
+export const RECALL_COOLDOWN = 10;
 
 export function momentumTier(m: number): number {
   let t = 0;
@@ -114,6 +118,7 @@ export class World {
   readonly talents: Readonly<TalentRanks>;
   talentBankReadyAt = 0;
   readonly director: Director;
+  readonly resonance: ResonanceCircuit;
   readonly grid = new SpatialHash<Enemy>(W, H, 64);
 
   time = 0;
@@ -152,7 +157,11 @@ export class World {
   hand = 1;
   launchQueue = 0;
   launchTimer = 0;
-  aim = { active: false, dx: 0, dy: -1, holdTime: 0 };
+  powerQueue = 0;
+  recallCooldown = 0;
+  powerShots = 0;
+  recalls = 0;
+  aim = { active: false, dx: 0, dy: -1, holdTime: 0, streamed: false };
 
   combo = { count: 0, timer: 0, lastId: -1, same: 0, nextMilestone: 0 };
   surge = { charge: 0, max: 140, active: 0 };
@@ -235,6 +244,7 @@ export class World {
     this.barrier.charges = this.build.stats.barrier;
 
     this.buildArena();
+    this.resonance = new ResonanceCircuit(this);
     this.director = new Director(this);
     this.discover('arenas', this.arena.id);
     if ((cfg.workshop.head_start ?? 0) > 0) this.pendingLevels++;
@@ -323,6 +333,7 @@ export class World {
       floorBounces: temp ? 0 : st.floorBounces,
       pierceLeft: st.pierce,
       dmgMult: kind === 'main' ? 1 : st.shardPower * (kind === 'frenzy' ? 1.4 : 1),
+      powered: parent?.powered ?? false,
       life: kind === 'main' ? -1 : kind === 'frenzy' ? 9 : 12,
       recentId: [], recentT: [], trail: [], boost: 1, portalCd: 0, phased: false,
       splitGen: parent ? parent.splitGen + 1 : 0, hitCounter: 0, arcTimer: 0, firstHitDone: false, dead: false, pulse: 0,
@@ -484,12 +495,20 @@ export class World {
   }
 
   beginAim(): void {
+    if (this.state !== 'playing' || this.endTimer >= 0) return;
     this.aim.active = true;
     this.aim.holdTime = 0;
+    this.aim.streamed = false;
+  }
+
+  isPowerWindow(): boolean {
+    return this.aim.active && !this.aim.streamed && this.hand > 0 &&
+      this.aim.holdTime >= POWER_START && this.aim.holdTime <= POWER_END;
   }
 
   release(): void {
     if (!this.aim.active) return;
+    if (this.hand > 0) this.powerQueue = this.isPowerWindow() ? this.hand : 0;
     this.aim.active = false;
     this.launchQueue = Math.max(this.launchQueue, this.hand);
   }
@@ -499,7 +518,32 @@ export class World {
   }
 
   canSurge(): boolean {
-    return this.surge.charge >= this.surge.max && this.surge.active <= 0;
+    return this.state === 'playing' && this.endTimer < 0 && this.surge.charge >= this.surge.max && this.surge.active <= 0;
+  }
+
+  canRecall(): boolean {
+    return this.state === 'playing' && this.endTimer < 0 && this.recallCooldown <= 0 &&
+      this.balls.some(b => b.kind === 'main' && b.state === 'flight' && !b.dead);
+  }
+
+  activateRecall(): void {
+    if (!this.canRecall()) return;
+    this.recallCooldown = RECALL_COOLDOWN;
+    this.recalls++;
+    this.launchQueue = 0;
+    this.powerQueue = 0;
+    for (const b of this.balls) {
+      if (b.kind !== 'main' || b.state !== 'flight' || b.dead) continue;
+      b.state = 'returning';
+      b.returnT = 0;
+      b.rx = b.x;
+      b.ry = b.y;
+      b.momentum = 0;
+      b.trail.length = 0;
+      this.emit({ t: 'ring', x: b.x, y: b.y, r: 42, color: '#8debdc' });
+      this.emit({ t: 'beam', x0: b.x, y0: b.y, x1: LAUNCHER_X, y1: LAUNCHER_Y, color: '#8debdc' });
+    }
+    this.emit({ t: 'sfx', name: 'recall' });
   }
 
   activateSurge(): void {
@@ -691,6 +735,8 @@ export class World {
       this.syncTempMods();
     }
     if (this.surge.active > 0) this.surge.active -= dt;
+    this.recallCooldown = Math.max(0, this.recallCooldown - dt);
+    this.resonance.update(dt);
 
     // combo decay
     if (this.combo.count > 0) {
@@ -710,7 +756,9 @@ export class World {
       this.aim.holdTime += dt;
       // Holding keeps a stream going: balls returning mid-hold are re-fired along the aim.
       // A fresh press never fires on its own, so aiming is always deliberate.
-      if (this.aim.holdTime > 0.3 && this.hand > 0 && this.balls.some((b) => b.kind === 'main')) {
+      if (this.aim.holdTime > 1.15 && this.hand > 0 && this.balls.some((b) => b.kind === 'main')) {
+        this.aim.streamed = true;
+        this.powerQueue = 0;
         this.launchQueue = Math.max(this.launchQueue, this.hand);
       }
     }
@@ -722,7 +770,18 @@ export class World {
       const b = this.spawnBall('main', LAUNCHER_X, LAUNCHER_Y - 16, this.aim.dx, this.aim.dy);
       if (!b) {
         this.hand++;
+        this.launchQueue++;
         break;
+      }
+      if (this.powerQueue > 0) {
+        this.powerQueue--;
+        this.powerShots++;
+        b.powered = true;
+        b.dmgMult *= 1.45;
+        b.momentum += 5 * st.momentumGain;
+        this.emit({ t: 'ring', x: LAUNCHER_X, y: LAUNCHER_Y, r: 62, color: '#ffe3a3' });
+        this.emit({ t: 'text', x: LAUNCHER_X, y: LAUNCHER_Y - 55, text: 'POWER SHOT', color: '#ffe3a3' });
+        this.emit({ t: 'sfx', name: 'power' });
       }
       this.emit({ t: 'sfx', name: 'launch' });
       for (const [bh, p] of this.bh) bh.onLaunch?.(this, b, p);
@@ -963,6 +1022,7 @@ export class World {
       kills: r.kills, eliteKills: r.eliteKills, bossesDefeated: r.bossesDefeated, bossFightTimes: r.bossFightTimes,
       bossNoDamage: r.bossNoDamage && r.bossesDefeated.length > 0,
       damageDealt: r.damageDealt, damageTaken: r.damageTaken, healed: r.healed, bestCombo: r.bestCombo,
+      powerShots: this.powerShots, starfalls: this.resonance.completed, recalls: this.recalls,
       maxWallChain: r.maxWallChain, maxBounceChain: r.maxBounceChain, maxBallsInFlight: r.maxBallsInFlight,
       maxBallsOwned: r.maxBallsOwned, maxMomentumTier: r.maxMomentumTier, fireKills: r.fireKills,
       lightningKills: r.lightningKills, explosionKills: r.explosionKills, bleedKills: r.bleedKills,

@@ -33,6 +33,7 @@ export interface Ball {
   floorBounces: number;
   pierceLeft: number;
   dmgMult: number;
+  powered: boolean;
   /** Seconds to live for temporary balls; -1 for permanent. */
   life: number;
   recentId: number[];
@@ -156,6 +157,7 @@ export interface Segment {
 
 /** Visual/audio events produced by the simulation; consumed by renderer and audio. */
 export type Fx =
+  | { t: 'starfall'; pts: number[] }
   | { t: 'hit'; x: number; y: number; crit: boolean; mat: Material; power: number; color: string }
   | { t: 'dmg'; x: number; y: number; v: number; crit: boolean; color: string }
   | { t: 'wall'; x: number; y: number; nx: number; ny: number; color: string }

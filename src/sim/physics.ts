@@ -385,8 +385,9 @@ export function stepBall(w: World, b: Ball, dt: number): void {
   if (b.state === 'returning') {
     b.returnT += dt * 4;
     const t = Math.min(1, b.returnT);
-    b.x = b.rx + (LAUNCHER_X - b.rx) * t;
-    b.y = b.ry + (LAUNCHER_Y - 16 - b.ry) * t;
+    const ease = 1 - Math.pow(1 - t, 3);
+    b.x = b.rx + (LAUNCHER_X - b.rx) * ease;
+    b.y = b.ry + (LAUNCHER_Y - 16 - b.ry) * ease - Math.sin(t * Math.PI) * 45;
     if (t >= 1) {
       b.dead = true;
       let mainInFlight = 0;
@@ -421,6 +422,7 @@ export function stepBall(w: World, b: Ball, dt: number): void {
     collideSegments(w, b, w.segments);
     if (w.dynSegments.length) collideSegments(w, b, w.dynSegments);
     collideObstacles(w, b);
+    w.resonance.touch(b);
     collideEnemies(w, b);
     if (w.projectiles.length) collideProjectiles(w, b);
     if (b.y < FIELD_TOP + b.r - 2) b.y = FIELD_TOP + b.r; // safety clamp

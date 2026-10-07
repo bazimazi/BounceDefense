@@ -9,10 +9,11 @@ import {
   DEFENSE_Y, FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, W,
   type Ball, type Enemy, type Fx,
 } from '../sim/types';
-import { MOMENTUM_COLORS, MOMENTUM_NAMES, momentumTier, type World } from '../sim/world';
+import { MOMENTUM_COLORS, MOMENTUM_NAMES, POWER_START, POWER_END, momentumTier, type World } from '../sim/world';
 import { effectiveTier } from '../sim/physics';
 import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
+import { drawResonance } from './resonance';
 
 interface Bolt { pts: number[]; life: number; color: string }
 interface Ring { x: number; y: number; r: number; life: number; max: number; color: string }
@@ -20,6 +21,8 @@ interface Boom { x: number; y: number; r: number; life: number; color: string }
 interface Beam { x0: number; y0: number; x1: number; y1: number; life: number; color: string }
 interface FloatText { x: number; y: number; text: string; life: number; max: number; color: string; size: number; vy: number }
 interface Banner { text: string; sub?: string; color: string; big: boolean; t: number; dur: number }
+interface Starfall { pts: number[]; life: number }
+interface Debris { x: number; y: number; vx: number; vy: number; spin: number; r: number; life: number; color: string }
 
 export interface RenderOptions {
   shake: boolean;
@@ -42,6 +45,8 @@ export class Renderer {
   beams: Beam[] = [];
   texts: FloatText[] = [];
   banners: Banner[] = [];
+  starfalls: Starfall[] = [];
+  debris: Debris[] = [];
   shake = 0;
   flash = { color: '#fff', a: 0 };
   hurtFlash = 0;
@@ -92,6 +97,8 @@ export class Renderer {
     this.beams = [];
     this.texts = [];
     this.banners = [];
+    this.starfalls = [];
+    this.debris = [];
     this.shake = 0;
     this.flash.a = 0;
     this.hurtFlash = 0;
@@ -126,6 +133,12 @@ export class Renderer {
   handleFx(f: Fx): void {
     const p = this.particles;
     switch (f.t) {
+      case 'starfall':
+        this.starfalls.push({ pts: f.pts, life: .85 });
+        this.rings.push({ x: W / 2, y: 400, r: 360, life: .9, max: .9, color: '#bca7ff' });
+        this.banners.unshift({ text: 'STARFALL', sub: 'Circuit complete / 7s overdrive', color: '#bca7ff', big: true, t: 0, dur: 1.8 });
+        if (this.banners.length > 6) this.banners.pop();
+        break;
       case 'hit': {
         const n = f.crit ? 14 : 6;
         p.burst(f.x, f.y, f.color, n, f.crit ? 340 : 220, f.crit ? 3.5 : 2.5, 0.35);
@@ -150,6 +163,11 @@ export class Renderer {
       case 'kill':
         p.burst(f.x, f.y, f.color, f.big ? 34 : 12, f.big ? 380 : 240, f.big ? 4.5 : 3, f.big ? 0.8 : 0.5);
         this.rings.push({ x: f.x, y: f.y, r: f.r * 2.2, life: 0.3, max: 0.3, color: f.color });
+        if (!this.opts.reducedMotion) for (let i = 0; i < (f.big ? 9 : 4) && this.debris.length < 160; i++) {
+          const a = i * 2.4 + f.x;
+          this.debris.push({ x: f.x, y: f.y, vx: Math.cos(a) * 140, vy: Math.sin(a) * 140 - 70,
+            spin: a, r: Math.min(9, f.r * .25), life: .65, color: f.color });
+        }
         break;
       case 'burst':
         p.burst(f.x, f.y, f.color, f.n, f.speed, f.size ?? 2.5);
@@ -190,6 +208,12 @@ export class Renderer {
     this.emissionDt = dt;
     this.launcherRecoil *= Math.exp(-dt * 15);
     this.particles.update(dt);
+    for (const s of this.starfalls) s.life -= dt;
+    this.starfalls = this.starfalls.filter(s => s.life > 0);
+    for (const d of this.debris) {
+      d.life -= dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 260 * dt; d.spin += dt * 5;
+    }
+    this.debris = this.debris.filter(d => d.life > 0);
     for (const b of this.bolts) b.life -= dt;
     this.bolts = this.bolts.filter((b) => b.life > 0);
     for (const r of this.rings) r.life -= dt;
@@ -229,11 +253,13 @@ export class Renderer {
 
     this.drawDefenseLine(w);
     this.drawObstacles(w);
+    drawResonance(ctx, w, this.visualTime);
     this.drawZones(w);
     this.drawPickups(w);
-    for (const e of w.enemies) this.drawEnemy(w, e);
+    for (const e of w.enemies) if (e.alive) this.drawEnemy(w, e);
     this.drawBossExtras(w);
     this.drawProjectiles(w);
+    this.drawThreats(w);
     this.drawEffects();
     this.particles.draw(ctx);
     this.drawAim(w);
@@ -304,6 +330,24 @@ export class Renderer {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+
+  private drawThreats(w: World): void {
+    const ctx = this.ctx;
+    ctx.save();
+    for (const e of w.enemies) {
+      if (!e.alive || e.boss || e.def.ai === 'golden' || e.y < DEFENSE_Y - 165) continue;
+      const danger = clamp((e.y - DEFENSE_Y + 165) / 165, 0, 1);
+      const fade = ctx.createLinearGradient(e.x, e.y, e.x, DEFENSE_Y);
+      fade.addColorStop(0, '#ff5d7300'); fade.addColorStop(1, `rgba(255,93,115,${.05 + danger * .12})`);
+      ctx.fillStyle = fade;
+      ctx.beginPath(); ctx.moveTo(e.x, e.y + e.r);
+      ctx.lineTo(e.x + 23, DEFENSE_Y); ctx.lineTo(e.x - 23, DEFENSE_Y); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ff8a96'; ctx.globalAlpha = .45 + danger * .5;
+      ctx.beginPath(); ctx.moveTo(e.x, DEFENSE_Y - 7); ctx.lineTo(e.x - 5, DEFENSE_Y - 14);
+      ctx.lineTo(e.x + 5, DEFENSE_Y - 14); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawObstacles(w: World): void {
@@ -550,6 +594,13 @@ export class Renderer {
     if (r <= 0.5) return;
     const x = e.x;
     const y = e.y;
+    if (e.spawnT < .65 && !this.opts.reducedMotion) {
+      ctx.globalAlpha = (1 - e.spawnT / .65) * .3;
+      const arrival = ctx.createLinearGradient(x, FIELD_TOP, x, y + r);
+      arrival.addColorStop(0, d.color + '00'); arrival.addColorStop(1, d.color);
+      ctx.fillStyle = arrival; ctx.fillRect(x - r * .5, FIELD_TOP, r, Math.max(0, y + r - FIELD_TOP));
+      ctx.globalAlpha = 1;
+    }
     if (e.elite.length) {
       const col = ELITE_MAP[e.elite[0]]?.color ?? '#fff';
       this.drawGlow(x, y, r * 2.6, col, 0.45 + 0.2 * Math.sin(this.visualTime * 5));
@@ -736,6 +787,31 @@ export class Renderer {
 
   private drawEffects(): void {
     const ctx = this.ctx;
+    for (const d of this.debris) {
+      ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.spin); ctx.globalAlpha = d.life / .65;
+      ctx.fillStyle = '#142039'; ctx.strokeStyle = d.color; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-d.r, -d.r * .4); ctx.lineTo(d.r * .8, -d.r);
+      ctx.lineTo(d.r * .4, d.r); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    for (const s of this.starfalls) {
+      const progress = 1 - s.life / .85;
+      for (let i = 0; i < s.pts.length; i += 2) {
+        const x = s.pts[i], y = s.pts[i + 1];
+        ctx.save();
+        const alpha = this.opts.reducedFlashes ? .2 : Math.min(1, s.life * 2);
+        ctx.globalAlpha = alpha;
+        const beam = ctx.createLinearGradient(x - 70, FIELD_TOP, x, y);
+        beam.addColorStop(0, '#bca7ff00'); beam.addColorStop(1, '#bca7ff80');
+        ctx.fillStyle = beam;
+        ctx.beginPath(); ctx.moveTo(x - 90, FIELD_TOP); ctx.lineTo(x - 45, FIELD_TOP);
+        ctx.lineTo(x + 12, y); ctx.lineTo(x - 12, y); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#e8dfff'; ctx.lineWidth = this.opts.reducedFlashes ? 1 : 3;
+        ctx.beginPath(); ctx.moveTo(x - 67, FIELD_TOP); ctx.lineTo(x, y); ctx.stroke();
+        ctx.strokeStyle = '#bca7ff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(x, y, 18 + progress * 50, 7 + progress * 20, 0, 0, TAU); ctx.stroke();
+        ctx.restore();
+      }
+    }
     ctx.globalCompositeOperation = 'lighter';
     for (const b of this.booms) {
       const t = 1 - b.life / 0.32;
@@ -799,7 +875,7 @@ export class Renderer {
     const ctx = this.ctx;
     const res = traceAim(w, 520 + this.opts.previewBounces * 260, this.opts.previewBounces, this.trace);
     const pts = this.trace;
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#ffffff';
     let acc = (this.visualTime * 36) % 13;
     let total = 0;
     for (let i = 2; i < pts.length; i += 2) {
@@ -835,6 +911,17 @@ export class Renderer {
     const core = CORE_MAP[w.cfg.core];
     const ang = Math.atan2(w.aim.dy, w.aim.dx);
     const color = core.id === 'striker' ? '#9aeadb' : core.color;
+    if (w.aim.active && w.hand > 0 && !w.aim.streamed) {
+      const t = clamp(w.aim.holdTime / 1.15, 0, 1);
+      const start = -Math.PI / 2;
+      ctx.lineWidth = 4; ctx.strokeStyle = '#ffe3a330';
+      ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 44, start + TAU * POWER_START / 1.15, start + TAU * POWER_END / 1.15); ctx.stroke();
+      ctx.strokeStyle = w.isPowerWindow() ? '#ffe3a3' : '#8debdc'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 44, start, start + TAU * t); ctx.stroke();
+      const a = start + TAU * t;
+      ctx.fillStyle = w.isPowerWindow() ? '#fff4d6' : '#8debdc';
+      ctx.beginPath(); ctx.arc(LAUNCHER_X + Math.cos(a) * 44, LAUNCHER_Y + Math.sin(a) * 44, 4, 0, TAU); ctx.fill();
+    }
     this.drawGlow(LAUNCHER_X, LAUNCHER_Y, 58, color, w.aim.active ? .65 : .3);
     ctx.strokeStyle = color + '40'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 36, 0, TAU); ctx.stroke();
@@ -883,7 +970,7 @@ export class Renderer {
     const tier = b.kind === 'main' ? effectiveTier(w, b) : 0;
     const tierColor = MOMENTUM_COLORS[tier];
     const [c0, c1] = w.trailColors;
-    const main = evoColor ?? (tier > 0 ? tierColor : c1);
+    const main = evoColor ?? (b.powered ? '#ffe3a3' : tier > 0 ? tierColor : c1);
     const tr = b.trail;
     const railgun = w.build.has('evo_railgun');
     if (tr.length >= 4) {
@@ -929,7 +1016,7 @@ export class Renderer {
     ctx.fill();
     ctx.strokeStyle = '#ffffffa0'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(b.x, b.y, r * .82, Math.PI, Math.PI * 1.65); ctx.stroke();
-    if (tier > 0) {
+    if (tier > 0 || b.powered) {
       ctx.strokeStyle = main; ctx.lineWidth = 1.5;
       const spin = this.visualTime * (2 + tier);
       ctx.beginPath(); ctx.arc(b.x, b.y, r + 4, spin, spin + Math.PI * 1.25); ctx.stroke();
@@ -962,6 +1049,7 @@ export class Renderer {
     for (const b of this.booms) hole(b.x, b.y, b.r * 2.5);
     hole(LAUNCHER_X, LAUNCHER_Y, 160);
     for (const e of w.enemies) if (e.st.burnT > 0) hole(e.x, e.y, 60);
+    for (const n of w.resonance.nodes) hole(n.x, n.y, n.lit ? 90 : 60);
     this.ctx.drawImage(this.dark, 0, 0, W, H);
   }
 
@@ -1015,7 +1103,8 @@ export class Renderer {
     if (!w.director.bossActive && dLeft > 0 && dLeft < 400) {
       ctx.font = `700 11px ${FONT}`;
       ctx.fillStyle = '#e7a88c';
-      ctx.fillText(`BOSS IN ${formatTime(dLeft)}`, W / 2, 44);
+      const anomaly = w.director.eventTime - w.time;
+      ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? `ANOMALY IN ${formatTime(anomaly)}` : `BOSS IN ${formatTime(dLeft)}`, W / 2, 44);
     }
     // combo
     if (w.combo.count >= 3) {
@@ -1044,6 +1133,16 @@ export class Renderer {
       ctx.textAlign = 'left'; ctx.font = `600 9px ${FONT}`; ctx.fillStyle = '#6e929f';
       ctx.fillText(w.arena.name.toUpperCase(), 16, 75);
     }
+    ctx.textAlign = 'right'; ctx.font = `700 10px ${FONT}`;
+    ctx.fillStyle = w.resonance.overdrive > 0 ? '#ffe3a3' : '#bca7ff';
+    const circuit = w.resonance;
+    ctx.fillText(circuit.overdrive > 0 ? `OVERDRIVE / ${Math.ceil(circuit.overdrive)}s` :
+      circuit.nodes.length ? `CIRCUIT ${circuit.lit}/3 / ${Math.ceil(circuit.remaining)}s` : `SIGNAL IN ${Math.max(0, Math.ceil(circuit.cooldown))}s`, W - 88, 75);
+    ctx.textAlign = 'center'; ctx.font = `700 10px ${FONT}`;
+    ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#8ca8bf';
+    ctx.fillText(w.isPowerWindow() ? 'RELEASE / POWER SHOT' : w.aim.active && w.hand > 0 ?
+      w.aim.holdTime < POWER_START ? 'HOLD FOR THE GOLD ARC' : w.aim.streamed ? 'STREAM FIRE' : 'RELEASE / NORMAL SHOT' :
+      circuit.overdrive > 0 ? '+25% DAMAGE / +10% SPEED' : 'LINK 3 SIGNALS / CALL STARFALL', W / 2, H - 33);
     // event
     if (w.event) {
       const ev = EVENT_MAP[w.event.id];
@@ -1075,10 +1174,10 @@ export class Renderer {
     if (lead) {
       const t = momentumTier(lead.momentum);
       if (t > 0) {
-        ctx.textAlign = 'left';
-        ctx.font = `800 12px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.font = `800 10px ${FONT}`;
         ctx.fillStyle = MOMENTUM_COLORS[t];
-        ctx.fillText(`⚡ ${MOMENTUM_NAMES[t].toUpperCase()}`, 14, H - 30);
+        ctx.fillText(MOMENTUM_NAMES[t].toUpperCase(), W / 2, H - 59);
       }
     }
   }

@@ -71,6 +71,22 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
   }
   ctx.restore();
 
+  // A navigational star chart under the floor gives the reactor a sense of scale.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(14, FIELD_TOP, W - 28, DEFENSE_Y - FIELD_TOP); ctx.clip();
+  for (let i = 0; i < 52; i++) {
+    const x = 28 + (i * 173.31) % (W - 56);
+    const y = FIELD_TOP + 22 + (i * 97.73) % (DEFENSE_Y - FIELD_TOP - 44);
+    ctx.fillStyle = i % 7 === 0 ? '#e1eaff40' : accent + '22';
+    ctx.fillRect(x, y, i % 7 === 0 ? 2 : 1, 1);
+    if (i % 7 === 0) ctx.fillRect(x + .5, y - 1, 1, 3);
+  }
+  ctx.strokeStyle = '#aaa8ff0d'; ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.ellipse(270, 395, 105 + i * 39, 155 + i * 49, -.3, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+
   // Armored side rails and inset luminous strips frame the collision boundary.
   for (const x of [0, W - 12]) {
     ctx.fillStyle = '#060d18'; ctx.fillRect(x, FIELD_TOP, 12, FLOOR_Y - FIELD_TOP);
@@ -100,6 +116,18 @@ export function drawArenaAtmosphere(ctx: CanvasRenderingContext2D, arena: ArenaD
   ctx.save();
   ctx.beginPath(); ctx.rect(12, FIELD_TOP, W - 24, DEFENSE_Y - FIELD_TOP); ctx.clip();
   const color = arena.theme.accent;
+  // Broad translucent aurora ribbons, kept behind every combat silhouette.
+  for (let i = 0; i < 2; i++) {
+    const shift = Math.sin(time * .12 + i * 2) * 40;
+    const ribbon = ctx.createLinearGradient(0, 120, W, 650);
+    ribbon.addColorStop(0, color + '00'); ribbon.addColorStop(.5, i ? '#a38bff09' : color + '0c'); ribbon.addColorStop(1, color + '00');
+    ctx.fillStyle = ribbon;
+    ctx.beginPath(); ctx.moveTo(-80 + shift, 160 + i * 95);
+    ctx.bezierCurveTo(170, 230 + i * 110, 300, 550, W + 80, 650 + i * 40);
+    ctx.lineTo(W + 80, 720 + i * 40);
+    ctx.bezierCurveTo(320, 540, 130, 320 + i * 110, -80 + shift, 230 + i * 95);
+    ctx.closePath(); ctx.fill();
+  }
   // Deterministic drifting motes: visual time never enters simulation state.
   for (let i = 0; i < 25; i++) {
     const x = 20 + ((i * 137.51 + Math.sin(time * .2 + i) * 14) % 500 + 500) % 500;
@@ -112,5 +140,13 @@ export function drawArenaAtmosphere(ctx: CanvasRenderingContext2D, arena: ArenaD
   const scan = ctx.createLinearGradient(0, scanY - 60, 0, scanY);
   scan.addColorStop(0, color + '00'); scan.addColorStop(1, color + '09');
   ctx.globalAlpha = 1; ctx.fillStyle = scan; ctx.fillRect(12, scanY - 60, W - 24, 60);
+  ctx.restore();
+  // Moving packets travel along the physical rails, outside the playing field.
+  ctx.save(); ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const y = FIELD_TOP + (time * 95 + i * 177) % (FLOOR_Y - FIELD_TOP - 35);
+    const x = i % 2 ? W - 3 : 3;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 24); ctx.stroke();
+  }
   ctx.restore();
 }

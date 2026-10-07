@@ -23,6 +23,7 @@ Browser smoke test (headless Chrome or Edge, with screenshots and console-error 
 npm run build && npx vite preview --port 4173 &
 node scripts/smoke.mjs          # writes screenshots to smoke-shots/
 node scripts/visual-check.mjs   # responsive layouts, all arenas, motion settings, draw benchmark
+node scripts/resonance-check.mjs # power-shot input, recall controls, circuit and starfall screenshots
 node scripts/talent-check.mjs   # talent allocation, saves, refunds, mobile/desktop layouts
 ```
 
@@ -31,6 +32,11 @@ The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables
 and checks that paused drawing does not accumulate ambient particles.
 
 ## Visual direction
+
+The resonance update adds a celestial pinball layer: three holographic diamond signals, animated
+star charts and aurora ribbons, traveling rail lights, gold power-shot trails, magnetic recall arcs,
+fracturing enemy shells, breach projections, and a sweeping starfall attack with its own synth chord.
+The interface explains shot timing beside the launcher and shows circuit progress and overdrive.
 
 The interface uses a mint-lit kinetic reactor motif, with an animated core on the launch screen,
 layered upgrade cards, segmented hull telemetry, and responsive touch controls. The arenas have
@@ -49,10 +55,30 @@ reduced-motion preference disables decorative movement and shake; Settings also 
 | --- | --- | --- |
 | Aim | Drag anywhere (or pull back in *Slingshot* mode) | Drag with the mouse |
 | Launch | Release | Release |
+| Power shot | Release while the charge dial is gold | Hold 0.55–0.95 seconds, then release |
 | Stream fire | Keep holding while balls return | Same |
+| Recall | Tap ↶ | `R` |
 | Surge | Tap the Surge button when it is charged | `Space` |
 | Pause | ❚❚ button | `Esc` / `P` |
 | Debug panel | Settings → Debug tools | `` ` `` or `?debug` in the URL |
+
+### Resonance combat
+
+- **Power shots:** releasing in the gold window grants +45% damage to that volley and starts each
+  ball with five momentum (scaled by momentum gain). Quick shots still fire immediately.
+  Holding beyond 1.15 seconds streams ordinary shots as balls return.
+- **Tactical recall:** bring all main balls home and choose another angle. Recall resets their
+  momentum, leaves temporary balls in play, and has a ten-second cooldown.
+- **Resonance circuit:** three pass-through diamond signals appear five seconds into the run.
+  Link them in any order within 24 seconds; each signal adds momentum, combo and Surge charge.
+  Linking all three calls **Starfall**, striking the five threats closest to the defense line and
+  clearing enemy projectiles. It also grants seven seconds of +25% damage / +10% speed,
+  two base XP and four hull repair (Bloodless blocks the repair). A fresh circuit arrives after
+  twelve seconds; a missed circuit returns after four. Routes vary with the run seed.
+- **Pacing:** the first squad arrives within roughly two seconds. Arena anomalies start after
+  65 seconds (75 in the tutorial) and recur every 85–105 seconds, outside boss fights.
+
+The pause screen includes a flight manual. Run results count power shots, starfalls and recalls.
 
 ## What's in the vertical slice
 

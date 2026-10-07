@@ -13,7 +13,7 @@ const ELITE_POOL: [string, number][] = [
  * enemies), elites, events and bosses — not just HP inflation.
  */
 export class Director {
-  budget = 0;
+  budget = 2.65;
   next: SquadDef | null = null;
   bossActive = false;
   bossId = '';
@@ -22,7 +22,6 @@ export class Director {
   warned = false;
   eliteTimer: number;
   eventTime: number;
-  eventDone = false;
   miniDone = false;
   goldenTimer = 45;
   endless = false;
@@ -32,7 +31,7 @@ export class Director {
     const tut = !!w.cfg.tutorial;
     this.bossTime = tut ? 330 : 400;
     this.eliteTimer = tut ? 150 : Math.min(110, w.diff.eliteEvery);
-    this.eventTime = tut ? 190 : 200;
+    this.eventTime = tut ? 75 : 65;
   }
 
   get squadsPaused(): boolean {
@@ -95,11 +94,11 @@ export class Director {
         const e = this.spawnElite(Math.min(3, w.diff.eliteModCount + 1), 1.5, 'brute');
         if (e) w.banner('MINI-BOSS', '#ff7ad9', 'A hulking elite arrives');
       }
-      if (!this.eventDone && t >= this.eventTime) {
-        this.eventDone = true;
+      if (t >= this.eventTime && !w.event && !this.squadsPaused) {
         const hostile = ['blood_moon', 'gravity_storm', 'blackout'];
         const pool = w.cfg.difficulty >= 4 ? w.arena.events.filter((e) => hostile.includes(e)) : w.arena.events;
         w.startEvent(w.rng.pick(pool.length ? pool : w.arena.events));
+        this.eventTime = t + w.rng.range(85, 105);
       }
     }
 
@@ -225,7 +224,6 @@ export class Director {
     if (w.diff.secondBoss && this.bossesSpawned === 1) {
       this.bossTime = w.time + 80;
       this.warned = false;
-      this.eventDone = false;
       this.eventTime = w.time + 30;
       w.banner('THE ASSAULT CONTINUES', '#ff7b54', 'A second boss is coming');
       return;

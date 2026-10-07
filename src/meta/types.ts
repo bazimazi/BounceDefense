@@ -68,6 +68,9 @@ export interface Profile {
 }
 
 export interface RunSummary {
+  powerShots?: number;
+  starfalls?: number;
+  recalls?: number;
   arena: string;
   difficulty: number;
   core: string;

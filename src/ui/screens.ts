@@ -28,6 +28,7 @@ export class UI {
   private root: HTMLElement;
   private hudEl: HTMLElement | null = null;
   private surgeBtn: HTMLButtonElement | null = null;
+  private recallBtn: HTMLButtonElement | null = null;
   private hintEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
@@ -107,19 +108,20 @@ export class UI {
     const canAffordResearch = RESEARCH.some((r) => canResearch(p, r.id));
     const canAffordCore = CORES.some((c) => canUnlockCore(p, c.id));
     this.show(h('div', { class: 'screen home' },
-      h('div', { class: 'home-topline' }, h('span', { class: 'eyebrow' }, 'BD / SYSTEM ONLINE'), this.currency()),
+      h('div', { class: 'home-topline' }, h('span', { class: 'eyebrow' }, 'BD / RESONANCE ONLINE'), this.currency()),
       h('div', { class: 'scroll home-content' },
         h('div', { class: 'hero' },
-          h('div', { class: 'eyebrow hero-kicker' }, 'A RICOCHET ROGUELITE'),
+          h('div', { class: 'eyebrow hero-kicker' }, 'PINBALL MEETS COSMIC CHAOS'),
           h('h1', { class: 'title' }, 'BOUNCE', h('br'), h('span', {}, 'DEFENSE')),
           h('div', { class: 'reactor-art', 'aria-hidden': 'true', style: `--core-color:${coreDef.color}` },
             h('div', { class: 'orbit orbit-one' }), h('div', { class: 'orbit orbit-two' }),
             h('div', { class: 'reactor-crosshair' }), h('div', { class: 'reactor-ball' }),
+            h('div', { class: 'signal-orbit' }, h('i'), h('i'), h('i')),
             h('span', { class: 'reactor-coordinate coordinate-left' }, 'KINETIC', h('br'), 'CORE / 01'),
             h('span', { class: 'reactor-coordinate coordinate-right' }, 'POWER', h('br'), '100%'),
           ),
-          h('div', { class: 'subtitle' }, 'One ball. Endless possibilities.'),
-          h('div', { class: 'hero-description' }, 'Find your angle. Break their lines. Build a chain reaction.'),
+          h('div', { class: 'subtitle' }, 'Find your orbit. Bring down the stars.'),
+          h('div', { class: 'hero-description' }, 'Time your shot. Link the signals. Unleash a starfall.'),
         ),
         h('div', { class: 'col' },
           h('button', { class: 'primary big launch-button', onclick: () => { this.click(); p.tutorialDone ? this.runSetup() : this.game.startRun({ arena: 'proving', difficulty: 0, pacts: [] }); } },
@@ -138,7 +140,7 @@ export class UI {
           ) : h('div', { class: 'first-run-guide' },
             h('div', {}, h('b', {}, '01'), h('span', {}, 'DRAG TO AIM')),
             h('div', {}, h('b', {}, '02'), h('span', {}, 'RELEASE TO FIRE')),
-            h('div', {}, h('b', {}, '03'), h('span', {}, 'EVOLVE YOUR CORE')),
+            h('div', {}, h('b', {}, '03'), h('span', {}, 'LINK THE SIGNALS')),
           ),
           p.tutorialDone ? [h('h3', {}, 'Next goals'), this.goalList(nextGoals(p, 3))] : null,
           h('div', { class: 'small muted center', style: 'margin-top:14px' },
@@ -490,17 +492,22 @@ export class UI {
   hud(): void {
     this.clearScreen();
     this.hudEl?.remove();
-    const pause = h('button', { class: 'hudbtn', style: 'right:10px;top:10px', onclick: () => { this.click(); this.game.pause(); } }, '❚❚');
-    const surge = h('button', { class: 'surge', style: 'right:12px;bottom:12px', onclick: () => this.game.world?.activateSurge() }, h('span', {}, 'SURGE')) as HTMLButtonElement;
+    const pause = h('button', { class: 'hudbtn', 'aria-label': 'Pause game', style: 'right:10px;top:10px', onclick: () => { this.click(); this.game.pause(); } }, '❚❚');
+    const surge = h('button', { class: 'surge', 'aria-label': 'Surge (Space)', title: 'Surge / Space', style: 'right:12px;bottom:12px', onclick: () => this.game.world?.activateSurge() }, h('span', {}, 'SURGE')) as HTMLButtonElement;
+    const recall = h('button', { class: 'recall', 'aria-label': 'Recall balls (R)', title: 'Recall / R / 10s cooldown', onclick: () => this.game.world?.activateRecall() },
+      h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, '↶'), h('span', { class: 'recall-label' }, 'RECALL'), h('small', {}, 'R / READY')) as HTMLButtonElement;
     this.surgeBtn = surge;
-    this.hudEl = h('div', { style: 'position:absolute;inset:0;pointer-events:none' }, pause, surge);
-    for (const c of [pause, surge]) c.style.pointerEvents = 'auto';
+    this.recallBtn = recall;
+    this.hudEl = h('div', { style: 'position:absolute;inset:0;pointer-events:none' }, pause, surge, recall);
+    for (const c of [pause, surge, recall]) c.style.pointerEvents = 'auto';
     this.root.append(this.hudEl);
   }
 
   hideHud(): void {
     this.hudEl?.remove();
     this.hudEl = null;
+    this.surgeBtn = null;
+    this.recallBtn = null;
     this.hint(null);
   }
 
@@ -509,10 +516,18 @@ export class UI {
     const frac = w.surge.charge / w.surge.max;
     this.surgeBtn.style.setProperty('--p', `${Math.round(frac * 100)}%`);
     const ready = w.canSurge();
+    this.surgeBtn.disabled = !ready || !this.game.controlsEnabled;
     this.surgeBtn.classList.toggle('ready', ready);
     const label = this.surgeBtn.firstElementChild as HTMLElement;
     const text = w.surge.active > 0 ? 'ACTIVE' : ready ? 'SURGE!' : `${Math.floor(frac * 100)}%`;
     if (label.textContent !== text) label.textContent = text;
+    if (this.recallBtn) {
+      this.recallBtn.disabled = !w.canRecall() || !this.game.controlsEnabled;
+      this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / 10) * 100}%`);
+      const small = this.recallBtn.querySelector('small')!;
+      const status = w.recallCooldown > 0 ? `${Math.ceil(w.recallCooldown)}s` : w.canRecall() ? 'R / READY' : 'R / NO BALLS';
+      if (small.textContent !== status) small.textContent = status;
+    }
   }
 
   hint(text: string | null): void {
@@ -612,6 +627,11 @@ export class UI {
     this.overlay = h('div', { class: 'levelup', style: 'justify-content:flex-start' },
       h('div', { class: 'lvtitle' }, 'PAUSED'),
       h('div', { class: 'scroll col' },
+        h('div', { class: 'combat-guide' },
+          h('b', {}, 'FLIGHT MANUAL'),
+          h('p', {}, 'Power shot: release while the charge dial is gold for +45% ball damage and starting momentum.'),
+          h('p', {}, 'Resonance: hit all three diamond signals before their timer runs out. Starfall strikes up to five threats, clears projectiles, and grants 7 seconds of overdrive.'),
+          h('p', {}, 'Recall [R]: bring your main balls home to choose a better angle. Resets their momentum; 10 second cooldown. Surge [Space]: supercharge your balls.')),
         h('div', { class: 'buildcard' },
           h('div', { class: 'small muted' }, 'CURRENT BUILD'),
           h('div', { class: 'buildname' }, this.game.buildName()),
@@ -680,6 +700,7 @@ export class UI {
           stat('Enemies destroyed', formatNum(s.kills)), stat('Best combo', s.bestCombo),
           stat('Max bounce chain', s.maxBounceChain), stat('Damage dealt', formatNum(s.damageDealt)),
           stat('Bosses defeated', s.bossesDefeated.length), stat('Level', s.level),
+          stat('Power shots', s.powerShots ?? 0), stat('Starfalls', s.starfalls ?? 0), stat('Tactical recalls', s.recalls ?? 0),
         )),
         h('h3', {}, 'Rewards'),
         h('div', { class: 'row wrap', style: 'gap:14px' },

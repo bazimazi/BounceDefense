@@ -21,6 +21,12 @@ try {
   await page.goto(process.env.URL ?? 'http://localhost:4173', { waitUntil: 'networkidle0' });
   for (const [width, height] of [[320, 568], [390, 844], [1440, 1000]]) {
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
+    // Chromium can return before the resize event updates the canvas and UI root.
+    await page.waitForFunction(() => {
+      const root = document.getElementById('ui');
+      const scale = Math.min(innerWidth / 540, innerHeight / 960);
+      return root.clientWidth === Math.floor(540 * scale) && root.clientHeight === Math.floor(960 * scale);
+    });
     await page.evaluate(() => window.game.ui.home());
     await page.locator('.launch-button').wait();
     const layout = await page.evaluate(() => {

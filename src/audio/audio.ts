@@ -112,6 +112,26 @@ export class AudioEngine {
     const p = pitch * (0.97 + Math.random() * 0.06);
     const v = vol;
     switch (name) {
+      case 'resonate':
+        if (!this.voice(.3)) return;
+        this.tone('sine', 660 * p, 660 * p, .25, .18 * v);
+        this.tone('triangle', 1320 * p, 1320 * p, .16, .07 * v, .04);
+        break;
+      case 'power':
+        if (!this.voice(.2)) return;
+        this.tone('triangle', 220, 880, .16, .2 * v);
+        this.hiss(.12, .12 * v, 'highpass', 800, 3200);
+        break;
+      case 'recall':
+        this.tone('sine', 1100, 220, .3, .16 * v);
+        this.tone('triangle', 880, 440, .24, .08 * v, .03);
+        break;
+      case 'starfall':
+        if (!this.voice(.8)) return;
+        [330, 494, 659, 988, 1318].forEach((f, i) => this.tone('sine', f, f * 1.005, .5, .12 * v, i * .055));
+        this.hiss(.65, .2 * v, 'bandpass', 3200, 240);
+        this.tone('sine', 100, 40, .7, .25 * v);
+        break;
       case 'hit':
         if (!this.voice(0.08)) return;
         this.tone('triangle', 520 * p, 240 * p, 0.07, 0.22 * v);
