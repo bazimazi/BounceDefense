@@ -27,9 +27,7 @@ interface Debris { x: number; y: number; vx: number; vy: number; spin: number; r
 export interface RenderOptions {
   shake: boolean;
   damageNumbers: boolean;
-  reducedFlashes: boolean;
   previewBounces: number;
-  reducedMotion: boolean;
 }
 
 const FONT = '"Rubik", "Segoe UI", system-ui, sans-serif';
@@ -56,15 +54,13 @@ export class Renderer {
   private bgArena = '';
   private dark: HTMLCanvasElement | null = null;
   private trace: number[] = [];
-  opts: RenderOptions = { shake: true, damageNumbers: true, reducedFlashes: false, previewBounces: 1, reducedMotion: false };
+  opts: RenderOptions = { shake: true, damageNumbers: true, previewBounces: 1 };
   private launcherRecoil = 0;
   private lastHand = 0;
   private emissionDt = 0;
 
-  private get visualTime(): number { return this.opts.reducedMotion ? 0 : this.time; }
-
   private emits(rate: number): boolean {
-    return !this.opts.reducedMotion && Math.random() < 1 - Math.exp(-rate * this.emissionDt);
+    return Math.random() < 1 - Math.exp(-rate * this.emissionDt);
   }
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -163,7 +159,7 @@ export class Renderer {
       case 'kill':
         p.burst(f.x, f.y, f.color, f.big ? 34 : 12, f.big ? 380 : 240, f.big ? 4.5 : 3, f.big ? 0.8 : 0.5);
         this.rings.push({ x: f.x, y: f.y, r: f.r * 2.2, life: 0.3, max: 0.3, color: f.color });
-        if (!this.opts.reducedMotion) for (let i = 0; i < (f.big ? 9 : 4) && this.debris.length < 160; i++) {
+        for (let i = 0; i < (f.big ? 9 : 4) && this.debris.length < 160; i++) {
           const a = i * 2.4 + f.x;
           this.debris.push({ x: f.x, y: f.y, vx: Math.cos(a) * 140, vy: Math.sin(a) * 140 - 70,
             spin: a, r: Math.min(9, f.r * .25), life: .65, color: f.color });
@@ -185,10 +181,10 @@ export class Renderer {
         if (this.opts.shake) this.shake = Math.min(22, this.shake + f.amt);
         break;
       case 'flash':
-        if (!this.opts.reducedFlashes) this.flash = { color: f.color, a: Math.max(this.flash.a, f.a) };
+        this.flash = { color: f.color, a: Math.max(this.flash.a, f.a) };
         break;
       case 'hurt':
-        if (!this.opts.reducedFlashes) this.hurtFlash = 1;
+        this.hurtFlash = 1;
         p.burst(f.x, DEFENSE_Y, '#ff3b3b', 16, 260, 3, 0.5);
         this.texts.push({ x: f.x, y: DEFENSE_Y - 16, text: `-${Math.round(f.dmg)}`, life: 0.9, max: 0.9, color: '#ff5d73', size: 20, vy: -50 });
         break;
@@ -244,7 +240,7 @@ export class Renderer {
     const k = this.scale * this.dpr;
     ctx.setTransform(k, 0, 0, k, 0, 0);
     this.drawBackground(w);
-    if (w.hand < this.lastHand && !this.opts.reducedMotion) this.launcherRecoil = 1;
+    if (w.hand < this.lastHand) this.launcherRecoil = 1;
     this.lastHand = w.hand;
 
     const sx = this.shake > 0 ? (Math.random() - 0.5) * this.shake : 0;
@@ -253,7 +249,7 @@ export class Renderer {
 
     this.drawDefenseLine(w);
     this.drawObstacles(w);
-    drawResonance(ctx, w, this.visualTime);
+    drawResonance(ctx, w, this.time);
     this.drawZones(w);
     this.drawPickups(w);
     for (const e of w.enemies) if (e.alive) this.drawEnemy(w, e);
@@ -300,7 +296,7 @@ export class Renderer {
       this.bgArena = w.arena.id;
     }
     ctx.drawImage(this.bg, 0, 0, W, H);
-    drawArenaAtmosphere(ctx, w.arena, this.visualTime);
+    drawArenaAtmosphere(ctx, w.arena, this.time);
   }
 
   private drawDefenseLine(w: World): void {
@@ -372,7 +368,7 @@ export class Renderer {
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 7, 0, TAU); ctx.stroke();
           for (let i = 0; i < 3; i++) {
-            const a = this.visualTime * .6 + i * TAU / 3;
+            const a = this.time * .6 + i * TAU / 3;
             ctx.strokeStyle = '#e1ffff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(o.x, o.y, o.r * .74, a, a + .6); ctx.stroke();
           }
@@ -402,7 +398,7 @@ export class Renderer {
             ctx.globalAlpha = 1;
             break;
           }
-          this.drawGlow(o.x, o.y, o.r * 2, '#ff5a1f', 0.35 + 0.15 * Math.sin(this.visualTime * 6));
+          this.drawGlow(o.x, o.y, o.r * 2, '#ff5a1f', 0.35 + 0.15 * Math.sin(this.time * 6));
           ctx.fillStyle = '#c0331a';
           ctx.beginPath();
           ctx.arc(o.x, o.y, o.r, 0, TAU);
@@ -456,7 +452,7 @@ export class Renderer {
           ctx.strokeStyle = 'rgba(199,125,255,0.35)';
           ctx.lineWidth = 1.5;
           for (let i = 0; i < 3; i++) {
-            const r = ((this.visualTime * 30 + i * (o.r / 3)) % o.r) + 4;
+            const r = ((this.time * 30 + i * (o.r / 3)) % o.r) + 4;
             if (r >= o.r) continue;
             ctx.globalAlpha = 1 - r / o.r;
             ctx.beginPath();
@@ -513,7 +509,7 @@ export class Renderer {
           ctx.fillRect(p.x - 2, p.y - 6, 4, 12);
           break;
         case 'mystery':
-          this.drawGlow(p.x, p.y, 22, '#ffffff', 0.6 + 0.3 * Math.sin(this.visualTime * 8));
+          this.drawGlow(p.x, p.y, 22, '#ffffff', 0.6 + 0.3 * Math.sin(this.time * 8));
           ctx.fillStyle = '#fff';
           ctx.font = `bold 14px ${FONT}`;
           ctx.textAlign = 'center';
@@ -589,12 +585,12 @@ export class Renderer {
   private drawEnemy(w: World, e: Enemy): void {
     const ctx = this.ctx;
     const d = e.def;
-    const spawn = this.opts.reducedMotion ? 1 : easeOutBack(clamp(e.spawnT / .35, 0, 1));
-    const r = e.r * spawn * (1 + (this.opts.reducedMotion ? 0 : e.flash * .7));
+    const spawn = easeOutBack(clamp(e.spawnT / .35, 0, 1));
+    const r = e.r * spawn * (1 + e.flash * .7);
     if (r <= 0.5) return;
     const x = e.x;
     const y = e.y;
-    if (e.spawnT < .65 && !this.opts.reducedMotion) {
+    if (e.spawnT < .65) {
       ctx.globalAlpha = (1 - e.spawnT / .65) * .3;
       const arrival = ctx.createLinearGradient(x, FIELD_TOP, x, y + r);
       arrival.addColorStop(0, d.color + '00'); arrival.addColorStop(1, d.color);
@@ -603,7 +599,7 @@ export class Renderer {
     }
     if (e.elite.length) {
       const col = ELITE_MAP[e.elite[0]]?.color ?? '#fff';
-      this.drawGlow(x, y, r * 2.6, col, 0.45 + 0.2 * Math.sin(this.visualTime * 5));
+      this.drawGlow(x, y, r * 2.6, col, 0.45 + 0.2 * Math.sin(this.time * 5));
     }
     if (d.ai === 'golden') this.drawGlow(x, y, r * 3, '#ffd84a', 0.8);
     if (d.ai === 'warden') {
@@ -618,12 +614,12 @@ export class Renderer {
     if (d.ai === 'magnet') {
       ctx.strokeStyle = 'rgba(255,153,80,0.22)';
       ctx.lineWidth = 1.5;
-      const rr = 150 - ((this.visualTime * 60) % 120);
+      const rr = 150 - ((this.time * 60) % 120);
       ctx.beginPath();
       ctx.arc(x, y, Math.max(r, rr), 0, TAU);
       ctx.stroke();
     }
-    const rot = d.shape === 'star' ? this.visualTime * 1.5 : 0;
+    const rot = d.shape === 'star' ? this.time * 1.5 : 0;
     this.shapePath(d.shape, x + 1, y + 6, r, rot);
     ctx.fillStyle = '#00000065'; ctx.fill();
     this.shapePath(d.shape, x, y, r, rot);
@@ -632,7 +628,7 @@ export class Renderer {
     const body = ctx.createLinearGradient(x - r, y - r, x + r * .6, y + r);
     body.addColorStop(0, '#f0ffff'); body.addColorStop(.15, color);
     body.addColorStop(.6, color); body.addColorStop(1, '#172134');
-    ctx.fillStyle = e.flash > .02 && !this.opts.reducedFlashes ? '#ffffff' : body;
+    ctx.fillStyle = e.flash > .02 ? '#ffffff' : body;
     ctx.fill();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = color + 'aa';
@@ -649,7 +645,7 @@ export class Renderer {
     }
     if (d.material === 'energy' || d.shape === 'ring') {
       ctx.strokeStyle = color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(x, y, r * .48, this.visualTime * 2, this.visualTime * 2 + TAU * .72); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, r * .48, this.time * 2, this.time * 2 + TAU * .72); ctx.stroke();
     }
     // Re-select the silhouette so elemental outlines follow the outer shell.
     this.shapePath(d.shape, x, y, r, rot);
@@ -675,7 +671,7 @@ export class Renderer {
     if (!e.boss && r > 9) {
       ctx.fillStyle = '#08121f';
       roundRect(ctx, x - r * .55, y - r * .08, r * 1.1, r * .42, r * .14); ctx.fill();
-      const blink = !this.opts.reducedMotion && (this.time + e.id * .73) % 4.7 > 4.55;
+      const blink = (this.time + e.id * .73) % 4.7 > 4.55;
       const eyeH = r * (blink ? .045 : .15);
       ctx.fillStyle = '#f3fffa';
       ctx.fillRect(x - r * .34, y + r * .04, r * .22, eyeH);
@@ -723,7 +719,7 @@ export class Renderer {
     const ctx = this.ctx;
     this.drawGlow(e.x, e.y, e.r * 2.2, e.def.color, 0.4);
     for (let i = 0; i < 3; i++) {
-      const a = -this.visualTime * .35 + i * TAU / 3;
+      const a = -this.time * .35 + i * TAU / 3;
       ctx.strokeStyle = e.def.color + '90'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 10, a, a + 1.25); ctx.stroke();
     }
@@ -741,7 +737,7 @@ export class Renderer {
       ctx.strokeStyle = e.t1 > 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,153,80,0.3)';
       ctx.lineWidth = 2;
       for (let i = 0; i < 3; i++) {
-        const rr = e.t1 > 0 ? 320 * (1 - e.t1 / 0.8) : 320 - ((this.visualTime * 90 + i * 100) % 300);
+        const rr = e.t1 > 0 ? 320 * (1 - e.t1 / 0.8) : 320 - ((this.time * 90 + i * 100) % 300);
         ctx.beginPath();
         ctx.arc(e.x, e.y, Math.max(e.r, rr), 0, TAU);
         ctx.stroke();
@@ -798,14 +794,14 @@ export class Renderer {
       for (let i = 0; i < s.pts.length; i += 2) {
         const x = s.pts[i], y = s.pts[i + 1];
         ctx.save();
-        const alpha = this.opts.reducedFlashes ? .2 : Math.min(1, s.life * 2);
+        const alpha = Math.min(1, s.life * 2);
         ctx.globalAlpha = alpha;
         const beam = ctx.createLinearGradient(x - 70, FIELD_TOP, x, y);
         beam.addColorStop(0, '#bca7ff00'); beam.addColorStop(1, '#bca7ff80');
         ctx.fillStyle = beam;
         ctx.beginPath(); ctx.moveTo(x - 90, FIELD_TOP); ctx.lineTo(x - 45, FIELD_TOP);
         ctx.lineTo(x + 12, y); ctx.lineTo(x - 12, y); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = '#e8dfff'; ctx.lineWidth = this.opts.reducedFlashes ? 1 : 3;
+        ctx.strokeStyle = '#e8dfff'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(x - 67, FIELD_TOP); ctx.lineTo(x, y); ctx.stroke();
         ctx.strokeStyle = '#bca7ff'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.ellipse(x, y, 18 + progress * 50, 7 + progress * 20, 0, 0, TAU); ctx.stroke();
@@ -876,7 +872,7 @@ export class Renderer {
     const res = traceAim(w, 520 + this.opts.previewBounces * 260, this.opts.previewBounces, this.trace);
     const pts = this.trace;
     ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#ffffff';
-    let acc = (this.visualTime * 36) % 13;
+    let acc = (this.time * 36) % 13;
     let total = 0;
     for (let i = 2; i < pts.length; i += 2) {
       const x0 = pts[i - 2];
@@ -901,7 +897,7 @@ export class Renderer {
       ctx.strokeStyle = '#ffe066';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(res.enemy.x, res.enemy.y, res.enemy.r + 6 + Math.sin(this.visualTime * 10) * 2, 0, TAU);
+      ctx.arc(res.enemy.x, res.enemy.y, res.enemy.r + 6 + Math.sin(this.time * 10) * 2, 0, TAU);
       ctx.stroke();
     }
   }
@@ -926,7 +922,7 @@ export class Renderer {
     ctx.strokeStyle = color + '40'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 36, 0, TAU); ctx.stroke();
     for (let i = 0; i < 8; i++) {
-      const a = i * TAU / 8 + this.visualTime * .15;
+      const a = i * TAU / 8 + this.time * .15;
       ctx.strokeStyle = color + (w.aim.active ? 'bb' : '66'); ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 30, a, a + .35); ctx.stroke();
     }
@@ -949,7 +945,7 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 7 + (w.aim.active ? Math.sin(this.visualTime * 5) : 0), 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 7 + (w.aim.active ? Math.sin(this.time * 5) : 0), 0, TAU); ctx.fill();
     ctx.fillStyle = '#ecfff7';
     ctx.beginPath(); ctx.arc(LAUNCHER_X - 2, LAUNCHER_Y - 2, 3, 0, TAU); ctx.fill();
     // balls in hand
@@ -1002,7 +998,7 @@ export class Renderer {
       ribbon(b.r * .22);
       ctx.globalAlpha = 1;
     }
-    const r = b.r * (1 + (this.opts.reducedMotion ? 0 : b.pulse * 0.25));
+    const r = b.r * (1 + b.pulse * 0.25);
     this.drawGlow(b.x, b.y, r * (3 + tier * 0.5), main, b.kind === 'main' ? 0.9 : 0.5);
     ctx.fillStyle = '#0a0612';
     ctx.beginPath();
@@ -1018,7 +1014,7 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(b.x, b.y, r * .82, Math.PI, Math.PI * 1.65); ctx.stroke();
     if (tier > 0 || b.powered) {
       ctx.strokeStyle = main; ctx.lineWidth = 1.5;
-      const spin = this.visualTime * (2 + tier);
+      const spin = this.time * (2 + tier);
       ctx.beginPath(); ctx.arc(b.x, b.y, r + 4, spin, spin + Math.PI * 1.25); ctx.stroke();
     }
     if (tier >= 3 && this.emits(30)) this.particles.spawn(b.x, b.y, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, 0.3, 3, tierColor, 2);
@@ -1116,7 +1112,7 @@ export class Renderer {
       // combo
       if (w.combo.count >= 3) {
         const c = Math.floor(w.combo.count);
-        const pulse = this.opts.reducedMotion ? 1 : 1 + Math.max(0, w.combo.timer - w.build.stats.comboWindow + 0.15) * 3;
+        const pulse = 1 + Math.max(0, w.combo.timer - w.build.stats.comboWindow + 0.15) * 3;
         ctx.textAlign = 'right';
         ctx.fillStyle = c >= 100 ? '#ff7ad9' : c >= 50 ? '#ffb13b' : c >= 25 ? '#ffe066' : '#ffffff';
         ctx.font = `900 ${Math.round(24 * pulse)}px ${FONT}`;

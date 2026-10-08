@@ -51,7 +51,6 @@ export class Game {
     const onResize = () => this.ui.layout(this.renderer.resize());
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
-    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => this.applySettings());
     onResize();
     this.bindInput();
     this.applySettings();
@@ -75,12 +74,8 @@ export class Game {
   applySettings(): void {
     const s = this.profile.settings;
     this.audio.setVolumes(s.sfx, s.music);
-    const reducedMotion = s.reducedFlashes || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.renderer.opts.shake = s.shake && !reducedMotion;
+    this.renderer.opts.shake = s.shake;
     this.renderer.opts.damageNumbers = s.damageNumbers;
-    this.renderer.opts.reducedFlashes = s.reducedFlashes;
-    this.renderer.opts.reducedMotion = reducedMotion;
-    document.documentElement.toggleAttribute('data-reduced-motion', reducedMotion);
     this.renderer.opts.previewBounces = this.flags().includes('scope') ? 2 : 1;
     const wantDebug = s.debug || new URLSearchParams(location.search).has('debug');
     if (wantDebug && !this.debugEl) {
@@ -135,8 +130,8 @@ export class Game {
     this.acc = 0;
     this.slow = { t: 0, scale: 1 };
     this.tut = { launched: false, t: 0, eliteHint: 0, surgeHinted: false, holdHinted: false, idle: 0 };
-    this.ui.hud();
     const w = this.world;
+    this.ui.beginRun(w);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
       if (victory && !w.director.endless) this.ui.victoryChoice(w);
@@ -159,15 +154,21 @@ export class Game {
   }
 
   pause(): void {
-    if (this.mode !== 'run' || !this.world || this.paused) return;
+    if (this.mode !== 'run' || !this.world) return;
     this.paused = true;
     this.world.cancelAim();
+    if (this.pointer.id >= 0 && this.canvas.hasPointerCapture(this.pointer.id)) this.canvas.releasePointerCapture(this.pointer.id);
+    this.pointer.id = -1;
     this.ui.pauseMenu(this.world);
   }
 
   resume(): void {
+    if (!this.world) return;
     this.paused = false;
     this.last = performance.now();
+    this.ui.hud();
+    if (this.world.state === 'levelup') this.ui.levelUp(this.world);
+    if (this.world.state === 'over' && this.world.victory && !this.world.director.endless) this.ui.victoryChoice(this.world);
   }
 
   abandonRun(): void {
@@ -247,12 +248,10 @@ export class Game {
     c.addEventListener('pointercancel', up);
     window.addEventListener('keydown', (e) => {
       const w = this.world;
-      if (e.code === 'Escape' || e.code === 'KeyP') {
-        if (this.paused) {
-          this.ui.clearScreen();
-          this.ui.hud();
-          this.resume();
-        } else this.pause();
+      if (e.code === 'Escape' || (e.code === 'KeyP' && w)) {
+        e.preventDefault();
+        if (!e.repeat) this.ui.back();
+        return;
       }
       if (e.code === 'Space' && w && !this.paused && w.state === 'playing') {
         e.preventDefault();
@@ -307,7 +306,7 @@ export class Game {
     }
 
     const drawW = this.mode === 'run' ? this.world : this.demo;
-    if (drawW) this.renderer.draw(drawW, this.mode === 'run');
+    if (drawW) this.renderer.draw(drawW, this.mode === 'run' && this.ui.arenaHudVisible);
 
     if (this.mode === 'run' && this.world) {
       this.ui.updateHud(this.world);
@@ -322,7 +321,7 @@ export class Game {
       if (f.t === 'sfx') {
         if (isRun) this.audio.play(f.name, f.pitch, f.vol);
       } else if (f.t === 'slowmo') {
-        if (isRun && !this.profile.settings.reducedFlashes) this.slow = { t: f.dur, scale: f.scale };
+        if (isRun) this.slow = { t: f.dur, scale: f.scale };
       } else if (f.t === 'text' && isRun && w.cfg.tutorial && f.text.startsWith('ELITE')) {
         this.tut.eliteHint = 4;
         this.renderer.handleFx(f);

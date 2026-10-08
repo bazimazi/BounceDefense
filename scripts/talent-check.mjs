@@ -20,13 +20,16 @@ try {
   await page.goto(process.env.URL ?? 'http://localhost:4173', { waitUntil: 'networkidle0' });
   await page.waitForFunction(() => !!window.game);
   const button = async text => {
-    const handle = await page.evaluateHandle(text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text)), text);
+    await page.waitForFunction(() => !window.game.ui.navigation.busy);
+    await page.waitForFunction(text => [...document.querySelectorAll('button')].some(b => b.textContent.includes(text) && getComputedStyle(b).visibility !== 'hidden' && b.getBoundingClientRect().height > 0), {}, text);
+    const handle = await page.evaluateHandle(text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text) && getComputedStyle(b).visibility !== 'hidden' && b.getBoundingClientRect().height > 0), text);
     assert(await handle.evaluate(b => !!b && !b.disabled), `Expected enabled button: ${text}`);
     await handle.asElement().click();
     await handle.dispose();
   };
   await button('Talents');
   assert.equal(await page.$eval('.talent-points', el => el.textContent), '3 points available');
+  await page.click('#talent-bankcraft');
   await button('Learn rank');
   await button('Apply talents');
   assert.equal(await page.evaluate(() => window.game.profile.talents.bankcraft), 1);
@@ -56,7 +59,10 @@ try {
   assert.equal(await page.$eval('#talent-precision .talent-rank', el => el.textContent), '0/2');
   assert.equal(await page.$eval('#talent-banked_power .talent-rank', el => el.textContent), '0/1');
   assert.equal(await page.evaluate(() => window.game.profile.talents.banked_power), 1);
-  await page.click('button[aria-label^="Back;"]');
+  await page.click('button[aria-label="Back"]');
+  await page.waitForFunction(() => !window.game.ui.navigation.busy);
+  await page.click('button[aria-label="Back"]');
+  await button('Discard changes');
   await button('Talents');
   assert.equal(await page.$eval('#talent-banked_power .talent-rank', el => el.textContent), '1/1');
   await page.click('#talent-banked_power');
@@ -81,11 +87,14 @@ try {
   // Saved talents are included at launch and can be inspected without editing in pause.
   await page.evaluate(() => window.game.ui.runSetup());
   await button('Edit talents');
-  await page.click('button[aria-label^="Back;"]');
+  await page.click('button[aria-label="Back"]');
+  await page.waitForFunction(() => !window.game.ui.navigation.busy);
   assert.equal(await page.$eval('.topbar h2', el => el.textContent), 'New Run');
   await button('LAUNCH');
   assert.equal(await page.evaluate(() => window.game.world.talents.banked_power), 1);
   await page.evaluate(() => window.game.pause());
+  await button('Talents');
+  await page.waitForFunction(() => document.querySelector('.deck')?.dataset.section === '2');
   assert(await page.$eval('.levelup', el => el.textContent.includes('Banked Power')));
   assert.deepEqual(errors, []);
   console.log('Talent browser checks passed: allocation, capstone, refunds, draft discard, save/reload, launch, pause, desktop and 390/320px layouts.');

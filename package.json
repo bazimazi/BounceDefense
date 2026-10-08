@@ -15,7 +15,11 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:ui": "node scripts/ui-audit.mjs",
+    "test:ui": "node scripts/ui-engines.mjs",
+    "test:ui:layout": "node --import tsx scripts/ui-audit.mjs",
+    "test:ui:flow": "node scripts/game-flow.mjs",
+    "test:ui:back": "node scripts/back-check.mjs",
+    "test:ui:motion": "node scripts/motion-check.mjs",
     "test:watch": "vitest",
     "sim": "tsx scripts/simulate.ts"
   },

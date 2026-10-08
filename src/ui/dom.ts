@@ -19,6 +19,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
     }
   }
   append(el, children);
+  if (attrs.onclick && !['button', 'a', 'input', 'label'].includes(tag)) {
+    el.setAttribute('role', 'button'); el.tabIndex = 0;
+    el.addEventListener('keydown', event => {
+      const e = event as KeyboardEvent;
+      if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); el.click(); }
+    });
+  }
   return el;
 }
 

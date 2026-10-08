@@ -128,12 +128,14 @@ describe('save system', () => {
   });
 
   it('migrates old saves and fills missing fields', () => {
-    const old = { version: 0, gold: 500, loadout: { core: 'pyro', shell: 'shell_std', impact: 'impact_std', momentum: 'mom_std' } };
+    const old = { version: 0, gold: 500, loadout: { core: 'pyro', shell: 'shell_std', impact: 'impact_std', momentum: 'mom_std' },
+      settings: { sfx: .25, shake: false, obsoleteEffect: true } };
     const p = migrate(old);
     expect(p.coins).toBe(500);
     expect(p.loadout.trail).toBe('classic');
     expect(p.stats.runs).toBe(0);
     expect(p.unlockedCores).toContain('striker');
+    expect(p.settings).toEqual({ ...defaultProfile().settings, sfx: .25, shake: false });
   });
 
   it('recovers from a corrupted save using the backup', () => {

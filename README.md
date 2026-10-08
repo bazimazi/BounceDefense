@@ -22,21 +22,47 @@ Browser smoke test (headless Chrome or Edge, with screenshots and console-error 
 ```bash
 npm run build && npx vite preview --port 4173 &
 node scripts/smoke.mjs          # writes screenshots to smoke-shots/
-node scripts/visual-check.mjs   # responsive layouts, all arenas, motion settings, draw benchmark
+node scripts/visual-check.mjs   # responsive layouts, all arenas, draw benchmark
 node scripts/resonance-check.mjs # power-shot input, recall controls, circuit and starfall screenshots
 node scripts/talent-check.mjs   # talent allocation, saves, refunds, mobile/desktop layouts
-npm run test:ui                # Playwright audit: all menus, overlays and HUD at seven viewport sizes
+npx playwright-core install chromium firefox webkit # install the three test engines once
+npm run test:ui                # all three engines: every menu/category/page plus gameplay flows
+npm run test:ui:back           # Back/forward, dialogs, drafts, paused run and reload (ENGINE selects browser)
+npm run test:ui:motion         # live transitions, selections and overlays
 ```
 
 The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables. It captures
 320px, 390px and desktop home screens plus seeded enemy/boss fixtures in all three arenas,
 and checks that paused drawing does not accumulate ambient particles.
 
-The Playwright UI audit uses the same environment variables and writes screenshots, contact sheets,
-and a layout report to `smoke-shots/ui-audit/`. It checks currency rows, clipping, preset labels,
-stat collisions, reachable dialogs, and combat text/control overlaps from 320px phones to landscape
-and desktop layouts. It also verifies Settings switches, keyboard/drag volume controls, aim selection,
-and saved preferences after a reload. Set `AUDIT_ONLY=1` to record findings without failing the run.
+The Playwright suite runs in Chromium, Firefox and WebKit against dev or production preview (`URL`
+defaults to `http://localhost:4173`). It saves every card page, manageable contact sheets, a layout
+report and functional results under `smoke-shots/ui-audit/<engine>/`. Seven viewport sizes cover
+small phones, tablet, desktop and phone landscape. Both locked and fully discovered profiles are
+reviewed for overflow, scrolling menus, clipped actions, currencies, stats and combat HUD collisions.
+Real touch, mouse and keyboard checks cover purchases, presets, research prerequisites, talent
+drafts, saved settings, launch/recall/surge, pause/resume, consecutive upgrade choices, reroll/banish,
+Daily Seed, victory/Endless, rewards, and reset/abandon dialogs. Swipe handlers are additionally
+checked with Pointer Events. Set `ENGINE=chromium|firefox|webkit` to run one engine or `SIZES=320x568;568x320`
+to narrow the layout audit. `SHOTS` changes the output root; `AUDIT_ONLY=1` records layout findings
+without failing; `OVERLAYS_ONLY=1` reviews the run overlays and HUD. The menus use category tabs, short pages and fixed actions instead of long lists;
+talent details open in a dismissible sheet.
+
+Navigation uses directional page slides, staggered card entrances, moving tab highlights and
+selection pulses. Purchases animate the changed item and wallet; talent sheets and run overlays
+slide in and out. Input and game state update immediately during transitions, and departing views
+cannot intercept clicks or focus. The motion check covers the live effects, rapid navigation,
+and card pagination while animated in portrait and landscape. Animations are always enabled.
+
+Back uses one navigation path for the on-screen arrow, browser/Android browser Back, Escape (P during a run),
+and a webview's `backbutton` event. It dismisses the top dialog or talent sheet first, confirms
+discarding an unapplied talent draft, and returns to the page that opened it. During a run,
+Back pauses; Back from Pause resumes, preserving pending upgrades and victory choices. Home
+keeps the browser/host's normal exit behavior. Finished runs and reloads retire their old history,
+so Forward cannot resurrect a run or claim its rewards again. `test:ui:back` exercises these paths
+with real history traversal at phone portrait and landscape sizes.
+A native wrapper can call `game.ui.back()` (false at Home), or forward a cancelable
+`backbutton` event and handle its own exit when the event is not consumed.
 
 ## Visual direction
 
@@ -52,9 +78,8 @@ in The Foundry, and orbital contours in Void Rift.
 
 Combat uses shaded enemy shells and visors, material details, dimensional ball cores, tapered
 energy trails, launcher recoil, rotating bumper mechanisms, ricochet rings, and velocity-stretched
-sparks. Ambient emissions are frame-rate independent and stop while paused. The operating system's
-reduced-motion preference disables decorative movement and shake; Settings also offers
-**Reduce flashes & motion**. All artwork remains procedural, with no downloaded assets or new dependencies.
+sparks. Ambient emissions are frame-rate independent and stop while paused.
+All artwork remains procedural, with no downloaded assets or new dependencies.
 
 ### Controls
 

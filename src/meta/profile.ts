@@ -33,7 +33,7 @@ export function defaultProfile(): Profile {
     },
     cleared: {},
     bossKills: {},
-    settings: { sfx: 0.8, music: 0.5, shake: true, damageNumbers: true, reducedFlashes: false, aimMode: 'direct', debug: false },
+    settings: { sfx: 0.8, music: 0.5, shake: true, damageNumbers: true, aimMode: 'direct', debug: false },
     tutorialDone: false,
     runsSinceUnlock: 0,
   };
@@ -75,6 +75,10 @@ export function migrate(raw: unknown): Profile {
     if (isObj(data.loadout) && !data.loadout.trail) data.loadout = { ...data.loadout, trail: 'classic' };
   }
   const p = mergeDefaults(base, data);
+  // Keep only supported settings when loading an older profile.
+  for (const key of Object.keys(p.settings)) {
+    if (!(key in base.settings)) Reflect.deleteProperty(p.settings, key);
+  }
   p.version = SAVE_VERSION;
   p.talents = normalizeTalents(p.talents, talentProgress(p).total);
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');

@@ -11,7 +11,6 @@ export interface Settings {
   music: number;
   shake: boolean;
   damageNumbers: boolean;
-  reducedFlashes: boolean;
   aimMode: 'direct' | 'slingshot';
   debug: boolean;
 }

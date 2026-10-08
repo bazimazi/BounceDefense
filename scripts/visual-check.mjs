@@ -72,11 +72,6 @@ try {
     return { before, after: r.particles.n };
   });
   assert.equal(pauseCheck.before, pauseCheck.after, 'Paused renderer emitted particles');
-  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
-  await page.waitForFunction(() => window.game.renderer.opts.reducedMotion);
-  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-reduced-motion')), true);
-  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
-  await page.waitForFunction(() => !window.game.renderer.opts.reducedMotion);
 
   const benchmark = await page.evaluate(() => {
     const g = window.game, w = g.world, r = g.renderer;
@@ -92,7 +87,7 @@ try {
     return { enemies: w.enemies.length, medianDrawMs: times[60], p95DrawMs: times[114] };
   });
   assert.deepEqual(errors, [], 'Browser errors');
-  console.log(JSON.stringify({ layouts: 'passed', arenas: 3, pausedParticles: 'passed', reducedMotion: 'passed', benchmark, errors }, null, 2));
+  console.log(JSON.stringify({ layouts: 'passed', arenas: 3, pausedParticles: 'passed', benchmark, errors }, null, 2));
 } finally {
   await browser.close();
 }

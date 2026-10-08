@@ -21,10 +21,15 @@ import { bar, h } from './dom';
 import { talentScreen } from './talents';
 import { TALENTS, talentSpent } from '../data/talents';
 import { talentProgress } from '../meta/talents';
+import { createDeck, deckSections, type Deck, type DeckState } from './deck';
+import { Navigation } from './navigation';
+import { cancelWithin, enter, feedback, retire, revealItems, revealView, tabFeedback, type MotionDirection } from './motion';
+import { homeIcon } from './home-icons';
 
 const RARITY_LABEL = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
 
 export class UI {
+  readonly navigation = new Navigation();
   private root: HTMLElement;
   private hudEl: HTMLElement | null = null;
   private surgeBtn: HTMLButtonElement | null = null;
@@ -33,12 +38,25 @@ export class UI {
   private hintEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
+  private screenDeck: Deck | null = null;
+  private overlayDeck: Deck | null = null;
+  private deckStates = new Map<string, DeckState>();
   private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>() };
   private codexTab = 'balls';
   private banishMode = false;
+  private interactionKey: string | null = null;
 
   constructor(root: HTMLElement, private game: Game) {
     this.root = root;
+    root.addEventListener('click', event => {
+      if (!(event.target instanceof Element)) return;
+      const control = event.target.closest<HTMLElement>('button, [role="button"]');
+      if (!control || control.matches(':disabled')) return;
+      this.interactionKey = event.target.closest<HTMLElement>('[data-motion-key]')?.dataset.motionKey ?? null;
+      queueMicrotask(() => {
+        if (root.contains(control) && !control.getAnimations().some(animation => animation.id === 'ui:feedback')) feedback(control);
+      });
+    }, true);
   }
 
   layout(rect: { x: number; y: number; w: number; h: number }): void {
@@ -52,17 +70,90 @@ export class UI {
     return this.game.profile;
   }
 
+  get arenaHudVisible(): boolean {
+    return !this.screenEl && !this.overlay;
+  }
+
   private click(): void {
     this.game.audio.play('click');
   }
 
+  private get motionDirection(): MotionDirection {
+    return this.navigation.direction === 'back' ? -1 : 1;
+  }
+
   private show(el: HTMLElement): void {
+    this.closeOverlay();
+    if (this.screenEl === el) return;
+    const same = this.screenEl?.dataset.view === this.navigation.key;
+    const oldTab = this.screenEl?.querySelector('.tabs .on');
+    const oldIndex = oldTab ? [...oldTab.parentElement!.children].indexOf(oldTab) : -1;
+    const oldTabRect = oldTab?.getBoundingClientRect();
+    const tab = el.querySelector('.tabs .on');
+    const index = tab ? [...tab.parentElement!.children].indexOf(tab) : -1;
+    const tabChanged = index !== oldIndex;
+    const interactionKey = this.interactionKey; this.interactionKey = null;
+    const walletChanged = this.screenEl?.querySelector('.wallet')?.textContent !== el.querySelector('.wallet')?.textContent;
+    if (!same) retire(this.screenEl, 'page', this.motionDirection);
+    this.screenDeck?.dispose();
+    cancelWithin(this.screenEl);
     this.screenEl?.remove();
     this.screenEl = el;
+    el.dataset.view = this.navigation.key;
     this.root.append(el);
+    this.screenDeck = this.prepareDeck(el, !same || tabChanged);
+    if (same) {
+      const content = el.querySelector<HTMLElement>('.deck-content, .talent-forest');
+      if (content && tabChanged) enter(content, 'content', index > oldIndex ? 1 : -1);
+      const tabs = el.querySelector<HTMLElement>('.tabs');
+      if (tabs) tabFeedback(tabs, oldTabRect);
+      // The deck mounts its visible cards on the next frame. Pulse the actual changed choice.
+      requestAnimationFrame(() => {
+        if (this.screenEl !== el) return;
+        const target = interactionKey ? el.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(interactionKey)}"]`) : null;
+        feedback(target ?? el.querySelector('.selected, .aim-option[aria-pressed="true"]'));
+      });
+      feedback(el.querySelector('.setup-footer'));
+      if (walletChanged) feedback(el.querySelector('.wallet'));
+    } else {
+      enter(el, 'page', this.motionDirection);
+      revealView(el);
+    }
+  }
+
+  private showOverlay(el: HTMLElement, key: string): void {
+    const same = this.overlay?.dataset.view === key;
+    if (!same) retire(this.overlay, 'panel', 0);
+    this.overlayDeck?.dispose();
+    cancelWithin(this.overlay);
+    this.overlay?.remove();
+    this.overlay = el; el.dataset.view = key;
+    this.root.append(el);
+    this.overlayDeck = this.prepareDeck(el);
+    const content = same ? el.querySelector<HTMLElement>('.deck-content') : el;
+    if (content) enter(content, same ? 'content' : 'panel', 0);
+    if (same) feedback(el.querySelector('.offer-actions'));
+    else revealView(el);
+  }
+
+  private prepareDeck(el: HTMLElement, animateInitial = true): Deck | null {
+    if (el.matches('.home, .talent-screen')) return null;
+    const source = el.querySelector<HTMLElement>(':scope > .scroll, :scope > .offer-list');
+    if (!source) return null;
+    const title = el.querySelector('h2, .lvtitle, .result-title')?.textContent ?? 'Menu';
+    const key = `${title}:${el.querySelector('.tabs .on')?.textContent ?? ''}`;
+    const state = this.deckStates.get(key) ?? { section: 0, page: 0 };
+    this.deckStates.set(key, state);
+    const deck = createDeck(deckSections(source), state, source.className.replace(/\bscroll\b|\bcol\b/g, '').trim(), animateInitial);
+    source.replaceWith(deck.element);
+    el.classList.add('paged-screen');
+    return deck;
   }
 
   clearScreen(): void {
+    retire(this.screenEl, 'page', this.motionDirection);
+    cancelWithin(this.screenEl);
+    this.screenDeck?.dispose(); this.screenDeck = null;
     this.screenEl?.remove();
     this.screenEl = null;
   }
@@ -70,7 +161,8 @@ export class UI {
   toast(text: string): void {
     const t = h('div', { class: 'toast' }, text);
     this.root.append(t);
-    setTimeout(() => t.remove(), 1800);
+    enter(t, 'notice', 0);
+    setTimeout(() => { retire(t, 'notice', 0); cancelWithin(t); t.remove(); }, 1800);
   }
 
   private currency(): HTMLElement {
@@ -82,9 +174,13 @@ export class UI {
     );
   }
 
-  private topbar(title: string, back: () => void = () => this.home()): HTMLElement {
+  back(): boolean {
+    return this.navigation.back();
+  }
+
+  private topbar(title: string): HTMLElement {
     return h('div', { class: 'topbar menu-topbar' },
-      h('button', { class: 'ghost', 'aria-label': 'Back', onclick: () => { this.click(); back(); } }, '←'),
+      h('button', { class: 'ghost', 'aria-label': 'Back', onclick: () => { this.click(); this.back(); } }, '←'),
       h('h2', {}, title),
       this.currency(),
     );
@@ -103,51 +199,70 @@ export class UI {
 
   // ------------------------------------------------------------------ home
   home(): void {
+    this.navigation.reset(() => this.home());
     this.game.toMenu();
     const p = this.p;
     const coreDef = CORE_MAP[p.loadout.core];
-    const nav = (label: string, fn: () => void, badge?: boolean) =>
-      h('button', { onclick: () => { this.click(); fn(); } }, label, badge ? h('span', { style: 'color:var(--gold)' }, ' ●') : null);
+    const nav = (icon: Parameters<typeof homeIcon>[0], label: string, description: string, color: string, fn: () => void, badge = false) =>
+      h('button', { class: 'home-nav-tile', style: `--tile-color:${color}`, onclick: () => { this.click(); fn(); } },
+        h('span', { class: 'home-nav-icon' }, homeIcon(icon)),
+        h('span', { class: 'home-nav-copy' }, h('strong', {}, label), h('small', {}, description)),
+        badge ? h('span', { class: 'home-nav-badge', title: 'Upgrade available', 'aria-label': 'Upgrade available' }) : null,
+      );
     const canAffordResearch = RESEARCH.some((r) => canResearch(p, r.id));
     const canAffordCore = CORES.some((c) => canUnlockCore(p, c.id));
-    this.show(h('div', { class: 'screen home' },
-      h('div', { class: 'home-topline' }, h('span', { class: 'eyebrow' }, 'BD / RESONANCE ONLINE'), this.currency()),
+    const mastery = masteryLevel(p.mastery[p.loadout.core] ?? 0);
+    this.show(h('div', { class: `screen home ${p.tutorialDone ? '' : 'home-first-run'}`, style: `--core-color:${coreDef.color}` },
+      h('div', { class: 'home-topline' },
+        h('span', { class: 'eyebrow home-system' }, h('i', { 'aria-hidden': 'true' }), 'BD / RESONANCE ONLINE'), this.currency()),
       h('div', { class: 'scroll home-content' },
         h('div', { class: 'hero' },
           h('div', { class: 'eyebrow hero-kicker' }, 'PINBALL MEETS COSMIC CHAOS'),
           h('h1', { class: 'title' }, 'BOUNCE', h('br'), h('span', {}, 'DEFENSE')),
-          h('div', { class: 'reactor-art', 'aria-hidden': 'true', style: `--core-color:${coreDef.color}` },
-            h('div', { class: 'orbit orbit-one' }), h('div', { class: 'orbit orbit-two' }),
-            h('div', { class: 'reactor-crosshair' }), h('div', { class: 'reactor-ball' }),
-            h('div', { class: 'signal-orbit' }, h('i'), h('i'), h('i')),
-            h('span', { class: 'reactor-coordinate coordinate-left' }, 'KINETIC', h('br'), 'CORE / 01'),
-            h('span', { class: 'reactor-coordinate coordinate-right' }, 'POWER', h('br'), '100%'),
+          h('div', { class: 'reactor-art', 'aria-hidden': 'true' },
+            h('div', { class: 'reactor-scene' },
+              h('div', { class: 'reactor-halo' }),
+              h('div', { class: 'reactor-crosshair' }),
+              h('div', { class: 'orbit orbit-one' }), h('div', { class: 'orbit orbit-two' }),
+              h('div', { class: 'orbit-plane plane-one' }, h('i')),
+              h('div', { class: 'orbit-plane plane-two' }, h('i')),
+              h('div', { class: 'reactor-ball' }),
+              h('div', { class: 'signal-orbit' }, h('i'), h('i'), h('i')),
+              h('div', { class: 'reactor-dust' }, h('i'), h('i'), h('i'), h('i'), h('i')),
+            ),
+            h('span', { class: 'reactor-coordinate coordinate-left' }, (coreDef.element ?? 'kinetic').toUpperCase(), h('br'),
+              `CORE / ${String(CORES.indexOf(coreDef) + 1).padStart(2, '0')}`),
+            h('span', { class: 'reactor-coordinate coordinate-right' }, 'RESONANCE', h('br'), 'STABLE'),
           ),
           h('div', { class: 'subtitle' }, 'Find your orbit. Bring down the stars.'),
           h('div', { class: 'hero-description' }, 'Time your shot. Link the signals. Unleash a starfall.'),
         ),
-        h('div', { class: 'col' },
+        h('div', { class: 'col home-actions' },
           h('button', { class: 'primary big launch-button', onclick: () => { this.click(); p.tutorialDone ? this.runSetup() : this.game.startRun({ arena: 'proving', difficulty: 0, pacts: [] }); } },
-            h('span', {}, p.tutorialDone ? 'PLAY / DEPLOY CORE' : 'START / FIRST CONTACT'), h('span', { 'aria-hidden': 'true' }, '↗')),
+            h('span', { class: 'launch-copy' }, h('strong', {}, p.tutorialDone ? 'PLAY' : 'START'),
+              h('small', {}, p.tutorialDone ? 'DEPLOY YOUR CORE' : 'FIRST CONTACT')),
+            h('span', { class: 'launch-arrow', 'aria-hidden': 'true' }, '↗')),
           h('div', { class: 'core-readout' }, h('span', { class: 'status-dot', style: `background:${coreDef.color}` }),
-            `${coreDef.name} equipped`, h('span', { class: 'spacer' }), `MASTERY ${masteryLevel(p.mastery[p.loadout.core] ?? 0).level}`),
-          p.tutorialDone ? h('button', { onclick: () => { this.click(); this.dailyRun(); } }, '📅 Daily Seed') : null,
-          nav(`✦ Talents · ${talentProgress(p).total - talentSpent(p.talents)} points available`, () => this.talents(), talentProgress(p).total > talentSpent(p.talents)),
+            `${coreDef.name} equipped`, h('span', { class: 'spacer' }), h('span', { class: 'core-mastery' }, 'MASTERY ', h('b', {}, mastery.level))),
           p.tutorialDone ? h('div', { class: 'grid2 home-nav' },
-            nav('⚙️ Loadout', () => this.loadout(), canAffordCore),
-            nav('🔧 Workshop', () => this.workshop()),
-            nav('🔬 Research', () => this.research(), canAffordResearch),
-            nav('📖 Codex', () => this.codex()),
-            nav('🏆 Goals', () => this.goals()),
-            nav('🎚️ Settings', () => this.settings()),
-          ) : h('div', { class: 'first-run-guide' },
+            nav('daily', 'Daily Seed', 'A new orbit every day', '#9ac9ff', () => this.dailyRun()),
+            nav('talents', `Talents · ${talentProgress(p).total - talentSpent(p.talents)}`, 'Find your edge', '#c8a5ff', () => this.talents(), talentProgress(p).total > talentSpent(p.talents)),
+            nav('loadout', 'Loadout', 'Shape your playstyle', '#91ead4', () => this.loadout(), canAffordCore),
+            nav('workshop', 'Workshop', 'Build lasting power', '#ffbe86', () => this.workshop()),
+            nav('research', 'Research', 'Unlock possibilities', '#90dbe9', () => this.research(), canAffordResearch),
+            nav('codex', 'Codex', 'Explore the unknown', '#aaaef9', () => this.codex()),
+            nav('goals', 'Goals', 'Chase the next milestone', '#f4d784', () => this.goals()),
+            nav('settings', 'Settings', 'Tune your experience', '#a3b8cc', () => this.settings()),
+          ) : [nav('talents', 'Talents', 'Discover your playstyle', '#c8a5ff', () => this.talents()), h('div', { class: 'first-run-guide' },
             h('div', {}, h('b', {}, '01'), h('span', {}, 'DRAG TO AIM')),
             h('div', {}, h('b', {}, '02'), h('span', {}, 'RELEASE TO FIRE')),
             h('div', {}, h('b', {}, '03'), h('span', {}, 'LINK THE SIGNALS')),
+          )],
+          h('div', { class: 'home-stats', 'aria-label': 'Lifetime stats' },
+            h('div', {}, h('strong', {}, formatNum(p.stats.runs)), h('span', {}, 'RUNS')),
+            h('div', {}, h('strong', {}, formatNum(p.stats.wins)), h('span', {}, 'WINS')),
+            h('div', {}, h('strong', {}, formatNum(p.stats.bestCombo)), h('span', {}, 'BEST COMBO')),
           ),
-          p.tutorialDone ? [h('h3', {}, 'Next goals'), this.goalList(nextGoals(p, 3))] : null,
-          h('div', { class: 'small muted center', style: 'margin-top:14px' },
-            `Runs ${p.stats.runs} · Wins ${p.stats.wins} · Best combo ${p.stats.bestCombo}`),
         ),
       ),
     ));
@@ -161,11 +276,25 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ run setup
-  talents(back: () => void = () => this.home()): void {
-    this.show(talentScreen(this.p, () => { this.click(); this.game.save(); }, back));
+  talents(): void {
+    const view = talentScreen(this.p, () => { this.click(); this.game.save(); }, () => { this.click(); this.back(); });
+    this.navigation.view('talents', () => this.show(view.element), {
+      guard: {
+        when: () => view.detailOpen || view.dirty,
+        act: () => {
+          if (view.detailOpen) view.closeDetail();
+          else this.confirmAction('Discard talent changes?', 'Your saved talents are kept. Apply your changes to use them in your next run.', 'Discard changes', () => {
+            view.discard();
+            this.navigation.dismiss(2);
+          }, () => view.element.querySelector<HTMLButtonElement>('.topbar button')?.focus({ preventScroll: true }), 'Keep editing');
+        },
+      },
+    });
+    this.show(view.element);
   }
 
   runSetup(): void {
+    this.navigation.view('setup', () => this.runSetup());
     const p = this.p;
     const s = this.setup;
     if (!isArenaUnlocked(p, s.arena)) s.arena = 'proving';
@@ -177,15 +306,16 @@ export class UI {
     this.show(h('div', { class: 'screen' },
       this.topbar('New Run'),
       h('div', { class: 'scroll' },
-        h('div', { class: 'card' }, h('div', { class: 'name' }, `✦ Talents · ${talentSpent(p.talents)}/${talentProgress(p).total} allocated`),
+        h('div', { class: 'card setup-overview' }, h('div', { class: 'name' }, `✦ Talents · ${talentSpent(p.talents)}/${talentProgress(p).total} allocated`),
           h('div', { class: 'desc' }, 'Your saved specialization will apply to this run.'),
-          h('button', { style: 'margin-top:8px', onclick: () => this.talents(() => this.runSetup()) }, 'Edit talents')),
+          h('button', { style: 'margin-top:8px', onclick: () => this.talents() }, 'Edit talents')),
         h('h3', {}, 'Arena'),
         h('div', { class: 'col' }, ARENAS.map((a) => {
           const ok = isArenaUnlocked(p, a.id);
           const cleared = p.cleared[a.id] ?? -1;
           return h('div', {
             class: `card ${s.arena === a.id ? 'selected' : ''} ${ok ? '' : 'locked'}`,
+            'data-motion-key': `arena:${a.id}`,
             style: `border-left: 4px solid ${a.theme.accent}`,
             onclick: () => { if (ok) { s.arena = a.id; rerender(); } },
           },
@@ -194,10 +324,11 @@ export class UI {
           h('div', { class: 'desc' }, ok ? `${a.desc} Boss: ${BOSSES.find((b) => b.id === a.bossId)?.name}` : a.unlockReq?.text ?? ''));
         })),
         h('h3', {}, 'Difficulty'),
-        h('div', { class: 'row wrap' }, DIFFICULTIES.map((d, i) => {
+        h('div', { class: 'difficulty-options' }, DIFFICULTIES.map((d, i) => {
           const ok = i <= maxDifficulty(p);
           return h('button', {
             disabled: !ok,
+            'data-motion-key': `difficulty:${i}`,
             style: s.difficulty === i ? `background:${d.color};color:#0a0612` : `color:${d.color}`,
             onclick: () => { s.difficulty = i; rerender(); },
           }, ok ? d.name : `🔒 ${d.name}`);
@@ -207,11 +338,12 @@ export class UI {
           h('h3', {}, 'Risk Pacts'),
           h('div', { class: 'grid2' }, PACTS.map((pc) => h('div', {
             class: `card ${s.pacts.has(pc.id) ? 'selected' : ''}`,
+            'data-motion-key': `pact:${pc.id}`,
             onclick: () => { if (s.pacts.has(pc.id)) s.pacts.delete(pc.id); else s.pacts.add(pc.id); rerender(); },
           }, h('div', { class: 'name' }, `${pc.icon} ${pc.name}`), h('div', { class: 'desc' }, pc.desc), h('div', { class: 'small', style: 'color:var(--gold);margin-top:4px' }, `+${Math.round(pc.reward * 100)}% rewards`)))),
         ] : h('div', { class: 'small muted', style: 'margin-top:14px' }, '🔒 Research "Risk Pacts" to make runs harder for greater rewards.'),
       ),
-      h('div', { class: 'col', style: 'margin-top:8px' },
+      h('div', { class: 'col setup-footer', style: 'margin-top:8px' },
         h('div', { class: 'center small', style: 'color:var(--gold)' }, `Reward multiplier ×${mult.toFixed(2)}`),
         h('button', { class: 'primary big', onclick: () => { this.click(); this.game.startRun({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }); } }, '▶ LAUNCH'),
       ),
@@ -220,6 +352,7 @@ export class UI {
 
   // ------------------------------------------------------------------ loadout
   loadout(): void {
+    this.navigation.view('loadout', () => this.loadout());
     const p = this.p;
     const l = p.loadout;
     const rerender = () => { this.click(); this.game.save(); this.loadout(); };
@@ -230,6 +363,7 @@ export class UI {
         const buyable = !unlocked && def.unlock?.coins;
         return h('div', {
           class: `card ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}`,
+          'data-motion-key': `part:${def.id}`,
           onclick: () => {
             if (unlocked) { (l as unknown as Record<string, string>)[s] = def.id; rerender(); }
             else if (buyable && buyPart(p, def.id)) { (l as unknown as Record<string, string>)[s] = def.id; this.toast(`Unlocked ${def.name}!`); rerender(); }
@@ -250,6 +384,7 @@ export class UI {
           const reqOk = coreRequirementMet(p, c.id);
           return h('div', {
             class: `card ${l.core === c.id ? 'selected' : ''} ${owned ? '' : 'locked'}`,
+            'data-motion-key': `core:${c.id}`,
             style: `border-left:4px solid ${c.color}`,
             onclick: () => { if (owned) { l.core = c.id; rerender(); } },
           },
@@ -273,6 +408,7 @@ export class UI {
           const owned = p.cosmetics.includes(t.id);
           return h('button', {
             disabled: !owned,
+            'data-motion-key': `trail:${t.id}`,
             style: `background:linear-gradient(90deg,${t.colors[0]},${t.colors[1]});color:#0a0612;${l.trail === t.id ? 'outline:3px solid #fff' : ''}`,
             onclick: () => { l.trail = t.id; rerender(); },
           }, owned ? t.name : '🔒');
@@ -280,7 +416,7 @@ export class UI {
         h('h3', {}, 'Build Presets'),
         h('div', { class: 'grid3 presets' }, [0, 1, 2].map((i) => {
           const pr = p.presets[i];
-          return h('div', { class: 'card center' },
+          return h('div', { class: 'card center', 'data-motion-key': `preset:${i}` },
             h('div', { class: 'small' }, pr ? `${CORE_MAP[pr.core]?.icon} ${pr.name}` : `Slot ${i + 1}`),
             h('div', { class: 'row preset-actions', style: 'justify-content:center;margin-top:6px' },
               h('button', { class: 'small', onclick: () => { p.presets[i] = { ...l, name: `${CORE_MAP[l.core].name.split(' ')[0]} ${PART_MAP[l.impact]?.name.split(' ')[0] ?? ''}` }; this.toast('Preset saved'); rerender(); } }, 'Save'),
@@ -293,6 +429,7 @@ export class UI {
 
   // ------------------------------------------------------------------ workshop
   workshop(): void {
+    this.navigation.view('workshop', () => this.workshop());
     const p = this.p;
     this.show(h('div', { class: 'screen' },
       this.topbar('Workshop'),
@@ -300,7 +437,7 @@ export class UI {
       h('div', { class: 'scroll col' }, WORKSHOP.map((wd) => {
         const lvl = p.workshop[wd.id] ?? 0;
         const cost = workshopCost(p, wd.id);
-        return h('div', { class: 'card row' },
+        return h('div', { class: 'card row', 'data-motion-key': `workshop:${wd.id}` },
           h('div', { class: 'icon' }, wd.icon),
           h('div', { style: 'flex:1' },
             h('div', { class: 'name' }, `${wd.name} `, h('span', { class: 'small muted' }, `${lvl}/${wd.maxLevel}`)),
@@ -316,6 +453,7 @@ export class UI {
 
   // ------------------------------------------------------------------ research
   research(): void {
+    this.navigation.view('research', () => this.research());
     const p = this.p;
     this.show(h('div', { class: 'screen' },
       this.topbar('Research'),
@@ -323,7 +461,7 @@ export class UI {
       h('div', { class: 'scroll col' }, RESEARCH.map((r) => {
         const done = p.researchNodes.includes(r.id);
         const reqOk = r.requires.every((x) => p.researchNodes.includes(x));
-        return h('div', { class: `card row ${done ? 'selected' : ''} ${reqOk ? '' : 'locked'}` },
+        return h('div', { class: `card row ${done ? 'selected' : ''} ${reqOk ? '' : 'locked'}`, 'data-motion-key': `research:${r.id}` },
           h('div', { class: 'icon' }, r.icon),
           h('div', { style: 'flex:1' },
             h('div', { class: 'name' }, r.name),
@@ -345,6 +483,7 @@ export class UI {
 
   // ------------------------------------------------------------------ codex
   codex(): void {
+    this.navigation.view('codex', () => this.codex());
     const p = this.p;
     const d = p.discoveries;
     const tabs: [string, string, number, number][] = [
@@ -410,17 +549,23 @@ export class UI {
     }
     this.show(h('div', { class: 'screen' },
       this.topbar(`Codex ${Math.round((total / max) * 100)}%`),
-      h('div', { class: 'tabs' }, tabs.map(([id, label, n, m]) => h('button', { class: this.codexTab === id ? 'on' : '', onclick: () => { this.codexTab = id; this.click(); this.codex(); } }, `${label} ${n}/${m}`))),
+      h('div', { class: 'tabs codex-tabs', role: 'tablist', 'aria-label': 'Codex categories' }, tabs.map(([id, label, n, m]) => h('button', {
+        role: 'tab', 'aria-selected': String(this.codexTab === id), class: this.codexTab === id ? 'on' : '',
+        'data-motion-key': `codex:${id}`,
+        onclick: () => { this.codexTab = id; this.click(); this.codex(); },
+      }, h('span', {}, label), h('small', {}, `${n}/${m}`)))),
       h('div', { class: 'scroll col' }, body),
     ));
   }
 
   // ------------------------------------------------------------------ goals
   goals(): void {
+    this.navigation.view('goals', () => this.goals());
     const p = this.p;
     this.show(h('div', { class: 'screen' },
       this.topbar('Goals'),
       h('div', { class: 'scroll' },
+        h('h3', {}, 'Next goals'), this.goalList(nextGoals(p, 3)),
         h('h3', {}, `Challenges ${p.challenges.length}/${CHALLENGES.length}`),
         h('div', { class: 'col' }, CHALLENGES.map((c) => {
           const done = p.challenges.includes(c.id);
@@ -429,7 +574,7 @@ export class UI {
             h('div', { class: 'desc' }, c.desc),
             h('div', { class: 'small', style: 'color:var(--gold);margin-top:3px' }, c.rewards.map((r) => (r.type === 'coins' || r.type === 'cores' || r.type === 'research') ? `+${r.amount} ${r.type}` : `${r.type}: ${r.id}`).join(', ')));
         })),
-        h('h3', {}, `Achievements ${p.achievements.length}/${ACHIEVEMENTS.length}`),
+        h('h3', { 'data-tab-label': 'Badges' }, `Achievements ${p.achievements.length}/${ACHIEVEMENTS.length}`),
         h('div', { class: 'col' }, ACHIEVEMENTS.map((a) => {
           const done = p.achievements.includes(a.id);
           const [cur, max] = a.progress(p);
@@ -452,10 +597,12 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ settings
-  settings(onBack: () => void = () => this.home()): void {
+  settings(): void {
+    const world = this.game.world;
+    this.navigation.view('settings', () => this.settings(), { valid: () => !world || this.game.world === world });
     const s = this.p.settings;
     const apply = () => { this.game.applySettings(); this.game.save(); };
-    const toggle = (label: string, desc: string, key: 'shake' | 'damageNumbers' | 'reducedFlashes' | 'debug') =>
+    const toggle = (label: string, desc: string, key: 'shake' | 'damageNumbers' | 'debug') =>
       h('button', {
         type: 'button', class: 'setting-switch', role: 'switch', 'aria-label': label, 'aria-checked': String(s[key]), 'data-setting': key,
         onclick: (e: MouseEvent) => {
@@ -463,6 +610,7 @@ export class UI {
           const button = e.currentTarget as HTMLButtonElement;
           button.setAttribute('aria-checked', String(s[key]));
           button.querySelector('.switch-state')!.textContent = s[key] ? 'ON' : 'OFF';
+          feedback(button);
         },
       },
       h('span', { class: 'setting-copy' }, h('span', { class: 'setting-name' }, label), h('small', { class: 'setting-desc' }, desc)),
@@ -479,19 +627,19 @@ export class UI {
             const input = e.target as HTMLInputElement, value = Number(input.value);
             s[key] = value / 100; readout.textContent = `${value}%`;
             input.style.setProperty('--volume', `${value}%`); input.setAttribute('aria-valuetext', `${value}%`); apply();
+            feedback(readout);
           },
         }));
     };
     const section = (title: string, ...controls: HTMLElement[]) =>
       h('section', { class: 'settings-section', 'aria-label': title }, h('h3', { class: 'settings-heading' }, title), ...controls);
     this.show(h('div', { class: 'screen solid settings-screen' },
-      this.topbar('Settings', onBack),
+      this.topbar('Settings'),
       h('div', { class: 'scroll settings-content' },
         section('Audio', h('div', { class: 'settings-audio' }, slider('Sound effects', 'sfx'), slider('Music', 'music'))),
         section('Combat feedback',
           toggle('Screen shake', 'Camera kick on heavy impacts.', 'shake'),
-          toggle('Damage numbers', 'See the damage from every hit.', 'damageNumbers'),
-          toggle('Reduce flashes & motion', 'Calmer effects and animations.', 'reducedFlashes')),
+          toggle('Damage numbers', 'See the damage from every hit.', 'damageNumbers')),
         section('Aim mode', h('div', { class: 'aim-modes', role: 'group', 'aria-label': 'Aim mode' },
           (['direct', 'slingshot'] as const).map((m) => h('button', {
             type: 'button', class: 'aim-option', 'data-mode': m, 'aria-pressed': String(s.aimMode === m),
@@ -500,6 +648,7 @@ export class UI {
               this.click(); s.aimMode = m; apply();
               for (const button of (e.currentTarget as HTMLElement).parentElement!.querySelectorAll<HTMLButtonElement>('button'))
                 button.setAttribute('aria-pressed', String(button.dataset.mode === m));
+              feedback(e.currentTarget as HTMLElement);
             },
           },
           h('span', { class: 'aim-icon', 'aria-hidden': 'true' }, m === 'direct' ? '↗' : '↶'),
@@ -511,23 +660,37 @@ export class UI {
           h('button', {
             class: 'danger',
             onclick: () => {
-              if (confirm('Erase ALL progress? This cannot be undone.')) {
+              this.confirmAction('Reset progress?', 'Erase all unlocks, currency, talents and run history? This cannot be undone. Your settings are kept.', 'Erase progress', () => {
                 const settings = { ...s };
                 Object.assign(this.p, defaultProfile(), { settings });
+                this.deckStates.clear();
                 this.game.save();
                 this.home();
-              }
+              }, () => this.root.querySelector<HTMLButtonElement>('.settings-footer button')?.focus({ preventScroll: true }));
             },
           }, 'Reset progress')),
-        h('div', { class: 'settings-help' }, 'Desktop: drag to aim · Space to Surge · R to Recall · Esc to pause.'),
+        h('div', { class: 'settings-help' }, 'Drag to aim. Release to launch. Use Recall and Surge during a run.'),
       ),
     ));
   }
 
   // ------------------------------------------------------------------ in-run HUD
+  beginRun(w: World): void {
+    const options = {
+      valid: () => this.game.world === w,
+      guard: { when: () => this.game.world === w, act: () => this.game.pause() },
+    };
+    // Keep two guarded entries even for First Contact/Daily, which skip Setup.
+    // Two queued browser Back presses must stay in this document until popstate runs.
+    this.navigation.view('run-boundary', () => this.game.resume(), options);
+    this.navigation.view('run', () => this.game.resume(), options);
+    this.hud();
+  }
+
   hud(): void {
+    this.closeOverlay();
     this.clearScreen();
-    this.hudEl?.remove();
+    cancelWithin(this.hudEl); this.hudEl?.remove();
     const pause = h('button', { class: 'hudbtn', 'aria-label': 'Pause game', style: 'right:10px;top:10px', onclick: () => { this.click(); this.game.pause(); } }, '❚❚');
     const surge = h('button', { class: 'surge', 'aria-label': 'Surge (Space)', title: 'Surge / Space', style: 'right:12px;bottom:12px', onclick: () => this.game.world?.activateSurge() }, h('span', {}, 'SURGE')) as HTMLButtonElement;
     const recall = h('button', { class: 'recall', 'aria-label': 'Recall balls (R)', title: 'Recall / R / 10s cooldown', onclick: () => this.game.world?.activateRecall() },
@@ -549,9 +712,13 @@ export class UI {
     this.hudEl = h('div', { class: 'game-hud', style: 'position:absolute;inset:0;pointer-events:none' }, pause, surge, recall, telemetry);
     for (const c of [pause, surge, recall]) c.style.pointerEvents = 'auto';
     this.root.append(this.hudEl);
+    enter(this.hudEl, 'hud', 0);
+    revealItems(this.hudEl);
   }
 
   hideHud(): void {
+    retire(this.hudEl, 'hud', 0);
+    cancelWithin(this.hudEl);
     this.hudEl?.remove();
     this.hudEl = null;
     this.surgeBtn = null;
@@ -565,8 +732,10 @@ export class UI {
     const frac = w.surge.charge / w.surge.max;
     this.surgeBtn.style.setProperty('--p', `${Math.round(frac * 100)}%`);
     const ready = w.canSurge();
+    const wasReady = this.surgeBtn.classList.contains('ready');
     this.surgeBtn.disabled = !ready || !this.game.controlsEnabled;
     this.surgeBtn.classList.toggle('ready', ready);
+    if (ready !== wasReady && ready) feedback(this.surgeBtn);
     const label = this.surgeBtn.firstElementChild as HTMLElement;
     const text = w.surge.active > 0 ? 'ACTIVE' : ready ? 'SURGE!' : `${Math.floor(frac * 100)}%`;
     if (label.textContent !== text) label.textContent = text;
@@ -602,35 +771,57 @@ export class UI {
 
   hint(text: string | null): void {
     if (!text) {
+      retire(this.hintEl, 'notice', 0);
+      cancelWithin(this.hintEl);
       this.hintEl?.remove();
       this.hintEl = null;
       return;
     }
     if (this.hintEl?.textContent === text) return;
+    retire(this.hintEl, 'notice', 0);
+    cancelWithin(this.hintEl);
     this.hintEl?.remove();
     this.hintEl = h('div', { class: 'hint', style: 'bottom:13%' }, text);
     this.root.append(this.hintEl);
+    enter(this.hintEl, 'notice', 0);
   }
 
   private closeOverlay(): void {
+    retire(this.overlay, 'panel', 0);
+    cancelWithin(this.overlay);
+    this.overlayDeck?.dispose(); this.overlayDeck = null;
     this.overlay?.remove();
     this.overlay = null;
   }
 
+  private confirmAction(title: string, message: string, label: string, proceed: () => void, cancel: () => void, cancelLabel = 'Keep playing'): void {
+    const world = this.game.world;
+    this.navigation.view(`confirm:${title}`, () => this.confirmAction(title, message, label, proceed, cancel, cancelLabel), {
+      cancel, valid: () => !world || this.game.world === world,
+    });
+    const back = h('button', { onclick: () => this.navigation.dismiss() }, cancelLabel);
+    const confirm = h('button', { class: 'danger', onclick: () => { this.closeOverlay(); proceed(); } }, label);
+    const overlay = h('div', { class: 'levelup confirm-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'lvtitle' }, title), h('p', { class: 'center' }, message),
+      h('div', { class: 'row' }, back, confirm));
+    overlay.addEventListener('keydown', e => {
+      if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === back ? confirm : back).focus(); }
+    });
+    this.showOverlay(overlay, `confirm:${title}`); back.focus({ preventScroll: true });
+  }
+
   // ------------------------------------------------------------------ level up
   levelUp(w: World): void {
-    this.closeOverlay();
     const codex = w.flags.has('codex');
-    const card = (o: Offer, i: number) => {
-      const delay = `animation-delay:${i * 60}ms`;
+    const card = (o: Offer) => {
       if (o.kind === 'evolution') {
         const e = EVOLUTION_MAP[o.id];
-        return h('button', { class: 'offer evolution', style: delay, onclick: () => this.pick(w, o) },
+        return h('button', { class: 'offer evolution', onclick: () => this.pick(w, o) },
           h('div', { class: 'oicon' }, e.icon),
           h('div', {}, h('div', { class: 'oname', style: `color:${e.color}` }, `EVOLVE: ${e.name}`), h('div', { class: 'odesc' }, e.desc)));
       }
       if (o.kind !== 'upgrade') {
-        return h('button', { class: 'offer', style: delay, onclick: () => this.pick(w, o) },
+        return h('button', { class: 'offer', onclick: () => this.pick(w, o) },
           h('div', { class: 'oicon' }, o.kind === 'heal' ? '💚' : '🪙'),
           h('div', {}, h('div', { class: 'oname' }, o.kind === 'heal' ? 'Repair' : 'Salvage'), h('div', { class: 'odesc' }, o.kind === 'heal' ? 'Restore 30% HP.' : '+25 coins.')));
       }
@@ -649,7 +840,7 @@ export class UI {
         hints.push(h('div', { class: 'ohint', style: 'color:var(--legendary)' }, `🧬 ${e.name} ingredient${r.level > 1 ? ` (needs Lv\u00a0${r.level})` : ''}`));
       }
       return h('button', {
-        class: `offer ${u.rarity} ${this.banishMode ? 'banish-mode' : ''}`, style: delay,
+        class: `offer ${u.rarity} ${this.banishMode ? 'banish-mode' : ''}`,
         onclick: () => {
           if (this.banishMode) {
             this.banishMode = false;
@@ -666,10 +857,10 @@ export class UI {
         hints));
     };
     const tutorial = w.cfg.tutorial && w.levelUps === 0;
-    this.overlay = h('div', { class: 'levelup' },
+    const overlay = h('div', { class: 'levelup' },
       h('div', { class: 'lvtitle' }, `LEVEL ${w.level - w.pendingLevels + 1}`),
       tutorial ? h('div', { class: 'center small', style: 'color:var(--gold)' }, 'Pick an upgrade. Most change HOW your ball behaves — look for combinations!') : null,
-      h('div', { class: 'col' }, w.offers.map(card)),
+      h('div', { class: 'col offer-list' }, w.offers.map(card)),
       h('div', { class: 'row offer-actions', style: 'justify-content:center;margin-top:6px' },
         h('button', { disabled: w.rerolls <= 0, onclick: () => { this.click(); w.reroll(); } }, `🎲 Reroll (${w.rerolls})`),
         w.banishes > 0 || w.flags.has('banish') ? h('button', {
@@ -679,29 +870,32 @@ export class UI {
         h('button', { class: 'ghost', onclick: () => this.pick(w, { kind: 'coins' }) }, 'Skip'),
       ),
     );
-    this.root.append(this.overlay);
+    this.showOverlay(overlay, 'upgrade');
   }
 
   private pick(w: World, o: Offer): void {
     this.banishMode = false;
     this.game.audio.play('select');
-    this.game.onOfferChosen(o);
     this.closeOverlay();
+    this.game.onOfferChosen(o);
   }
 
   // ------------------------------------------------------------------ pause
   pauseMenu(w: World): void {
-    this.closeOverlay();
+    this.navigation.view('pause', () => {
+      this.clearScreen();
+      this.game.pause();
+    }, { valid: () => this.game.world === w });
     const st = w.build.stats;
     const keys: StatKey[] = ['damage', 'critChance', 'critMult', 'speed', 'maxBalls', 'pierce', 'burnChance', 'chillChance', 'chainChance', 'explosionChance', 'splitChance', 'bleedChance', 'lifesteal', 'maxHp', 'armor'];
-    this.overlay = h('div', { class: 'levelup', style: 'justify-content:flex-start' },
+    const overlay = h('div', { class: 'levelup pause-overlay', style: 'justify-content:flex-start' },
       h('div', { class: 'lvtitle' }, 'PAUSED'),
       h('div', { class: 'scroll col' },
-        h('div', { class: 'combat-guide' },
-          h('b', {}, 'FLIGHT MANUAL'),
-          h('p', {}, 'Power shot: release while the charge dial is gold for +45% ball damage and starting momentum.'),
-          h('p', {}, 'Resonance: hit all three diamond signals before their timer runs out. Starfall strikes up to five threats, clears projectiles, and grants 7 seconds of overdrive.'),
-          h('p', {}, 'Recall [R]: bring your main balls home to choose a better angle. Resets their momentum; 10 second cooldown. Surge [Space]: supercharge your balls.')),
+        h('h3', {}, 'Flight manual'),
+        h('div', { class: 'combat-guide' }, h('b', {}, 'POWER SHOT'), h('p', {}, 'Release while the dial is gold for +45% damage and starting momentum.')),
+        h('div', { class: 'combat-guide' }, h('b', {}, 'RESONANCE'), h('p', {}, 'Hit all three signals before time runs out. Starfall strikes five threats, clears projectiles, and gives 7 seconds of overdrive.')),
+        h('div', { class: 'combat-guide' }, h('b', {}, 'RECALL & SURGE'), h('p', {}, 'Recall brings your main balls home to choose a new angle; 10 second cooldown. Surge supercharges your balls.')),
+        h('h3', {}, 'Build'),
         h('div', { class: 'buildcard' },
           h('div', { class: 'small muted' }, 'CURRENT BUILD'),
           h('div', { class: 'buildname' }, this.game.buildName()),
@@ -714,32 +908,32 @@ export class UI {
         w.build.synergies.size ? [h('h3', {}, 'Synergies'), h('div', { class: 'col' }, [...w.build.synergies].map((id) => h('div', { class: 'card' }, h('div', { class: 'name' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`), h('div', { class: 'desc' }, SYNERGY_MAP[id].desc))))] : null,
         w.build.evolutions.size ? [h('h3', {}, 'Evolutions'), h('div', { class: 'col' }, [...w.build.evolutions].map((id) => h('div', { class: 'card' }, h('div', { class: 'name', style: `color:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`), h('div', { class: 'desc' }, EVOLUTION_MAP[id].desc))))] : null,
       ),
-      h('div', { class: 'col' },
-        h('button', { class: 'primary big', onclick: () => { this.click(); this.closeOverlay(); this.game.resume(); } }, '▶ Resume'),
+      h('div', { class: 'col overlay-actions' },
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.navigation.dismiss(); } }, '▶ Resume'),
         h('div', { class: 'row' },
-          h('button', { style: 'flex:1', onclick: () => { this.click(); this.closeOverlay(); this.settings(() => { this.clearScreen(); this.pauseMenu(w); }); } }, 'Settings'),
-          h('button', { class: 'danger', style: 'flex:1', onclick: () => { if (confirm('Abandon this run? You keep the rewards earned so far.')) { this.closeOverlay(); this.game.abandonRun(); } } }, 'Abandon'),
+          h('button', { style: 'flex:1', onclick: () => { this.click(); this.settings(); } }, 'Settings'),
+          h('button', { class: 'danger', style: 'flex:1', onclick: () => this.confirmAction('End this run?', 'You keep the rewards earned so far. Your current build will be retired.', 'End run', () => this.game.abandonRun(), () => this.pauseMenu(w)) }, 'Abandon'),
         ),
       ),
     );
-    this.root.append(this.overlay);
+    this.showOverlay(overlay, 'pause');
   }
 
   // ------------------------------------------------------------------ victory choice
   victoryChoice(w: World): void {
-    this.closeOverlay();
-    this.overlay = h('div', { class: 'levelup' },
+    const overlay = h('div', { class: 'levelup' },
       h('div', { class: 'result-title win' }, 'VICTORY!'),
       h('div', { class: 'center muted' }, `${ARENA_MAP[w.arena.id].name} cleared on ${w.diff.name} in ${formatTime(w.time)}`),
       h('button', { class: 'primary big', onclick: () => { this.click(); this.closeOverlay(); this.game.finishRun(); } }, '🏆 Claim rewards'),
       h('button', { class: 'big', onclick: () => { this.click(); this.closeOverlay(); this.game.continueEndless(); } }, '♾️ Continue — Endless'),
       h('div', { class: 'center small muted' }, 'Endless: keep your build and see how long it survives. Rewards keep growing.'),
     );
-    this.root.append(this.overlay);
+    this.showOverlay(overlay, 'victory');
   }
 
   // ------------------------------------------------------------------ post run
   postRun(s: RunSummary, r: RunReport): void {
+    this.navigation.reset(() => this.home(), { key: 'results', restore: () => this.postRun(s, r) });
     this.hideHud();
     this.closeOverlay();
     const bs = s.buildStats;
@@ -763,8 +957,6 @@ export class UI {
             stat('Damage', bs.damage.toFixed(0)), stat('Crit', `${Math.round(bs.critChance * 100)}%`),
             stat('Speed', Math.round(bs.speed)), stat('Balls', bs.balls),
             bs.chain ? stat('Chain', bs.chain) : null, bs.lifesteal ? stat('Lifesteal', `${(bs.lifesteal * 100).toFixed(1)}%`) : null),
-          s.synergies.length ? h('div', { style: 'margin-top:8px' }, s.synergies.map((id) => h('span', { class: 'tag', style: 'color:#d59bff' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`))) : null,
-          s.evolutions.length ? h('div', { style: 'margin-top:4px' }, s.evolutions.map((id) => h('span', { class: 'tag', style: `color:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`))) : null,
         ),
         h('div', { class: 'card', style: 'margin-top:8px' }, h('div', { class: 'statgrid' },
           stat('Enemies destroyed', formatNum(s.kills)), stat('Best combo', s.bestCombo),
@@ -782,8 +974,12 @@ export class UI {
           h('div', { class: 'name' }, `${core.icon} ${core.name} Mastery ${r.mastery.after}${r.mastery.after > r.mastery.before ? ' ⬆' : ''}`),
           bar(r.mastery.need ? r.mastery.into / r.mastery.need : 1, 'pink'),
           r.mastery.rewards.map((t) => h('div', { class: 'unlock' }, `⭐ ${t}`))),
+        s.synergies.length ? [h('h3', {}, 'Synergies'), h('div', { class: 'col' }, s.synergies.map(id =>
+          h('div', { class: 'card' }, h('div', { class: 'name' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`), h('div', { class: 'desc' }, SYNERGY_MAP[id].desc))))] : null,
+        s.evolutions.length ? [h('h3', {}, 'Evolutions'), h('div', { class: 'col' }, s.evolutions.map(id =>
+          h('div', { class: 'card' }, h('div', { class: 'name', style: `color:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`), h('div', { class: 'desc' }, EVOLUTION_MAP[id].desc))))] : null,
         r.discoveries.some((d) => d.cat !== 'upgrades') ? [h('h3', {}, 'New discoveries'), h('div', { class: 'col' }, r.discoveries.filter((d) => d.cat !== 'upgrades').slice(0, 10).map((d) => h('div', { class: 'unlock', style: 'color:#d59bff' }, `✦ ${d.cat.slice(0, -1).replace('enemie', 'enemy')}: ${d.name}`)))] : null,
-        unlockLines.length ? [h('h3', {}, 'Unlocked'), h('div', { class: 'col' }, unlockLines.map((u, i) => h('div', { class: 'unlock', style: `animation-delay:${i * 120}ms` }, u)))] : null,
+        unlockLines.length ? [h('h3', {}, 'Unlocked'), h('div', { class: 'col' }, unlockLines.map(u => h('div', { class: 'unlock' }, u)))] : null,
         h('h3', {}, 'Next goals'),
         this.goalList(r.goals),
       ),
