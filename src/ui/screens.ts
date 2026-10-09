@@ -709,8 +709,7 @@ export class UI {
         h('div', {}, h('small', {}, 'BOSS'), h('b', { class: 'compact-boss' })),
         h('div', {}, h('small', {}, 'NEXT UPGRADE'), h('div', { class: 'compact-xp' }, h('span')))));
     this.compactTelemetry = telemetry;
-    this.hudEl = h('div', { class: 'game-hud', style: 'position:absolute;inset:0;pointer-events:none' }, pause, surge, recall, telemetry);
-    for (const c of [pause, surge, recall]) c.style.pointerEvents = 'auto';
+    this.hudEl = h('div', { class: 'game-hud' }, pause, surge, recall, telemetry);
     this.root.append(this.hudEl);
     enter(this.hudEl, 'hud', 0);
     revealItems(this.hudEl);

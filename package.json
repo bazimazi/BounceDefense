@@ -20,6 +20,7 @@
     "test:ui:flow": "node scripts/game-flow.mjs",
     "test:ui:back": "node scripts/back-check.mjs",
     "test:ui:motion": "node scripts/motion-check.mjs",
+    "test:ui:aim": "node scripts/aim-check.mjs",
     "test:watch": "vitest",
     "sim": "tsx scripts/simulate.ts"
   },

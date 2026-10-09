@@ -29,8 +29,8 @@ try {
   await page.waitForFunction(() => window.game.world.isPowerWindow(), { polling: 'raf' });
   await page.evaluate(() => { window.game.paused = true; });
   await page.screenshot({ path: `${out}/01-power-dial.png` });
-  await page.mouse.up();
   await page.evaluate(() => { window.game.paused = false; });
+  await page.mouse.up();
   await page.waitForFunction(() => window.game.world.balls.some(b => b.powered));
   assert.equal(await page.evaluate(() => window.game.world.balls[0].dmgMult), 1.45);
   await page.keyboard.press('KeyR');
@@ -79,6 +79,7 @@ try {
       const n = g.world.resonance.nodes[0];
       g.world.spawnBall('main', n.x, n.y + 120, 0, -1); g.world.hand = 0;
     });
+    await page.waitForFunction(() => !document.getAnimations().some(a => a.id.startsWith('ui:') && a.playState === 'running'));
     const controls = await page.evaluate(() => {
       const r = document.querySelector('.recall').getBoundingClientRect();
       const s = document.querySelector('.surge').getBoundingClientRect();

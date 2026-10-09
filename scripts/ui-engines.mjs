@@ -15,6 +15,7 @@ const results = await Promise.allSettled(engines.map(async engine => {
   await run('game-flow', engine);
   await run('back-check', engine);
   await run('motion-check', engine);
+  await run('aim-check', engine);
 }));
 for (const result of results) if (result.status === 'rejected') console.error(result.reason.message);
 if (results.some(result => result.status === 'rejected')) process.exitCode = 1;

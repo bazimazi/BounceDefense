@@ -29,6 +29,7 @@ npx playwright-core install chromium firefox webkit # install the three test eng
 npm run test:ui                # all three engines: every menu/category/page plus gameplay flows
 npm run test:ui:back           # Back/forward, dialogs, drafts, paused run and reload (ENGINE selects browser)
 npm run test:ui:motion         # live transitions, selections and overlays
+npm run test:ui:aim            # board-wide mouse/touch aiming, HUD layers and pointer capture
 ```
 
 The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables. It captures
@@ -47,6 +48,11 @@ checked with Pointer Events. Set `ENGINE=chromium|firefox|webkit` to run one eng
 to narrow the layout audit. `SHOTS` changes the output root; `AUDIT_ONLY=1` records layout findings
 without failing; `OVERLAYS_ONLY=1` reviews the run overlays and HUD. The menus use category tabs, short pages and fixed actions instead of long lists;
 talent details open in a dismissible sheet.
+
+Aiming works across the board and its surrounding play area. Drag anywhere to steer the gun,
+then release to launch. Passive HUD layers do not block gestures; buttons and menus retain
+their own controls. The aiming check covers mouse, touch, Direct and Slingshot aiming,
+portrait/landscape/desktop layouts, and canceling a gesture when pausing or losing capture.
 
 Navigation uses directional page slides, staggered card entrances, moving tab highlights and
 selection pulses. Purchases animate the changed item and wallet; talent sheets and run overlays

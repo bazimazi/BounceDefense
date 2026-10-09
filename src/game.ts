@@ -37,12 +37,14 @@ export class Game {
   private acc = 0;
   private last = 0;
   private slow = { t: 0, scale: 1 };
+  private readonly playSurface: HTMLElement;
   private pointer = { id: -1, sx: 0, sy: 0 };
   private tut = { launched: false, t: 0, eliteHint: 0, surgeHinted: false, holdHinted: false, idle: 0 };
   private debugEl: HTMLElement | null = null;
   private runOpts: RunOptions | null = null;
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
+    this.playSurface = canvas.parentElement ?? canvas;
     this.renderer = new Renderer(canvas);
     this.ui = new UI(uiRoot, this);
   }
@@ -157,7 +159,7 @@ export class Game {
     if (this.mode !== 'run' || !this.world) return;
     this.paused = true;
     this.world.cancelAim();
-    if (this.pointer.id >= 0 && this.canvas.hasPointerCapture(this.pointer.id)) this.canvas.releasePointerCapture(this.pointer.id);
+    if (this.pointer.id >= 0 && this.playSurface.hasPointerCapture(this.pointer.id)) this.playSurface.releasePointerCapture(this.pointer.id);
     this.pointer.id = -1;
     this.ui.pauseMenu(this.world);
   }
@@ -215,37 +217,43 @@ export class Game {
   }
 
   private bindInput(): void {
-    const c = this.canvas;
-    c.addEventListener('pointerdown', (e) => {
-      this.audio.unlock();
+    // Aim from the whole play surface, including passive HUD layers and letterbox space.
+    const surface = this.playSurface;
+    surface.addEventListener('pointerdown', (e) => {
       const w = this.world;
-      if (this.mode !== 'run' || !w || this.paused || w.state !== 'playing') return;
+      if (!w || !this.controlsEnabled || !this.ui.arenaHudVisible || !e.isPrimary || e.button !== 0 || this.pointer.id >= 0) return;
+      if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea, [role="button"], [role="switch"], .screen, .levelup, .debug')) return;
+      this.audio.unlock();
+      e.preventDefault();
       this.pointer.id = e.pointerId;
       const p = this.toLogical(e);
       this.pointer.sx = p.x;
       this.pointer.sy = p.y;
-      c.setPointerCapture(e.pointerId);
+      surface.setPointerCapture(e.pointerId);
       w.beginAim();
       if (this.profile.settings.aimMode === 'direct') this.aimAt(p.x, p.y);
     });
-    c.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== this.pointer.id || !this.world?.aim.active) return;
+    surface.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== this.pointer.id || !this.controlsEnabled || !this.world?.aim.active) return;
+      e.preventDefault();
       const p = this.toLogical(e);
       this.aimAt(p.x, p.y);
     });
     const up = (e: PointerEvent) => {
       if (e.pointerId !== this.pointer.id) return;
       this.pointer.id = -1;
+      if (surface.hasPointerCapture(e.pointerId)) surface.releasePointerCapture(e.pointerId);
       const w = this.world;
       if (!w || !w.aim.active) return;
-      if (e.type === 'pointercancel') w.cancelAim();
+      if (e.type === 'pointercancel' || e.type === 'lostpointercapture' || !this.controlsEnabled) w.cancelAim();
       else {
         w.release();
         this.tut.launched = true;
       }
     };
-    c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', up);
+    surface.addEventListener('pointerup', up);
+    surface.addEventListener('pointercancel', up);
+    surface.addEventListener('lostpointercapture', up);
     window.addEventListener('keydown', (e) => {
       const w = this.world;
       if (e.code === 'Escape' || (e.code === 'KeyP' && w)) {
