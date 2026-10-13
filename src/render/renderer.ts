@@ -1125,9 +1125,12 @@ export class Renderer {
       // level + timer
       ctx.textAlign = 'left'; ctx.fillStyle = '#d9f8ef';
       ctx.font = `800 ${smallText(12)}px ${FONT}`;
-      ctx.fillText(t('canvas.level', { n: String(w.level).padStart(2, '0') }), 16, 53);
+      const levelText = t('canvas.level', { n: String(w.level).padStart(2, '0') });
+      ctx.fillText(levelText, 16, 53, 60);
+      // The kill count follows the measured level label, so longer translations never collide with it.
+      const levelWidth = Math.min(60, ctx.measureText(levelText).width);
       ctx.fillStyle = '#92aebb'; ctx.font = `600 ${smallText(10)}px ${FONT}`;
-      ctx.fillText(t('canvas.eliminated', { n: formatNum(w.run.kills) }), 70, 53, 132);
+      ctx.fillText(t('canvas.eliminated', { n: formatNum(w.run.kills) }), 16 + levelWidth + 10, 53, 176 - levelWidth);
       ctx.textAlign = 'center';
       ctx.fillStyle = '#fff';
       ctx.font = '700 23px Consolas, monospace';

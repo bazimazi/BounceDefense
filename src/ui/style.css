@@ -41,6 +41,9 @@ html[lang='fa'] .first-run-guide span, html[lang='fa'] .core-readout, html[lang=
 html[lang='fa'] .home-system { font-size: 9px; }
 html[lang='fa'] .hero-kicker { font-size: 10px; }
 html[lang='fa'] h3 { text-transform: none; }
+/* Vazirmatn's line box is taller than Rubik's; dense readouts keep the English row heights. */
+html[lang='fa'] .statgrid, html[lang='fa'] .buildname, html[lang='fa'] .buildcard .small, html[lang='fa'] .deck-tabs button,
+html[lang='fa'] .talent-tabs button, html[lang='fa'] .codex-tabs button, html[lang='fa'] .lvtitle { line-height: 1.2; }
 
 
 /* Talent disciplines share a compact game menu at every screen size. */
@@ -552,7 +555,8 @@ h3 { margin: 16px 0 8px; font-size: 14px; letter-spacing: 1.5px; color: var(--mu
 .coordinate-left { left: 3px; } .coordinate-right { right: 3px; text-align: right; }
 .home-actions { flex-shrink: 0; gap: 8px; }
 .home .launch-button { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 60px; border-radius: 12px; padding: 11px 19px; overflow: hidden; background: linear-gradient(115deg, #ceffe3, #91ead7 55%, #74dcd3); box-shadow: 0 0 28px #75e1c922, inset 0 1px 0 #fff9; }
-.launch-button::before { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 45%, #fff3 50%, transparent 55%); transform: translateX(-110%); transition: transform .65s; }
+/* The shine starts off the inline-start edge: with --flip it never adds scrollable overflow in RTL. */
+.launch-button::before { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 45%, #fff3 50%, transparent 55%); transform: translateX(calc(-110% * var(--flip))); transition: transform .65s; }
 .launch-copy { display: flex; align-items: center; gap: 12px; text-align: start; }
 .launch-copy strong { font-size: 21px; font-weight: 900; letter-spacing: 1px; }
 .launch-copy small { font-size: 9px; letter-spacing: 1.5px; font-weight: 700; border-inline-start: 1px solid #153e4140; padding-inline-start: 12px; }
@@ -582,7 +586,7 @@ h3 { margin: 16px 0 8px; font-size: 14px; letter-spacing: 1.5px; color: var(--mu
 @media (hover: hover) {
   .home .home-nav-tile:hover { border-color: color-mix(in srgb, var(--tile-color) 55%, transparent); background: linear-gradient(115deg, #244554, #152938); }
   .home-nav-tile:hover .home-nav-icon { background: color-mix(in srgb, var(--tile-color) 15%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--tile-color) 12%, transparent); }
-  .launch-button:hover::before { transform: translateX(110%); }
+  .launch-button:hover::before { transform: translateX(calc(110% * var(--flip))); }
   .launch-button:hover .launch-arrow { transform: rotate(45deg); }
 }
 .card { box-shadow: inset 0 1px 0 #ffffff05, 0 5px 15px #0002; }

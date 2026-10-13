@@ -112,7 +112,9 @@ try {
       for (const grid of document.querySelectorAll('.statgrid')) {
         for (const row of grid.children) {
           const [label, value] = row.children;
-          if (label && value && label.getBoundingClientRect().right > value.getBoundingClientRect().left + 1)
+          // Label and value sit at opposite inline ends (mirrored in RTL); their boxes must never overlap.
+          const a = label?.getBoundingClientRect(), b = value?.getBoundingClientRect();
+          if (a && b && a.left < b.right - 1 && a.right > b.left + 1)
             issues.push({ kind: 'colliding stat label/value', element: describe(row) });
         }
       }
