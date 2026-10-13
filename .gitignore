@@ -144,3 +144,9 @@ vite.config.ts.timestamp-*
 
 # Browser smoke-test screenshots
 smoke-shots
+
+# Tauri: Rust build output and signing material
+src-tauri/target
+*.jks
+*.keystore
+keystore.properties

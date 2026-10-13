@@ -1,0 +1,60 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Bounce Defense",
+  "mainBinaryName": "bounce-defense",
+  "version": "../package.json",
+  "identifier": "com.bazimazi.bouncedefense",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Bounce Defense",
+        "width": 480,
+        "height": 860,
+        "minWidth": 320,
+        "minHeight": 480,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "backgroundColor": "#060d16"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost",
+      "devCsp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Game",
+    "publisher": "bazimazi",
+    "copyright": "Copyright (c) bazimazi. MIT License.",
+    "shortDescription": "Physics-driven roguelite: your ball is the character.",
+    "longDescription": "Launch a weaponized ball and build a machine of destruction around it. It ricochets, crits, burns, freezes, chains lightning, splits, explodes and evolves while enemies march toward your defense line.",
+    "licenseFile": "../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "iOS": {
+      "minimumSystemVersion": "16.0"
+    },
+    "android": {
+      "minSdkVersion": 24,
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

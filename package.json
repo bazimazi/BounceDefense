@@ -14,6 +14,13 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --apk --aab",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build",
     "test": "vitest run",
     "test:ui": "node scripts/ui-engines.mjs",
     "test:ui:layout": "node --import tsx scripts/ui-audit.mjs",
@@ -25,6 +32,7 @@
     "sim": "tsx scripts/simulate.ts"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.2",
     "@types/node": "^26.6.2",
     "playwright-core": "^1.63.0",
     "puppeteer-core": "^25.12.0",

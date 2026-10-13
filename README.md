@@ -6,6 +6,8 @@ splits, explodes and evolves, and enemies march down toward your defense line.
 
 Built with TypeScript, Vite and Canvas 2D. It has no runtime dependencies and no art or audio assets:
 all visuals are drawn procedurally and all sound is synthesized with WebAudio.
+It ships as a web app and, through [Tauri 2](https://v2.tauri.app), as a native app for
+Windows, macOS, Linux, Android and iOS.
 
 ## Running
 
@@ -69,6 +71,90 @@ so Forward cannot resurrect a run or claim its rewards again. `test:ui:back` exe
 with real history traversal at phone portrait and landscape sizes.
 A native wrapper can call `game.ui.back()` (false at Home), or forward a cancelable
 `backbutton` event and handle its own exit when the event is not consumed.
+The Tauri Android shell needs neither: its Back button walks WebView history, which the game
+already manages, and exits at Home.
+
+## Native apps (Tauri)
+
+`src-tauri/` wraps the production build (`dist/`) in a native WebView. The game needs no native
+APIs, so the Rust side only hosts the window; saves stay in the WebView's `localStorage`, which
+persists per install. The app version comes from `package.json`.
+
+### Prerequisites
+
+- Everything in [Tauri's prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS:
+  Rust (stable), plus the Visual Studio C++ build tools and WebView2 on Windows, Xcode on macOS,
+  or `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev` and `patchelf` on Linux.
+- Android: Android Studio or the SDK command-line tools, NDK 27, JDK 17, the four Android Rust
+  targets (`rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`),
+  and `ANDROID_HOME`, `NDK_HOME` and `JAVA_HOME` set.
+- iOS: a Mac with Xcode, CocoaPods and the iOS Rust targets.
+
+### Commands
+
+```bash
+npm run app:dev         # desktop window with Vite hot reload
+npm run app:build       # desktop installers in src-tauri/target/release/bundle/
+npm run android:dev     # emulator or USB device (add -- --open to use Android Studio)
+npm run android:build   # signed APK + AAB in src-tauri/gen/android/app/build/outputs/
+npm run ios:dev         # simulator or device
+npm run ios:build       # IPA for App Store Connect / TestFlight
+```
+
+Desktop bundles are MSI and NSIS on Windows, `.app` and DMG on macOS, and AppImage, `.deb` and
+`.rpm` on Linux. Each OS builds its own installers; use the release workflow below for all of them.
+
+The Android project in `src-tauri/gen/android` is committed. Its `MainActivity` runs the game
+immersive (system bars hidden, camera cutouts padded) on the game's dark background. The iOS
+project is not generated yet: run `npx tauri ios init` once on a Mac and commit `src-tauri/gen/apple`.
+The WebView needs Canvas `roundRect`, so the minimum OS versions are macOS 13, iOS 16 and Android 7
+(API 24) with a current Android System WebView.
+
+### Icons
+
+All platform icons are generated from `public/icon.svg`. After changing it, run
+`npx tauri icon public/icon.svg` and commit `src-tauri/icons` and the Android `mipmap-*` folders.
+
+### Android signing
+
+Create an upload key once and keep it out of git:
+
+```bash
+keytool -genkey -v -keystore upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```
+
+Then create `src-tauri/gen/android/keystore.properties` (git-ignored):
+
+```properties
+keyAlias=upload
+password=<keystore password>
+storeFile=<absolute path to upload.jks>
+```
+
+Without this file, release builds are unsigned. Debug builds are always signed with the debug key.
+
+### Publishing
+
+`.github/workflows/release.yml` builds every platform into one draft GitHub release.
+Bump `version` in `package.json`, commit, then push a matching tag:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+It can also be started from the Actions tab. Desktop jobs run the tests and upload the installers;
+the Android job uploads the APK (for sideloading) and AAB (for Google Play). Add these repository
+secrets for signed Android builds: `ANDROID_KEY_BASE64` (`base64 -w0 upload.jks`),
+`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Review the draft, then publish it.
+
+Store submission is manual:
+
+- **Google Play:** upload the AAB to a Play Console release. Android `versionCode` is derived from
+  the version, so bump it for every upload.
+- **Microsoft Store:** submit the NSIS or MSI installer as a Win32 app.
+- **Mac App Store / iOS App Store:** need an Apple Developer account, code signing and
+  notarization (see Tauri's [distribution guides](https://v2.tauri.app/distribute/)).
+  Unsigned macOS builds open only after the user allows them in System Settings.
 
 ## Visual direction
 
@@ -168,6 +254,7 @@ disabling talent regeneration. Saves migrate automatically to version 3.
 ## Architecture
 
 ```
+src-tauri/   native shell (Tauri 2): config, Rust entry point, icons, Android project
 src/
   core/      math, seeded RNG, event bus, spatial hash, analytics event catalogue
   data/      ALL content definitions (upgrades, synergies, evolutions, enemies, arenas, cores, parts, meta)
@@ -241,4 +328,4 @@ The bot is intentionally mediocre, and humans should outperform it. Tuning lever
 - Boss Rush, Challenge Gauntlet and Build Trials modes (the director and seeded RNG already support fixed scenarios)
 - More arenas and bosses (the Architect, the Chronarch), and more elements (poison, void)
 - Cosmetic impact effects and arena themes
-- Capacitor wrapper for app-store builds
+- Code signing for Windows and macOS installers, and Tauri's updater for desktop builds

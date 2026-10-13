@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. The game is always dark, so both day and night use it. -->
+    <style name="Theme.bounce_defense" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/game_background</item>
+        <item name="android:navigationBarColor">@color/game_background</item>
+        <item name="android:statusBarColor">@color/game_background</item>
+    </style>
+</resources>
