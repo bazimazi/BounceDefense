@@ -15,6 +15,7 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
+    "icons": "node scripts/build-icons.mjs",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
     "android:dev": "tauri android dev",

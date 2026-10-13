@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="trailIn" x1="252" y1="330" x2="468" y2="708" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7de8d0" stop-opacity="0"/>
+      <stop offset="1" stop-color="#9ff5df" stop-opacity="0.85"/>
+    </linearGradient>
+    <linearGradient id="trailOut" x1="468" y1="708" x2="640" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9ff5df" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#7de8d0" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="line" x1="330" y1="0" x2="694" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5fe3c8"/>
+      <stop offset="0.5" stop-color="#d9fff4"/>
+      <stop offset="1" stop-color="#5fe3c8"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.36" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.18" stop-color="#d4fff3"/>
+      <stop offset="0.48" stop-color="#6cc9b6"/>
+      <stop offset="0.8" stop-color="#1c4b55"/>
+      <stop offset="1" stop-color="#0a1c26"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#9ff5df" stop-opacity="0.9"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <!-- defense line -->
+  <rect x="330" y="722" width="364" height="26" rx="13" fill="#5fe3c8" opacity="0.65" filter="url(#glow)"/>
+  <rect x="330" y="722" width="364" height="26" rx="13" fill="url(#line)"/>
+  <path d="M318 735 l20 -20 l20 20 l-20 20z" fill="#a78bfa"/>
+  <path d="M666 735 l20 -20 l20 20 l-20 20z" fill="#a78bfa"/>
+
+  <!-- ricochet trail -->
+  <path d="M251.1 330.5 L458.4 713.5 L477.6 702.5 L252.9 329.5z" fill="url(#trailIn)"/>
+  <path d="M475.0 711.9 L717.3 443.1 L562.7 356.9 L461.0 704.1z" fill="#7de8d0" opacity="0.35" filter="url(#glow)"/>
+  <path d="M472.4 710.4 L707.0 437.4 L573.0 362.6 L463.6 705.6z" fill="url(#trailOut)"/>
+
+  <!-- impact spark -->
+  <circle cx="468" cy="708" r="44" fill="#ffe066" opacity="0.55" filter="url(#glow)"/>
+  <path d="M468 646 Q477 699 530 708 Q477 717 468 738 Q459 717 406 708 Q459 699 468 646z" fill="#fff6c8"/>
+
+  <!-- orb -->
+  <circle cx="640" cy="400" r="144" fill="#7de8d0" opacity="0.45" filter="url(#glow)"/>
+  <circle cx="640" cy="400" r="118" fill="url(#orb)"/>
+  <circle cx="640" cy="400" r="115" fill="none" stroke="url(#rim)" stroke-width="6"/>
+  <ellipse cx="600" cy="352" rx="38" ry="22" transform="rotate(-35 600 352)" fill="#ffffff" opacity="0.85" filter="url(#soft)"/>
+</svg>

@@ -1,4 +1,4 @@
-package com.bazimazi.bouncedefense
+package games.bazimazi.bouncedefense
 
 import android.os.Bundle
 import android.view.View

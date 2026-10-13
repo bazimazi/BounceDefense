@@ -3,7 +3,7 @@
   "productName": "Bounce Defense",
   "mainBinaryName": "bounce-defense",
   "version": "../package.json",
-  "identifier": "com.bazimazi.bouncedefense",
+  "identifier": "games.bazimazi.bouncedefense",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
