@@ -1,3 +1,4 @@
+import type { Language } from '../i18n';
 export interface Loadout {
   core: string;
   shell: string;
@@ -7,6 +8,8 @@ export interface Loadout {
 }
 
 export interface Settings {
+  /** UI language; `en` unless chosen, or detected from the device on first launch. */
+  language: Language;
   sfx: number;
   music: number;
   shake: boolean;

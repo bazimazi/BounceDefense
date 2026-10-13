@@ -1,3 +1,4 @@
+import { t, type UiKey } from '../i18n';
 import { EVOLUTIONS, EVOLUTION_MAP, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADE_MAP } from '../data/upgrades';
 import type { BuildView, Tag } from '../data/types';
@@ -142,16 +143,23 @@ const EVO_TAG: Record<string, Tag> = {
   inferno: 'fire', tesla_storm: 'lightning', glacier: 'ice', blood_moon: 'vampire', hydra: 'swarm', railgun: 'kinetic',
 };
 
+/** English evolution names (for the archetype check), captured before any language switch. */
+const EVOLUTION_NAME: Record<string, string> = Object.fromEntries(EVOLUTIONS.map((e) => [e.id, e.name]));
+
+const prefixOf = (tag: Tag) => t(`build.prefix.${tag}` as UiKey);
+const nounOf = (tag: Tag) => t(`build.noun.${tag}` as UiKey);
+
+/** The English tables decide the archetype; the active language supplies the words. */
 export function buildName(build: Build): string {
   const evo = [...build.evolutions][0];
   const [a, b] = build.topTags(2);
   if (evo) {
     const e = EVOLUTION_MAP[evo];
     const own = EVO_TAG[evo];
-    const other = build.topTags(3).find((t) => t !== own && PREFIX[t] && !e.name.includes(PREFIX[t]!));
-    return other ? `${PREFIX[other]} ${e.name}` : e.name;
+    const other = build.topTags(3).find((tag) => tag !== own && PREFIX[tag] && !EVOLUTION_NAME[evo].includes(PREFIX[tag]!));
+    return other ? t('build.evolution', { prefix: prefixOf(other), name: e.name }) : e.name;
   }
-  if (!a) return 'Plain Ball';
-  if (!b) return `${PREFIX[a] ?? 'Bouncing'} Machine`;
-  return `${PREFIX[a] ?? ''} ${NOUN[b] ?? 'Machine'}`.trim();
+  if (!a) return t('build.plain');
+  if (!b) return t('build.pattern', { prefix: PREFIX[a] ? prefixOf(a) : t('build.bouncing'), noun: t('build.machine') });
+  return t('build.pattern', { prefix: PREFIX[a] ? prefixOf(a) : '', noun: NOUN[b] ? nounOf(b) : t('build.machine') }).trim();
 }

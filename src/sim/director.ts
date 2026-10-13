@@ -1,3 +1,4 @@
+import { t as i18n } from '../i18n';
 import { BOSSES, BOSS_MAP, ELITE_MODS, ENEMY_MAP } from '../data/enemies';
 import type { SquadDef } from '../data/types';
 import { BOSS_SCRIPTS, BOSS_SPAWN_Y } from './bosses';
@@ -65,7 +66,7 @@ export class Director {
     if (!this.bossActive) {
       if (!this.warned && t >= this.bossTime - 6) {
         this.warned = true;
-        w.banner('⚠ WARNING ⚠', '#ff3b3b', 'A boss approaches');
+        w.banner(i18n('fx.warning'), '#ff3b3b', i18n('fx.warningSub'));
         w.emit({ t: 'sfx', name: 'warning' });
       }
       if (t >= this.bossTime) this.spawnBoss();
@@ -92,7 +93,7 @@ export class Director {
       if (!this.miniDone && t >= this.bossTime * 0.62) {
         this.miniDone = true;
         const e = this.spawnElite(Math.min(3, w.diff.eliteModCount + 1), 1.5, 'brute');
-        if (e) w.banner('MINI-BOSS', '#ff7ad9', 'A hulking elite arrives');
+        if (e) w.banner(i18n('fx.miniBoss'), '#ff7ad9', i18n('fx.miniBossSub'));
       }
       if (t >= this.eventTime && !w.event && !this.squadsPaused) {
         // Abyss promises hostile events everywhere, even in arenas whose own list has none.
@@ -111,7 +112,7 @@ export class Director {
       const chance = 0.28 + w.build.stats.luck * 0.08 + w.build.level('greed') * 0.1;
       if (w.rng.chance(chance)) {
         w.spawnEnemy('golden', w.rng.range(80, W - 80), 480);
-        w.banner('✨ GOLDEN WISP', '#ffd84a', 'Catch it before it escapes!');
+        w.banner(i18n('fx.goldenWisp'), '#ffd84a', i18n('fx.goldenWispSub'));
       }
     }
   }
@@ -159,7 +160,7 @@ export class Director {
     const e = w.spawnEnemy(id, w.rng.range(80, W - 80), FIELD_TOP - 30, { elite: pool.slice(0, mods), hpMult });
     if (e) {
       const names = e.elite.map((m) => ELITE_MODS.find((x) => x.id === m)!.name).join(' ');
-      w.emit({ t: 'text', x: e.x, y: FIELD_TOP + 44, text: `ELITE ${names.toUpperCase()} ${e.def.name.toUpperCase()}`, color: '#ff7ad9' });
+      w.emit({ t: 'text', x: e.x, y: FIELD_TOP + 44, text: i18n('fx.elite', { mods: names.toUpperCase(), name: e.def.name.toUpperCase() }), color: '#ff7ad9', elite: true });
       w.emit({ t: 'sfx', name: 'elite' });
     }
     return e;
@@ -209,7 +210,7 @@ export class Director {
     w.run.bossesDefeated.push(this.bossId);
     w.run.bossFightTimes.push(fight);
     w.bus.emit('bossDefeated', { id: this.bossId });
-    w.banner('BOSS DEFEATED', '#ffe066', BOSS_MAP[this.bossId].name, true);
+    w.banner(i18n('fx.bossDefeated'), '#ffe066', BOSS_MAP[this.bossId].name, true);
     w.emit({ t: 'flash', color: '#ffffff', a: 0.6 });
     w.emit({ t: 'slowmo', dur: 1.4, scale: 0.2 });
     w.emit({ t: 'sfx', name: 'victory' });
@@ -227,7 +228,7 @@ export class Director {
       this.bossTime = w.time + 80;
       this.warned = false;
       this.eventTime = w.time + 30;
-      w.banner('THE ASSAULT CONTINUES', '#ff7b54', 'A second boss is coming');
+      w.banner(i18n('fx.assault'), '#ff7b54', i18n('fx.assaultSub'));
       return;
     }
     this.bossTime = Infinity;

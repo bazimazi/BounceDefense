@@ -1,3 +1,5 @@
+import { isRtl } from '../i18n';
+
 export type MotionKind = 'page' | 'panel' | 'content' | 'sheet' | 'item' | 'hud' | 'notice';
 export type MotionDirection = -1 | 0 | 1;
 
@@ -39,7 +41,8 @@ function baseTransform(el: HTMLElement): string {
 export function enter(el: HTMLElement, kind: MotionKind = 'content', direction: MotionDirection = 1, delay = 0): void {
   if (!el.isConnected) return;
   const base = baseTransform(el), page = kind === 'page', flat = kind === 'hud';
-  const x = page ? direction * 64 : kind === 'content' ? direction * 36 : 0;
+  const travel = isRtl() ? -direction : direction;
+  const x = page ? travel * 64 : kind === 'content' ? travel * 36 : 0;
   const y = kind === 'sheet' ? 44 : kind === 'panel' ? 30 : kind === 'notice' ? -14 : kind === 'item' ? 18 : kind === 'content' && !direction ? 12 : 0;
   const duration = page ? 360 : kind === 'sheet' || kind === 'panel' ? 320 : kind === 'item' ? 280 : 260;
   const settled = base || 'none';
@@ -90,7 +93,8 @@ export function retire(el: HTMLElement | null, kind: MotionKind = 'content', dir
     display: getComputedStyle(el).display, pointerEvents: 'none',
   });
   layer.append(clone); ghosts.add(clone);
-  const x = kind === 'page' ? -direction * 44 : kind === 'content' ? -direction * 28 : 0;
+  const travel = isRtl() ? -direction : direction;
+  const x = kind === 'page' ? -travel * 44 : kind === 'content' ? -travel * 28 : 0;
   const y = kind === 'sheet' || kind === 'panel' ? 24 : kind === 'notice' ? -12 : 0;
   play(clone, [
     { opacity: getComputedStyle(el).opacity, transform: 'translate3d(0,0,0)' },

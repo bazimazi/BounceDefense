@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { clamp } from '../core/math';
 import { damageEnemy, flushDamageNumber } from './combat';
 import { DEFENSE_Y, FIELD_TOP, W, type Enemy } from './types';
@@ -134,7 +135,7 @@ export function updateEnemy(w: World, e: Enemy, dt: number): void {
       e.y += (e.t0 < 7 ? Math.sin(e.wobble) * 30 : -80) * dt;
       if (e.y < FIELD_TOP - 30) {
         e.alive = false;
-        w.emit({ t: 'text', x: e.x, y: FIELD_TOP + 20, text: 'ESCAPED', color: '#ffd84a' });
+        w.emit({ t: 'text', x: e.x, y: FIELD_TOP + 20, text: t('fx.escaped'), color: '#ffd84a' });
       }
       return;
     }

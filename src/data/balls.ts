@@ -1,3 +1,4 @@
+import { localize } from '../i18n/content';
 import type { CoreDef, PartDef } from './types';
 
 /** Ball cores: the "character" of a run. Each defines a playstyle, not just stats. */
@@ -133,3 +134,7 @@ export const TRAILS = [
   { id: 'gold', name: 'Gilded', colors: ['#fff3b0', '#ffb300'] },
   { id: 'prism', name: 'Prism', colors: ['#ff6ad5', '#5ee7ff'] },
 ];
+
+localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);
+localize('part', PARTS, ['name', 'desc', 'unlock.text']);
+localize('trail', TRAILS, ['name']);

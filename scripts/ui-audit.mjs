@@ -13,7 +13,9 @@ import { ARENAS } from '../src/data/arenas.ts';
 const engine = process.env.ENGINE ?? 'chromium';
 const browserType = { chromium, firefox, webkit }[engine];
 assert.ok(browserType, `Unknown Playwright engine: ${engine}`);
-const out = process.env.SHOTS ?? `smoke-shots/ui-audit/${engine}`;
+// UI_LANG=fa reviews every layout in Persian (right-to-left).
+const lang = process.env.UI_LANG ?? 'en';
+const out = process.env.SHOTS ?? `smoke-shots/ui-audit/${engine}${lang === 'en' ? '' : `-${lang}`}`;
 fs.mkdirSync(out, { recursive: true });
 const executablePath = engine === 'chromium' ? process.env.CHROME_PATH : undefined;
 const browser = await browserType.launch({ executablePath, headless: true });
@@ -35,6 +37,8 @@ try {
     p.discoveries.enemies = ['grunt', 'runner', 'shielder', 'brute'];
     p.discoveries.bosses = ['fortress', 'magnetar', 'hydra'];
   });
+  await page.evaluate(lang => { window.game.profile.settings.language = lang; window.game.applySettings(); window.game.ui.home(); }, lang);
+  assert.equal(await page.evaluate(() => document.documentElement.lang), lang);
   const fullProfile = {
     unlockedCores: CORES.map(x => x.id), unlockedParts: PARTS.map(x => x.id), cosmetics: TRAILS.map(x => x.id),
     unlockedUpgrades: UPGRADES.map(x => x.id), researchNodes: RESEARCH.map(x => x.id),
@@ -222,7 +226,7 @@ try {
             for (let node = 0; node < await nodes.count(); node++) {
               await nodes.nth(node).click();
               await capture(`talent-details-${tree + 1}-${node + 1}`, width, height);
-              await page.getByRole('button', { name: 'Close talent details', exact: true }).click();
+              await page.locator('.talent-detail-close').click();
             }
           }
         }

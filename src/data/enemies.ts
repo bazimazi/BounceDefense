@@ -1,3 +1,4 @@
+import { localize } from '../i18n/content';
 import type { BossDef, EliteModDef, EnemyDef } from './types';
 
 /** Enemies are designed around the ball: each one asks a different question of your build. */
@@ -121,3 +122,7 @@ export const BOSSES: BossDef[] = [
   { id: 'hydra', name: 'The Hydra', title: 'Endless Heads', enemy: 'boss_hydra', desc: 'Splits into more heads as it takes damage.' },
 ];
 export const BOSS_MAP: Record<string, BossDef> = Object.fromEntries(BOSSES.map((b) => [b.id, b]));
+
+localize('enemy', ENEMIES, ['name', 'desc', 'tip']);
+localize('elite', ELITE_MODS, ['name', 'desc']);
+localize('boss', BOSSES, ['name', 'title', 'desc']);

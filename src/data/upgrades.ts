@@ -1,3 +1,4 @@
+import { localize } from '../i18n/content';
 import type { UpgradeDef } from './types';
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -304,3 +305,5 @@ export const UPGRADE_MAP: Record<string, UpgradeDef> = Object.fromEntries(UPGRAD
 
 /** Upgrades that begin unlocked but are behind research; kept here for clarity of the default pool. */
 export const DEFAULT_UNLOCKED_UPGRADES = UPGRADES.filter((u) => !u.locked).map((u) => u.id);
+
+localize('upgrade', UPGRADES, ['name', 'desc']);

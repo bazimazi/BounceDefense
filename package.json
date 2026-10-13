@@ -29,6 +29,7 @@
     "test:ui:back": "node scripts/back-check.mjs",
     "test:ui:motion": "node scripts/motion-check.mjs",
     "test:ui:aim": "node scripts/aim-check.mjs",
+    "test:ui:i18n": "node --import tsx scripts/i18n-check.mjs",
     "test:watch": "vitest",
     "sim": "tsx scripts/simulate.ts"
   },

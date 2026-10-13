@@ -174,4 +174,4 @@ export type Fx =
   | { t: 'hurt'; x: number; dmg: number }
   | { t: 'heal'; x: number; y: number; v: number }
   | { t: 'slowmo'; dur: number; scale: number }
-  | { t: 'text'; x: number; y: number; text: string; color: string };
+  | { t: 'text'; x: number; y: number; text: string; color: string; elite?: boolean };

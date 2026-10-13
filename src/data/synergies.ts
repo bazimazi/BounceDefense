@@ -1,3 +1,4 @@
+import { localize } from '../i18n/content';
 import type { EvolutionDef, ReactionDef, SynergyDef } from './types';
 
 /**
@@ -155,3 +156,7 @@ export const REACTIONS: ReactionDef[] = [
   { id: 'supercharge', name: 'Supercharge', icon: '✴️', elements: ['ice', 'lightning'], desc: 'Lightning striking a frozen enemy fractures into extra arcs.' },
 ];
 export const REACTION_MAP: Record<string, ReactionDef> = Object.fromEntries(REACTIONS.map((r) => [r.id, r]));
+
+localize('synergy', SYNERGIES, ['name', 'desc', 'hint']);
+localize('evolution', EVOLUTIONS, ['name', 'desc']);
+localize('reaction', REACTIONS, ['name', 'desc']);

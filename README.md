@@ -32,6 +32,8 @@ npm run test:ui                # all three engines: every menu/category/page plu
 npm run test:ui:back           # Back/forward, dialogs, drafts, paused run and reload (ENGINE selects browser)
 npm run test:ui:motion         # live transitions, selections and overlays
 npm run test:ui:aim            # board-wide mouse/touch aiming, HUD layers and pointer capture
+npm run test:ui:i18n           # Persian: device detection, language picker, every screen, RTL paging, run flow
+UI_LANG=fa npm run test:ui:layout # the full layout audit in Persian (right-to-left)
 ```
 
 The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables. It captures
@@ -73,6 +75,25 @@ A native wrapper can call `game.ui.back()` (false at Home), or forward a cancela
 `backbutton` event and handle its own exit when the event is not consumed.
 The Tauri Android shell needs neither: its Back button walks WebView history, which the game
 already manages, and exits at Home.
+
+## Languages
+
+The game ships in English and Persian (فارسی). The first launch follows the device language
+(`navigator.language`); afterwards Settings → Language decides, and the choice is saved with the
+profile. Persian switches the whole document to right-to-left (`<html lang="fa" dir="rtl">`):
+menus use logical CSS properties, card decks page and swipe in the mirrored direction, and the
+canvas HUD draws with an RTL base direction. Persian text uses the bundled
+[Vazirmatn](https://github.com/rastikerdar/vazirmatn) variable font (`public/fonts/`, SIL OFL),
+since the native builds allow only self-hosted fonts. Digits stay Latin.
+
+UI phrases live in `src/i18n/en.ts` and `src/i18n/fa.ts` (`t('key', { params })`); a language must
+provide every key or the typecheck fails. Game content stays authored in English in `src/data/`
+and is translated through `src/i18n/fa-content.ts`: `localize()` turns the listed fields into
+getters that serve the active language, so menus, run banners, build names and the canvas HUD
+all switch without touching their call sites. `tests/i18n.test.ts` proves every key, placeholder
+and content field is covered; `npm run test:ui:i18n` and `UI_LANG=fa npm run test:ui:layout`
+exercise the real UI in Persian. To add a language: register it in `src/i18n/index.ts`, add a
+dictionary and a content table, and extend the Settings picker's font rules in `style.css`.
 
 ## Native apps (Tauri)
 

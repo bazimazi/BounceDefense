@@ -4,7 +4,8 @@ import { clamp } from './core/math';
 import { Rng } from './core/rng';
 import { createDebugPanel } from './debug/debug';
 import { applyRun, researchFlags, runConfig } from './meta/progress';
-import { loadProfile, safeLocalStorage, saveProfile } from './meta/profile';
+import { hasSave, loadProfile, safeLocalStorage, saveProfile } from './meta/profile';
+import { detectLanguage, setLanguage, t as i18n } from './i18n';
 import type { Profile } from './meta/types';
 import { Renderer } from './render/renderer';
 import { botChoose, botStep, defaultConfig, FULL_POOL } from './sim/bot';
@@ -47,6 +48,9 @@ export class Game {
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.playSurface = canvas.parentElement ?? canvas;
+    // A first launch follows the device language; afterwards the saved choice is kept.
+    if (!hasSave(this.store)) this.profile.settings.language = detectLanguage();
+    setLanguage(this.profile.settings.language);
     this.renderer = new Renderer(canvas);
     this.ui = new UI(uiRoot, this);
   }
@@ -77,6 +81,7 @@ export class Game {
 
   applySettings(): void {
     const s = this.profile.settings;
+    setLanguage(s.language);
     this.audio.setVolumes(s.sfx, s.music);
     this.renderer.opts.shake = s.shake;
     this.renderer.opts.damageNumbers = s.damageNumbers;
@@ -333,7 +338,7 @@ export class Game {
         if (isRun) this.audio.play(f.name, f.pitch, f.vol);
       } else if (f.t === 'slowmo') {
         if (isRun) this.slow = { t: f.dur, scale: f.scale };
-      } else if (f.t === 'text' && isRun && w.cfg.tutorial && f.text.startsWith('ELITE')) {
+      } else if (f.t === 'text' && isRun && w.cfg.tutorial && f.elite) {
         this.tut.eliteHint = 4;
         this.renderer.handleFx(f);
       } else if (isRun || (f.t !== 'banner' && f.t !== 'shake' && f.t !== 'flash')) {
@@ -360,14 +365,14 @@ export class Game {
     if (w.surge.active > 0) t.surgeHinted = true;
     let hint: string | null = null;
     if (w.state !== 'playing' || this.paused) hint = null;
-    else if (!t.launched) hint = this.profile.settings.aimMode === 'slingshot' ? 'Pull back and release to launch' : 'Drag to aim · Release to launch';
-    else if (t.t < 9 && w.run.kills < 3) hint = 'Release when the dial turns gold for a POWER SHOT.';
-    else if (t.t < 20 && w.resonance.nodes.length && !w.resonance.completed) hint = 'Hit all 3 diamond signals to unleash STARFALL.';
-    else if (t.t >= 20 && t.t < 26 && inFlight) hint = 'Bad angle? RECALL brings your balls home. Tap ↶ or press R.';
-    else if (t.eliteHint > 0) hint = 'Elites are tough — but drop 💠 Cores for permanent unlocks.';
-    else if (w.canSurge() && !t.surgeHinted) hint = 'SURGE is charged! Tap it (or Space) to supercharge every ball.';
+    else if (!t.launched) hint = this.profile.settings.aimMode === 'slingshot' ? i18n('hint.slingshot') : i18n('hint.drag');
+    else if (t.t < 9 && w.run.kills < 3) hint = i18n('hint.power');
+    else if (t.t < 20 && w.resonance.nodes.length && !w.resonance.completed) hint = i18n('hint.signals');
+    else if (t.t >= 20 && t.t < 26 && inFlight) hint = i18n('hint.recall');
+    else if (t.eliteHint > 0) hint = i18n('hint.elite');
+    else if (w.canSurge() && !t.surgeHinted) hint = i18n('hint.surge');
     else if (w.maxBallsAllowed() > 1 && !t.holdHinted && t.idle > 2.5) {
-      hint = 'Tip: keep holding to auto-fire balls as they return.';
+      hint = i18n('hint.hold');
       if (w.aim.active) t.holdHinted = true;
     }
     this.ui.hint(hint);

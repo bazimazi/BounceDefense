@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { localize } from '../i18n/content';
 import type { Modifier } from '../sim/stats';
 import type { Profile, RunSummary, Unlock } from '../meta/types';
 
@@ -148,14 +150,19 @@ export interface MasteryReward {
 export function masteryRewards(core: string): MasteryReward[] {
   const sig = SIGNATURE_UPGRADE[core];
   const out: MasteryReward[] = [
-    { level: 2, text: 'Signature upgrade unlocked', unlocks: [{ type: 'upgrade', id: sig }] },
-    { level: 3, text: '+2 Research', unlocks: [{ type: 'research', amount: 2 }] },
-    { level: 4, text: 'Mastery trail', unlocks: [{ type: 'cosmetic', id: MASTERY_TRAIL[core] }] },
-    { level: 5, text: '+2 Cores', unlocks: [{ type: 'cores', amount: 2 }] },
+    { level: 2, text: t('mastery.signature'), unlocks: [{ type: 'upgrade', id: sig }] },
+    { level: 3, text: t('mastery.research2'), unlocks: [{ type: 'research', amount: 2 }] },
+    { level: 4, text: t('mastery.trail'), unlocks: [{ type: 'cosmetic', id: MASTERY_TRAIL[core] }] },
+    { level: 5, text: t('mastery.cores2'), unlocks: [{ type: 'cores', amount: 2 }] },
   ];
   for (let l = 6; l <= MASTERY_MAX; l++) {
-    if (l % 5 === 0) out.push({ level: l, text: '+3 Cores', unlocks: [{ type: 'cores', amount: 3 }] });
-    else out.push({ level: l, text: '+1 Research', unlocks: [{ type: 'research', amount: 1 }] });
+    if (l % 5 === 0) out.push({ level: l, text: t('mastery.cores3'), unlocks: [{ type: 'cores', amount: 3 }] });
+    else out.push({ level: l, text: t('mastery.research1'), unlocks: [{ type: 'research', amount: 1 }] });
   }
   return out;
 }
+
+localize('achievement', ACHIEVEMENTS, ['name', 'desc']);
+localize('challenge', CHALLENGES, ['name', 'desc']);
+localize('research', RESEARCH, ['name', 'desc']);
+localize('workshop', WORKSHOP, ['name', 'desc']);

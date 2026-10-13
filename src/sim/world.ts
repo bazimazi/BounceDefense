@@ -1,3 +1,4 @@
+import { t, type UiKey } from '../i18n';
 import { EventBus } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
@@ -60,7 +61,8 @@ export interface WorldEvents {
 }
 
 export const MOMENTUM_TIERS = [0, 5, 12, 25, 45];
-export const MOMENTUM_NAMES = ['Normal', 'Charged', 'Overcharged', 'Hyper', 'Unstable'];
+/** Localized momentum tier name. */
+export const momentumName = (tier: number): string => t(`momentum.${tier}` as UiKey);
 export const MOMENTUM_COLORS = ['#ffffff', '#7ad7ff', '#ffe066', '#ff7ad9', '#ff3b3b'];
 export const TIER_DMG = [1, 1.15, 1.35, 1.7, 2.0];
 export const TIER_CRIT = [0, 0, 0.05, 0.1, 0.12];
@@ -472,8 +474,7 @@ export class World {
     if (next !== undefined && c.count >= next) {
       c.nextMilestone++;
       this.bus.emit('combo', { n: next });
-      const labels: Record<number, string> = { 10: 'NICE', 25: 'GREAT', 50: 'AMAZING', 100: 'UNSTOPPABLE', 150: 'GODLIKE', 200: 'BEYOND', 300: 'IMPOSSIBLE' };
-      this.banner(`${next} COMBO`, '#ffe066', labels[next]);
+      this.banner(t('fx.combo', { n: next }), '#ffe066', t(`fx.combo${next}` as UiKey));
       this.emit({ t: 'sfx', name: 'combo', pitch: 1 + c.nextMilestone * 0.1 });
       if (next >= 100) this.emit({ t: 'slowmo', dur: 0.5, scale: 0.35 });
     }
@@ -559,7 +560,7 @@ export class World {
     }
     this.emit({ t: 'flash', color: '#ffe066', a: 0.25 });
     this.emit({ t: 'sfx', name: 'surge' });
-    this.banner('SURGE', '#ffe066');
+    this.banner(t('fx.surge'), '#ffe066');
   }
 
   addBuff(id: string, t: number, mods: Modifier[]): void {
@@ -622,7 +623,7 @@ export class World {
       const e = EVOLUTION_MAP[offer.id];
       this.discover('evolutions', offer.id);
       this.bus.emit('evolution', { id: offer.id });
-      this.banner('BALL EVOLVED', e.color, `${e.icon} ${e.name}`, true);
+      this.banner(t('fx.evolved'), e.color, `${e.icon} ${e.name}`, true);
       this.emit({ t: 'flash', color: e.color, a: 0.5 });
       this.emit({ t: 'slowmo', dur: 1.2, scale: 0.25 });
       this.emit({ t: 'sfx', name: 'evolve' });
@@ -651,7 +652,7 @@ export class World {
       const s = SYNERGY_MAP[id];
       const isNew = this.discover('synergies', id);
       this.bus.emit('synergy', { id, isNew });
-      this.banner(isNew ? 'SYNERGY DISCOVERED' : 'SYNERGY', s.tier === 'legendary' ? '#ffb300' : '#c77dff', `${s.icon} ${s.name}`, isNew);
+      this.banner(isNew ? t('fx.synergyNew') : t('fx.synergy'), s.tier === 'legendary' ? '#ffb300' : '#c77dff', `${s.icon} ${s.name}`, isNew);
       this.emit({ t: 'sfx', name: 'synergy' });
       if (s.tier === 'legendary') this.emit({ t: 'slowmo', dur: 0.8, scale: 0.3 });
     }
@@ -782,7 +783,7 @@ export class World {
         b.dmgMult *= 1.45;
         b.momentum += 5 * st.momentumGain;
         this.emit({ t: 'ring', x: LAUNCHER_X, y: LAUNCHER_Y, r: 62, color: '#ffe3a3' });
-        this.emit({ t: 'text', x: LAUNCHER_X, y: LAUNCHER_Y - 55, text: 'POWER SHOT', color: '#ffe3a3' });
+        this.emit({ t: 'text', x: LAUNCHER_X, y: LAUNCHER_Y - 55, text: t('fx.powerShot'), color: '#ffe3a3' });
         this.emit({ t: 'sfx', name: 'power' });
       }
       this.emit({ t: 'sfx', name: 'launch' });
@@ -983,14 +984,14 @@ export class World {
 
   private mysteryTransform(): void {
     const opts: [string, string, Modifier[]][] = [
-      ['MEGA BALL', '#ff7ad9', [{ stat: 'radius', mult: 1 }, { stat: 'damage', mult: 1 }]],
-      ['PRISM BALL', '#5ee7ff', [{ stat: 'burnChance', add: 0.5 }, { stat: 'chillChance', add: 0.5 }, { stat: 'chainChance', add: 0.5 }]],
-      ['OVERDRIVE', '#ffe066', [{ stat: 'speed', mult: 0.5 }, { stat: 'pierce', add: 3 }]],
-      ['BLAST BALL', '#ff8a3d', [{ stat: 'explosionChance', add: 0.6 }]],
+      [t('fx.mysteryMega'), '#ff7ad9', [{ stat: 'radius', mult: 1 }, { stat: 'damage', mult: 1 }]],
+      [t('fx.mysteryPrism'), '#5ee7ff', [{ stat: 'burnChance', add: 0.5 }, { stat: 'chillChance', add: 0.5 }, { stat: 'chainChance', add: 0.5 }]],
+      [t('fx.mysteryOverdrive'), '#ffe066', [{ stat: 'speed', mult: 0.5 }, { stat: 'pierce', add: 3 }]],
+      [t('fx.mysteryBlast'), '#ff8a3d', [{ stat: 'explosionChance', add: 0.6 }]],
     ];
     const [name, color, mods] = this.rng.pick(opts);
     this.addBuff('mystery', 12, mods);
-    this.banner(`❓ ${name}`, color, 'Mystery transformation for 12s');
+    this.banner(t('fx.mystery', { name }), color, t('fx.mysterySub'));
     this.emit({ t: 'sfx', name: 'synergy' });
   }
 
@@ -1002,7 +1003,7 @@ export class World {
     this.endTimer = victory ? 2.5 : 1.2;
     this.emit({ t: 'slowmo', dur: this.endTimer, scale: 0.3 });
     if (!victory) {
-      this.banner('DEFENSE BROKEN', '#ff3b3b', undefined, true);
+      this.banner(t('fx.defenseBroken'), '#ff3b3b', undefined, true);
       this.emit({ t: 'sfx', name: 'defeat' });
     }
   }
@@ -1013,7 +1014,7 @@ export class World {
     this.state = 'playing';
     this.endTimer = -1;
     this.director.startEndless();
-    this.banner('ENDLESS MODE', '#c77dff', 'How long can your build survive?', true);
+    this.banner(t('fx.endless'), '#c77dff', t('fx.endlessSub'), true);
   }
 
   summary(): RunSummary {

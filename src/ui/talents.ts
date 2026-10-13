@@ -1,6 +1,7 @@
 import { TALENTS, TALENT_MAP, TALENT_TREES, TALENT_XP_PER_POINT, talentRequirement, talentSpent, type TalentTree } from '../data/talents';
 import { applyTalents, changeTalent, talentProgress } from '../meta/talents';
 import type { Profile } from '../meta/types';
+import { t } from '../i18n';
 import { bar, h } from './dom';
 import { cancelWithin, enter, feedback, retire, revealItems, tabFeedback, type MotionDirection } from './motion';
 
@@ -22,7 +23,7 @@ export function talentScreen(p: Profile, save: () => void, back: () => void): Ta
   let selected = 'bankcraft';
   let notice = '';
   let detailOpen = false;
-  const dirty = () => TALENTS.some(t => (draft[t.id] ?? 0) !== (p.talents[t.id] ?? 0));
+  const dirty = () => TALENTS.some(n => (draft[n.id] ?? 0) !== (p.talents[n.id] ?? 0));
   const closeDetail = () => { detailOpen = false; render(`talent-${selected}`, 'close'); };
   const progress = talentProgress(p);
   const render = (focus?: string, change?: TalentChange, direction: MotionDirection = 0) => {
@@ -35,32 +36,32 @@ export function talentScreen(p: Profile, save: () => void, back: () => void): Ta
     const scrollTop = root.querySelector('.talent-scroll')?.scrollTop ?? 0;
     const spent = talentSpent(draft);
     const changed = dirty();
-    const t = TALENT_MAP[selected];
-    const rank = draft[t.id] ?? 0;
-    const lock = talentRequirement(draft, t);
+    const talent = TALENT_MAP[selected];
+    const rank = draft[talent.id] ?? 0;
+    const lock = talentRequirement(draft, talent);
     const update = (delta: 1 | -1) => {
       const next = changeTalent(draft, selected, delta, progress.total);
       if (!next) return;
       const refunded = spent - talentSpent(next);
       draft = next;
-      notice = refunded > 1 ? `${refunded} points refunded, including dependent talents.` : '';
+      notice = refunded > 1 ? t('talents.refunded', { n: refunded }) : '';
       render(delta === 1 ? 'talent-learn' : 'talent-refund', 'rank');
     };
     root.replaceChildren(
       h('div', { class: 'topbar' },
-        h('button', { class: 'ghost', onclick: back, 'aria-label': 'Back' }, '←'),
-        h('h2', {}, 'Talents'), h('span', { class: 'chip talent-points', 'aria-live': 'polite' }, `${progress.total - spent} points available`)),
+        h('button', { class: 'ghost', onclick: back, 'aria-label': t('common.back') }, t('common.backGlyph')),
+        h('h2', {}, t('talents.title')), h('span', { class: 'chip talent-points', 'aria-live': 'polite' }, t('talents.points', { n: progress.total - spent }))),
       h('div', { class: 'scroll talent-scroll' },
-        h('div', { class: 'talent-intro' }, h('span', { class: 'eyebrow' }, 'CHOOSE YOUR SPECIALIZATION'),
-          h('p', {}, 'Three disciplines. One shared budget. Shape every run.'),
-          h('div', { class: 'small muted' }, `3 starting points + 1 per ${TALENT_XP_PER_POINT} total Mastery XP across all cores. ${progress.total}/15 earned.`,
-            progress.next ? ` Next point in ${progress.next} XP.` : ' All points earned.'),
+        h('div', { class: 'talent-intro' }, h('span', { class: 'eyebrow' }, t('talents.eyebrow')),
+          h('p', {}, t('talents.intro')),
+          h('div', { class: 'small muted' }, t('talents.progress', { xp: TALENT_XP_PER_POINT, total: progress.total }),
+            progress.next ? t('talents.nextPoint', { n: progress.next }) : t('talents.allEarned')),
           bar(progress.next ? (TALENT_XP_PER_POINT - progress.next) / TALENT_XP_PER_POINT : 1, 'gold')),
-        h('div', { class: 'talent-tabs', 'aria-label': 'Talent trees' }, TALENT_TREES.map(tree =>
+        h('div', { class: 'talent-tabs', 'aria-label': t('talents.trees') }, TALENT_TREES.map(tree =>
           h('button', { id: `talent-tab-${tree.id}`, class: active === tree.id ? 'on' : '', 'aria-pressed': active === tree.id ? 'true' : 'false',
             style: `--tree-color:${tree.color}`, onclick: () => {
               if (active === tree.id) return;
-              const dir = TALENT_TREES.findIndex(t => t.id === tree.id) > TALENT_TREES.findIndex(t => t.id === active) ? 1 : -1;
+              const dir = TALENT_TREES.findIndex(x => x.id === tree.id) > TALENT_TREES.findIndex(x => x.id === active) ? 1 : -1;
               active = tree.id; selected = TALENTS.find(n => n.tree === active)!.id; detailOpen = false;
               render(`talent-tab-${active}`, 'tree', dir);
             } },
@@ -68,7 +69,7 @@ export function talentScreen(p: Profile, save: () => void, back: () => void): Ta
         h('div', { class: 'talent-forest' }, TALENT_TREES.map(tree =>
           h('section', { class: `talent-tree ${active === tree.id ? 'active' : ''}`, style: `--tree-color:${tree.color}`, 'aria-label': tree.name },
             h('div', { class: 'talent-tree-heading' }, h('span', { class: 'talent-tree-emblem', 'aria-hidden': 'true' }, tree.icon),
-              h('div', {}, h('h3', {}, tree.name), h('span', { class: 'small muted' }, `${talentSpent(draft, tree.id)} points invested`))),
+              h('div', {}, h('h3', {}, tree.name), h('span', { class: 'small muted' }, t('talents.invested', { n: talentSpent(draft, tree.id) })))),
             h('p', { class: 'talent-tree-desc' }, tree.desc),
             ...[0, 1, 2].map(tier => h('div', { class: `talent-tier tier-${tier}` },
               TALENTS.filter(n => n.tree === tree.id && n.tier === tier).map(n => {
@@ -77,34 +78,34 @@ export function talentScreen(p: Profile, save: () => void, back: () => void): Ta
                 return h('div', { class: `talent-slot ${n.requires ? 'connected' : ''} ${!requirement ? 'unlocked' : ''}` },
                   h('button', { id: `talent-${n.id}`, class: `talent-node ${r ? 'learned' : ''} ${requirement ? 'locked-node' : ''} ${selected === n.id ? 'selected-node' : ''} ${tier === 2 ? 'capstone' : ''}`,
                     'aria-pressed': selected === n.id ? 'true' : 'false',
-                    'aria-label': `${n.name}, rank ${r} of ${n.maxRank}${requirement ? `, ${requirement}` : ''}`,
+                    'aria-label': `${t('talents.nodeLabel', { name: n.name, rank: r, max: n.maxRank })}${requirement ? `, ${requirement}` : ''}`,
                     title: n.desc(r || 1), onclick: () => {
                       selected = n.id; active = tree.id; notice = ''; detailOpen = true; render(`talent-${n.id}`, 'detail');
                     } },
                   h('span', { class: 'talent-icon', 'aria-hidden': 'true' }, n.icon),
-                  h('span', { class: 'talent-rank' }, `${r}/${n.maxRank}`)),
+                  h('span', { class: 'talent-rank' }, t('talents.rankBadge', { rank: r, max: n.maxRank }))),
                   h('div', { class: 'talent-node-name' }, n.name),
-                  tier === 2 ? h('span', { class: 'talent-cap-label' }, 'CAPSTONE · 8 POINTS') : null);
+                  tier === 2 ? h('span', { class: 'talent-cap-label' }, t('talents.capstone')) : null);
               }))),
           ))),
-        h('section', { class: 'talent-detail', 'aria-label': 'Selected talent' },
-          h('button', { class: 'talent-detail-close', 'aria-label': 'Close talent details', onclick: closeDetail }, '×'),
-          h('div', { class: 'row wrap' }, h('strong', {}, `${t.icon} ${t.name}`), h('span', { class: 'chip' }, `Rank ${rank}/${t.maxRank}`)),
-          rank > 0 ? h('p', { class: 'small' }, `Current: ${t.desc(rank)}`) : null,
-          rank < t.maxRank ? h('p', { class: 'small' }, `Next rank: ${t.desc(rank + 1)}`) : null,
-          h('div', { class: 'small talent-requirement' }, lock ?? (rank === t.maxRank ? 'Fully learned' : progress.total === spent ? 'No points available. Refund a talent or earn more Mastery XP.' : 'Ready to learn · 1 point')),
+        h('section', { class: 'talent-detail', 'aria-label': t('talents.selected') },
+          h('button', { class: 'talent-detail-close', 'aria-label': t('talents.closeDetails'), onclick: closeDetail }, '×'),
+          h('div', { class: 'row wrap' }, h('strong', {}, `${talent.icon} ${talent.name}`), h('span', { class: 'chip' }, t('talents.rank', { rank, max: talent.maxRank }))),
+          rank > 0 ? h('p', { class: 'small' }, t('talents.current', { text: talent.desc(rank) })) : null,
+          rank < talent.maxRank ? h('p', { class: 'small' }, t('talents.nextRank', { text: talent.desc(rank + 1) })) : null,
+          h('div', { class: 'small talent-requirement' }, lock ?? (rank === talent.maxRank ? t('talents.fullyLearned') : progress.total === spent ? t('talents.noPoints') : t('talents.ready'))),
           h('div', { class: 'row talent-actions' },
-            h('button', { id: 'talent-refund', disabled: rank === 0, onclick: () => update(-1) }, '− Refund'),
-            h('button', { id: 'talent-learn', class: 'primary', disabled: !!lock || rank === t.maxRank || spent >= progress.total, onclick: () => update(1) }, '+ Learn rank')),
-          h('div', { class: 'small muted' }, 'Refunding prerequisites also refunds their dependent talents.'),
+            h('button', { id: 'talent-refund', disabled: rank === 0, onclick: () => update(-1) }, t('talents.refund')),
+            h('button', { id: 'talent-learn', class: 'primary', disabled: !!lock || rank === talent.maxRank || spent >= progress.total, onclick: () => update(1) }, t('talents.learn'))),
+          h('div', { class: 'small muted' }, t('talents.refundNote')),
           h('div', { class: 'small talent-notice', role: 'status' }, notice)),
-        h('p', { class: 'small muted talent-rules' }, 'Talents persist across cores and runs. They complement Workshop and run upgrades; they never unlock synergies or evolutions. Risk Pacts still apply. Free respecs between runs.'),
+        h('p', { class: 'small muted talent-rules' }, t('talents.rules')),
       ),
       h('div', { class: 'talent-footer' },
-        h('div', { class: 'small muted' }, changed ? 'Unapplied changes · Apply to save' : `${spent}/${progress.total} points allocated · Saved`),
+        h('div', { class: 'small muted' }, changed ? t('talents.unapplied') : t('talents.allocated', { spent, total: progress.total })),
         h('div', { class: 'row' },
-          h('button', { id: 'talent-reset', disabled: spent === 0, onclick: () => { draft = {}; notice = 'All points refunded in this draft.'; render('talent-reset', 'reset'); } }, 'Reset all'),
-          h('button', { id: 'talent-apply', class: 'primary', disabled: !changed, onclick: () => { applyTalents(p, draft); save(); notice = 'Talents saved. Your next run will use this specialization.'; render('talent-apply', 'apply'); } }, 'Apply talents'))),
+          h('button', { id: 'talent-reset', disabled: spent === 0, onclick: () => { draft = {}; notice = t('talents.draftReset'); render('talent-reset', 'reset'); } }, t('talents.resetAll')),
+          h('button', { id: 'talent-apply', class: 'primary', disabled: !changed, onclick: () => { applyTalents(p, draft); save(); notice = t('talents.saved'); render('talent-apply', 'apply'); } }, t('talents.apply')))),
     );
     root.querySelector('.talent-scroll')!.scrollTop = scrollTop;
     root.toggleAttribute('data-detail-open', detailOpen);

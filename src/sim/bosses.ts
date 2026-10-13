@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { TAU } from '../core/math';
 import { DEFENSE_Y, FIELD_TOP, W, type Enemy } from './types';
 import type { World } from './world';
@@ -40,7 +41,7 @@ export const BOSS_SCRIPTS: Record<string, BossScript> = {
     },
     update(w, e, dt) {
       if (e.y < 250) e.y += 90 * dt;
-      enrage(w, e, 'THE FORTRESS HARDENS');
+      enrage(w, e, t('fx.fortressHardens'));
       e.t0 += (e.phase ? 1.45 : 0.85) * dt * (e.st.frozenT > 0 ? 0.3 : 1);
       const n = e.phase ? 4 : 3;
       const R = e.r + FORTRESS_RING;
@@ -79,7 +80,7 @@ export const BOSS_SCRIPTS: Record<string, BossScript> = {
     },
     update(w, e, dt) {
       if (e.y < 230) e.y += 80 * dt;
-      enrage(w, e, 'THE MAGNETAR COLLAPSES');
+      enrage(w, e, t('fx.magnetarCollapses'));
       e.x = W / 2 + Math.sin(w.time * 0.45) * 150;
       if (e.t1 > 0) e.t1 -= dt;
       e.t0 -= dt;
@@ -129,7 +130,7 @@ export const BOSS_SCRIPTS: Record<string, BossScript> = {
         BOSS_SCRIPTS.boss_hydra.init(w, c);
         c.t1 = x;
       }
-      w.banner('THE HYDRA SPLITS', '#5dffa0');
+      w.banner(t('fx.hydraSplits'), '#5dffa0');
       w.emit({ t: 'sfx', name: 'boss' });
     },
   },

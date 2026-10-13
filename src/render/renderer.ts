@@ -1,3 +1,4 @@
+import { fontFamily, isRtl, t } from '../i18n';
 import { TAU, clamp, easeOutBack, formatNum, formatTime } from '../core/math';
 import { EVENT_MAP } from '../data/arenas';
 import { CORE_MAP } from '../data/balls';
@@ -9,7 +10,7 @@ import {
   DEFENSE_Y, FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, W,
   type Ball, type Enemy, type Fx,
 } from '../sim/types';
-import { MOMENTUM_COLORS, MOMENTUM_NAMES, POWER_START, POWER_END, type World } from '../sim/world';
+import { MOMENTUM_COLORS, momentumName, POWER_START, POWER_END, type World } from '../sim/world';
 import { effectiveTier } from '../sim/physics';
 import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
@@ -32,7 +33,8 @@ export interface RenderOptions {
   previewBounces: number;
 }
 
-const FONT = '"Rubik", "Segoe UI", system-ui, sans-serif';
+/** Resolved per frame so a language switch also changes the canvas typeface. */
+let FONT = fontFamily();
 
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
@@ -134,7 +136,7 @@ export class Renderer {
       case 'starfall':
         this.starfalls.push({ pts: f.pts, life: .85 });
         this.rings.push({ x: W / 2, y: 400, r: 360, life: .9, max: .9, color: '#bca7ff' });
-        this.queueBanner({ text: 'STARFALL', sub: 'Circuit complete / 7s overdrive', color: '#bca7ff', big: true, t: 0, dur: 1.8, wait: 0 }, true);
+        this.queueBanner({ text: t('canvas.starfall'), sub: t('canvas.starfallSub'), color: '#bca7ff', big: true, t: 0, dur: 1.8, wait: 0 }, true);
         break;
       case 'hit': {
         const n = f.crit ? 14 : 6;
@@ -256,6 +258,9 @@ export class Renderer {
   // ------------------------------------------------------------------ frame
   draw(w: World, hud = true): void {
     const ctx = this.ctx;
+    FONT = fontFamily();
+    // Persian telemetry needs a right-to-left base direction for mixed digits and punctuation.
+    ctx.direction = isRtl() ? 'rtl' : 'ltr';
     const k = this.scale * this.dpr;
     ctx.setTransform(k, 0, 0, k, 0, 0);
     this.drawBackground(w);
@@ -337,8 +342,8 @@ export class Renderer {
     ctx.fillStyle = col + '80';
     for (let x = 18; x < W; x += 28) ctx.fillRect(x, DEFENSE_Y + 7, 12, 2);
     ctx.font = `9px ${FONT}`; ctx.textAlign = 'left';
-    ctx.fillText('DEFENSE LINE', 24, DEFENSE_Y + 29);
-    ctx.textAlign = 'right'; ctx.fillText(`${Math.ceil(hpFrac * 100)}% INTEGRITY`, W - 24, DEFENSE_Y + 29);
+    ctx.fillText(t('canvas.defenseLine'), 24, DEFENSE_Y + 29);
+    ctx.textAlign = 'right'; ctx.fillText(t('canvas.integrity', { pct: Math.ceil(hpFrac * 100) }), W - 24, DEFENSE_Y + 29);
     if (w.barrier.charges > 0) {
       ctx.strokeStyle = '#5ad7ff';
       ctx.lineWidth = 2;
@@ -1108,7 +1113,7 @@ export class Renderer {
       const hpColor = hpFrac > .5 ? '#9aeadb' : hpFrac > .25 ? '#ffd166' : '#ff5d73';
       ctx.textAlign = 'left';
       ctx.font = `700 ${smallText(9)}px ${FONT}`; ctx.fillStyle = '#9bb3bf';
-      ctx.fillText('HULL', 16, 18);
+      ctx.fillText(t('canvas.hull'), 16, 18);
       ctx.textAlign = 'right'; ctx.fillStyle = hpColor; ctx.font = `800 ${smallText(11)}px ${FONT}`;
       ctx.fillText(`${formatNum(Math.ceil(w.hp))} / ${formatNum(w.maxHp)}`, 202, 18, 92);
       ctx.fillStyle = '#20333f'; roundRect(ctx, 16, 29, 186, 7, 2); ctx.fill();
@@ -1120,9 +1125,9 @@ export class Renderer {
       // level + timer
       ctx.textAlign = 'left'; ctx.fillStyle = '#d9f8ef';
       ctx.font = `800 ${smallText(12)}px ${FONT}`;
-      ctx.fillText(`LV ${String(w.level).padStart(2, '0')}`, 16, 53);
+      ctx.fillText(t('canvas.level', { n: String(w.level).padStart(2, '0') }), 16, 53);
       ctx.fillStyle = '#92aebb'; ctx.font = `600 ${smallText(10)}px ${FONT}`;
-      ctx.fillText(`${formatNum(w.run.kills)} ELIMINATED`, 70, 53, 132);
+      ctx.fillText(t('canvas.eliminated', { n: formatNum(w.run.kills) }), 70, 53, 132);
       ctx.textAlign = 'center';
       ctx.fillStyle = '#fff';
       ctx.font = '700 23px Consolas, monospace';
@@ -1132,7 +1137,7 @@ export class Renderer {
         ctx.font = `700 ${smallText(11)}px ${FONT}`;
         ctx.fillStyle = '#e7a88c';
         const anomaly = w.director.eventTime - w.time;
-        ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? `ANOMALY IN ${formatTime(anomaly)}` : `BOSS IN ${formatTime(dLeft)}`, W / 2, 44, 116);
+        ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? t('canvas.anomalyIn', { time: formatTime(anomaly) }) : t('canvas.bossIn', { time: formatTime(dLeft) }), W / 2, 44, 116);
       }
       // combo
       if (w.combo.count >= 3) {
@@ -1144,11 +1149,11 @@ export class Renderer {
         ctx.font = `900 ${Math.round(24 * pulse)}px ${FONT}`;
         // Anchor the baseline so the pop grows upward, away from the COMBO line.
         ctx.textBaseline = 'alphabetic';
-        ctx.fillText(`${formatNum(c)}x`, right, 35, Math.min(110, right - W / 2 - 64));
+        ctx.fillText(t('canvas.comboCount', { n: formatNum(c) }), right, 35, Math.min(110, right - W / 2 - 64));
         ctx.textBaseline = 'middle';
         ctx.font = `700 ${smallText(10)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.fillText(`COMBO +${Math.round((w.comboMult() - 1) * 100)}%`, right, 48, 110);
+        ctx.fillText(t('canvas.comboBonus', { n: Math.round((w.comboMult() - 1) * 100) }), right, 48, 110);
         ctx.fillStyle = 'rgba(255,255,255,0.25)';
         ctx.fillRect(right - 86, 58, 86, 3);
         ctx.fillStyle = '#ffe066';
@@ -1168,23 +1173,23 @@ export class Renderer {
       ctx.textAlign = 'right'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
       ctx.fillStyle = w.resonance.overdrive > 0 ? '#ffe3a3' : '#bca7ff';
       const circuit = w.resonance;
-      ctx.fillText(circuit.overdrive > 0 ? `OVERDRIVE / ${Math.ceil(circuit.overdrive)}s` :
-        circuit.nodes.length ? `CIRCUIT ${circuit.lit}/3 / ${Math.ceil(circuit.remaining)}s` : `SIGNAL IN ${Math.max(0, Math.ceil(circuit.cooldown))}s`, right, 75, 155);
+      ctx.fillText(circuit.overdrive > 0 ? t('canvas.overdrive', { n: Math.ceil(circuit.overdrive) }) :
+        circuit.nodes.length ? t('canvas.circuit', { lit: circuit.lit, n: Math.ceil(circuit.remaining) }) : t('canvas.signalIn', { n: Math.max(0, Math.ceil(circuit.cooldown)) }), right, 75, 155);
       // event
       if (w.event) {
         const ev = EVENT_MAP[w.event.id];
         ctx.textAlign = 'left';
         ctx.font = `800 ${smallText(12)}px ${FONT}`;
         ctx.fillStyle = ev.color;
-        ctx.fillText(`${ev.icon} ${ev.name}  ${Math.ceil(w.event.dur - w.event.t)}s`, 14, 75, 245);
+        ctx.fillText(t('canvas.eventTimer', { icon: ev.icon, name: ev.name, n: Math.ceil(w.event.dur - w.event.t) }), 14, 75, 245);
       }
     }
     const circuit = w.resonance;
     ctx.textAlign = 'center'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
     ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#8ca8bf';
-    ctx.fillText(w.isPowerWindow() ? 'RELEASE / POWER SHOT' : w.aim.active && w.hand > 0 ?
-      w.aim.holdTime < POWER_START ? 'HOLD FOR THE GOLD ARC' : w.aim.streamed ? 'STREAM FIRE' : 'RELEASE / NORMAL SHOT' :
-      circuit.overdrive > 0 ? '+25% DAMAGE / +10% SPEED' : 'LINK 3 SIGNALS / CALL STARFALL', W / 2, H - 33, W - 40);
+    ctx.fillText(w.isPowerWindow() ? t('canvas.releasePower') : w.aim.active && w.hand > 0 ?
+      w.aim.holdTime < POWER_START ? t('canvas.holdGold') : w.aim.streamed ? t('canvas.stream') : t('canvas.releaseNormal') :
+      circuit.overdrive > 0 ? t('canvas.overdriveBonus') : t('canvas.linkSignals'), W / 2, H - 33, W - 40);
     // boss bar
     if (w.director.bossActive) {
       const bosses = w.enemies.filter((e) => e.alive && e.boss);
@@ -1201,18 +1206,18 @@ export class Renderer {
       ctx.font = `800 ${smallText(11)}px ${FONT}`;
       ctx.fillStyle = '#fff';
       const name = BOSS_MAP[w.director.bossId]?.name ?? '';
-      ctx.fillText(bosses.length > 1 ? `${name.toUpperCase()} ×${bosses.length}` : name.toUpperCase(), W / 2, y + 7.5, W - 80);
+      ctx.fillText(bosses.length > 1 ? t('canvas.bossCount', { name: name.toUpperCase(), n: bosses.length }) : name.toUpperCase(), W / 2, y + 7.5, W - 80);
     }
     // momentum readout of the lead ball
     const lead = w.balls.find((b) => b.kind === 'main' && b.state === 'flight');
     if (lead) {
       // Match the ball's own glow, including tiers granted by Combo Reactor.
-      const t = effectiveTier(w, lead);
-      if (t > 0) {
+      const tier = effectiveTier(w, lead);
+      if (tier > 0) {
         ctx.textAlign = 'center';
         ctx.font = `800 ${smallText(10)}px ${FONT}`;
-        ctx.fillStyle = MOMENTUM_COLORS[t];
-        ctx.fillText(MOMENTUM_NAMES[t].toUpperCase(), W / 2, H - 59);
+        ctx.fillStyle = MOMENTUM_COLORS[tier];
+        ctx.fillText(momentumName(tier).toUpperCase(), W / 2, H - 59);
       }
     }
   }

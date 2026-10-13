@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { REACTION_MAP } from '../data/synergies';
 import { ballSpeed, effectiveTier } from './physics';
 import { DEFENSE_Y, type Ball, type Enemy } from './types';
@@ -79,7 +80,7 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
 
   if (shattered) {
     w.emit({ t: 'burst', x: e.x, y: e.y, color: '#cfefff', n: 22, speed: 320, size: 3 });
-    w.emit({ t: 'text', x: e.x, y: e.y - e.r - 10, text: 'SHATTER', color: '#cfefff' });
+    w.emit({ t: 'text', x: e.x, y: e.y - e.r - 10, text: t('fx.shatter'), color: '#cfefff' });
     w.emit({ t: 'sfx', name: 'shatter' });
     const list = acquire();
     try {
@@ -179,7 +180,7 @@ export function damageEnemy(w: World, e: Enemy, amount: number, info: HitInfo): 
   if (info.crit) e.dmgAccCrit = true;
   if (!e.boss && st.execute > 0 && e.hp > 0 && e.hp < e.maxHp * st.execute) {
     e.hp = 0;
-    w.emit({ t: 'text', x: e.x, y: e.y - e.r - 8, text: 'EXECUTE', color: '#c9c9ff' });
+    w.emit({ t: 'text', x: e.x, y: e.y - e.r - 8, text: t('fx.execute'), color: '#c9c9ff' });
   }
   if (e.hp <= 0) killEnemy(w, e, info, -e.hp);
   return amount;
@@ -222,7 +223,7 @@ export function killEnemy(w: World, e: Enemy, info: HitInfo, overflow: number): 
   if (e.def.ai === 'golden') {
     r.goldenCaught++;
     for (let i = 0; i < 8; i++) w.spawnPickup('coin', e.x, e.y, Math.ceil(e.def.coins / 8));
-    w.banner('GOLDEN!', '#ffd84a');
+    w.banner(t('fx.golden'), '#ffd84a');
   } else if (e.def.coins > 0 && w.rng.chance(e.elite.length ? 1 : 0.3)) {
     w.spawnPickup('coin', e.x, e.y, e.def.coins * eliteMult);
   }
@@ -411,7 +412,7 @@ function tryReaction(w: World, id: string, e: Enemy): boolean {
   w.reactionsRun.add(id);
   const def = REACTION_MAP[id];
   if (w.discover('reactions', id)) {
-    w.banner('REACTION DISCOVERED', '#ff9af0', `${def.icon} ${def.name}`, true);
+    w.banner(t('fx.reactionNew'), '#ff9af0', `${def.icon} ${def.name}`, true);
     w.emit({ t: 'slowmo', dur: 0.5, scale: 0.35 });
   } else {
     w.emit({ t: 'text', x: e.x, y: e.y - e.r - 12, text: def.name.toUpperCase(), color: '#ff9af0' });

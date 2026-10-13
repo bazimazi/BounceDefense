@@ -1,3 +1,4 @@
+import { t, type UiKey } from '../i18n';
 import { angleDiff, clamp, closestOnSegment, reflect, type Vec2 } from '../core/math';
 import { ballHitEnemy, sparkNearest } from './combat';
 import {
@@ -315,7 +316,7 @@ function collideEnemies(w: World, b: Ball): void {
       e.phase++; // shields crack after 3 blocks
       if (e.phase >= 3) {
         w.emit({ t: 'burst', x: e.x, y: e.y + e.r, color: '#4fd1ff', n: 14, speed: 200 });
-        w.emit({ t: 'text', x: e.x, y: e.y - e.r - 8, text: 'SHIELD BROKEN', color: '#4fd1ff' });
+        w.emit({ t: 'text', x: e.x, y: e.y - e.r - 8, text: t('fx.shieldBroken'), color: '#4fd1ff' });
         w.emit({ t: 'sfx', name: 'shieldbreak' });
       }
       w.emit({ t: 'wall', x: e.x + nx * e.r, y: e.y + ny * e.r, nx, ny, color: '#4fd1ff' });
@@ -439,7 +440,7 @@ export function stepBall(w: World, b: Ball, dt: number): void {
   if (tier > prevTier && b.kind === 'main') {
     if (tier > w.run.maxMomentumTier) w.run.maxMomentumTier = tier;
     w.bus.emit('momentum', { tier });
-    w.emit({ t: 'text', x: b.x, y: b.y - 20, text: ['', 'CHARGED', 'OVERCHARGED', 'HYPER!', 'UNSTABLE!!'][tier], color: ['#fff', '#7ad7ff', '#ffe066', '#ff7ad9', '#ff3b3b'][tier] });
+    w.emit({ t: 'text', x: b.x, y: b.y - 20, text: t(`momentum.pop${tier}` as UiKey), color: ['#fff', '#7ad7ff', '#ffe066', '#ff7ad9', '#ff3b3b'][tier] });
     w.emit({ t: 'ring', x: b.x, y: b.y, r: 30 + tier * 10, color: ['#fff', '#7ad7ff', '#ffe066', '#ff7ad9', '#ff3b3b'][tier] });
     w.emit({ t: 'sfx', name: 'tier', pitch: 1 + tier * 0.15 });
   }

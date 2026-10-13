@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { TAU } from '../core/math';
 import { CIRCUIT_DURATION, RESONANCE_COLOR } from '../sim/resonance';
 import type { World } from '../sim/world';
@@ -39,7 +40,7 @@ export function drawResonance(ctx: CanvasRenderingContext2D, w: World, time: num
     ctx.fillStyle = n.lit ? '#2a2048' : '#e8deff';
     ctx.fillRect(n.x - 2, n.y - 2, 4, 4);
     ctx.font = '9px Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = color; ctx.fillText(n.lit ? 'LINKED' : `0${i + 1}`, n.x, n.y + 40);
+    ctx.fillStyle = color; ctx.fillText(n.lit ? t('canvas.linked') : `0${i + 1}`, n.x, n.y + 40);
   });
   ctx.restore();
 }

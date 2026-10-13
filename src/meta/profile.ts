@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, isLanguage } from '../i18n';
 import type { DiscoveryCat, Profile } from './types';
 import { normalizeTalents } from '../data/talents';
 import { talentProgress } from './talents';
@@ -33,7 +34,7 @@ export function defaultProfile(): Profile {
     },
     cleared: {},
     bossKills: {},
-    settings: { sfx: 0.8, music: 0.5, shake: true, damageNumbers: true, aimMode: 'direct', debug: false },
+    settings: { language: DEFAULT_LANGUAGE, sfx: 0.8, music: 0.5, shake: true, damageNumbers: true, aimMode: 'direct', debug: false },
     tutorialDone: false,
     runsSinceUnlock: 0,
   };
@@ -79,6 +80,7 @@ export function migrate(raw: unknown): Profile {
   for (const key of Object.keys(p.settings)) {
     if (!(key in base.settings)) Reflect.deleteProperty(p.settings, key);
   }
+  if (!isLanguage(p.settings.language)) p.settings.language = DEFAULT_LANGUAGE;
   p.version = SAVE_VERSION;
   p.talents = normalizeTalents(p.talents, talentProgress(p).total);
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');
@@ -89,6 +91,11 @@ export function migrate(raw: unknown): Profile {
 export interface KeyValueStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+}
+
+/** True when this store already holds a save, i.e. this is not the first launch. */
+export function hasSave(store: KeyValueStore | undefined): boolean {
+  try { return !!store?.getItem(SAVE_KEY); } catch { return false; }
 }
 
 export function loadProfile(store: KeyValueStore | undefined): Profile {

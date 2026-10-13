@@ -1,3 +1,4 @@
+import { localize } from '../i18n/content';
 import type { ArenaDef, ArenaEventDef, DifficultyDef, PactDef, SquadDef } from './types';
 
 const COMMON_SQUADS: SquadDef[] = [
@@ -141,3 +142,8 @@ export const ARENA_EVENTS: ArenaEventDef[] = [
   { id: 'blackout', name: 'Blackout', icon: '🌑', color: '#6c6c9c', duration: 18, desc: 'Darkness falls. Only your balls and their effects give light. +50% XP.' },
 ];
 export const EVENT_MAP: Record<string, ArenaEventDef> = Object.fromEntries(ARENA_EVENTS.map((e) => [e.id, e]));
+
+localize('arena', ARENAS, ['name', 'desc', 'unlockReq.text']);
+localize('difficulty', DIFFICULTIES, ['name', 'desc', 'rules']);
+localize('pact', PACTS, ['name', 'desc']);
+localize('event', ARENA_EVENTS, ['name', 'desc']);

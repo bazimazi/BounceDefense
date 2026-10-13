@@ -1,3 +1,5 @@
+import { t as i18n } from '../i18n';
+import { localize } from '../i18n/content';
 import type { Modifier } from '../sim/stats';
 
 export type TalentTree = 'kinetics' | 'conduit' | 'warden';
@@ -66,8 +68,8 @@ export function talentSpent(ranks: TalentRanks, tree?: TalentTree): number {
 
 export function talentRequirement(ranks: TalentRanks, t: TalentDef): string | null {
   const lower = TALENTS.filter(n => n.tree === t.tree && n.tier < t.tier).reduce((sum, n) => sum + (ranks[n.id] ?? 0), 0);
-  if (t.requires && (ranks[t.requires] ?? 0) < TALENT_MAP[t.requires].maxRank) return `Requires ${TALENT_MAP[t.requires].name} at max rank`;
-  if (lower < t.gate) return `Requires ${t.gate} points in earlier tiers (${lower}/${t.gate})`;
+  if (t.requires && (ranks[t.requires] ?? 0) < TALENT_MAP[t.requires].maxRank) return i18n('talents.requiresMax', { name: TALENT_MAP[t.requires].name });
+  if (lower < t.gate) return i18n('talents.requiresPoints', { gate: t.gate, lower });
   return null;
 }
 
@@ -90,3 +92,6 @@ export function normalizeTalents(raw: unknown, budget = TALENT_POINT_CAP): Talen
 export function talentModifiers(ranks: TalentRanks): Modifier[] {
   return TALENTS.flatMap(t => ranks[t.id] && t.mods ? t.mods(ranks[t.id]) : []);
 }
+
+localize('talentTree', TALENT_TREES, ['name', 'desc']);
+localize('talent', TALENTS, ['name', 'desc']);

@@ -1,3 +1,4 @@
+import { t, type UiKey } from '../i18n';
 /**
  * Every tunable number of a build lives here. Upgrades, parts, cores, synergies,
  * evolutions, workshop levels, talents, pacts and temporary buffs all contribute
@@ -98,21 +99,26 @@ export function computeStats(mods: readonly Modifier[], base: Partial<Stats> = {
   return out;
 }
 
-/** Human-facing stat labels for the build panel. */
-export const STAT_LABELS: Partial<Record<StatKey, [string, (v: number) => string]>> = {
-  damage: ['Damage', (v) => v.toFixed(1)],
-  critChance: ['Crit Chance', (v) => `${Math.round(v * 100)}%`],
-  critMult: ['Crit Damage', (v) => `x${v.toFixed(2)}`],
-  speed: ['Speed', (v) => `${Math.round(v)}`],
-  maxBalls: ['Balls', (v) => `${v}`],
-  pierce: ['Pierce', (v) => `${v}`],
-  burnChance: ['Burn', (v) => `${Math.round(v * 100)}%`],
-  chillChance: ['Chill', (v) => `${Math.round(v * 100)}%`],
-  chainChance: ['Chain', (v) => `${Math.round(v * 100)}%`],
-  explosionChance: ['Explode', (v) => `${Math.round(v * 100)}%`],
-  splitChance: ['Split', (v) => `${Math.round(v * 100)}%`],
-  bleedChance: ['Bleed', (v) => `${Math.round(v * 100)}%`],
-  lifesteal: ['Lifesteal', (v) => `${(v * 100).toFixed(1)}%`],
-  maxHp: ['Max HP', (v) => `${Math.round(v)}`],
-  armor: ['Armor', (v) => `${Math.round(v)}`],
+/** Value formatters for the build panel; labels come from the i18n dictionary (`stat.<key>`). */
+export const STAT_FORMATS: Partial<Record<StatKey, (v: number) => string>> = {
+  damage: (v) => v.toFixed(1),
+  critChance: (v) => `${Math.round(v * 100)}%`,
+  critMult: (v) => `x${v.toFixed(2)}`,
+  speed: (v) => `${Math.round(v)}`,
+  maxBalls: (v) => `${v}`,
+  pierce: (v) => `${v}`,
+  burnChance: (v) => `${Math.round(v * 100)}%`,
+  chillChance: (v) => `${Math.round(v * 100)}%`,
+  chainChance: (v) => `${Math.round(v * 100)}%`,
+  explosionChance: (v) => `${Math.round(v * 100)}%`,
+  splitChance: (v) => `${Math.round(v * 100)}%`,
+  bleedChance: (v) => `${Math.round(v * 100)}%`,
+  lifesteal: (v) => `${(v * 100).toFixed(1)}%`,
+  maxHp: (v) => `${Math.round(v)}`,
+  armor: (v) => `${Math.round(v)}`,
 };
+
+/** Localized stat label for the keys listed in `STAT_FORMATS`. */
+export function statLabel(key: StatKey): string {
+  return t(`stat.${key}` as UiKey);
+}

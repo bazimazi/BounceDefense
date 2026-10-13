@@ -1,4 +1,5 @@
 import { h } from './dom';
+import { isRtl, t } from '../i18n';
 import { cancelWithin, enter, feedback, retire, revealItems, tabFeedback, type MotionDirection } from './motion';
 
 export type DeckState = { section: number; page: number };
@@ -7,9 +8,9 @@ export type Deck = { element: HTMLElement; dispose: () => void };
 
 /** Bounded card pages: every item stays reachable without a document-length scroll. */
 export function createDeck(sections: DeckSection[], state: DeckState, className = '', animateInitial = true): Deck {
-  if (!sections.length) sections = [{ name: 'Overview', items: [] }];
+  if (!sections.length) sections = [{ name: t('common.overview'), items: [] }];
   const root = h('div', { class: `deck ${className}` });
-  const tabs = h('div', { class: 'deck-tabs', role: 'tablist', 'aria-label': 'Categories', style: `--tab-count:${sections.length};--tab-cols:${Math.min(4, sections.length)}` });
+  const tabs = h('div', { class: 'deck-tabs', role: 'tablist', 'aria-label': t('deck.categories'), style: `--tab-count:${sections.length};--tab-cols:${Math.min(4, sections.length)}` });
   const content = h('div', { class: 'deck-content', role: 'tabpanel', tabindex: 0 });
   const measure = h('div', { class: 'deck-measure col', 'aria-hidden': 'true' });
   const list = h('div', { class: 'deck-list col' });
@@ -17,8 +18,10 @@ export function createDeck(sections: DeckSection[], state: DeckState, className 
   let pages: HTMLElement[][] = [], scheduled = 0, dead = false, suppressClickUntil = 0;
   let revealed = false, pendingDirection: MotionDirection | null = null;
   let lastSize = '';
-  const previous = h('button', { class: 'deck-prev', 'aria-label': 'Previous page', onclick: () => move(-1) }, '‹');
-  const next = h('button', { class: 'deck-next', 'aria-label': 'Next page', onclick: () => move(1) }, '›');
+  // In a right-to-left layout the pager's first cell sits on the right, so the glyphs swap too.
+  const flip = () => (isRtl() ? -1 : 1);
+  const previous = h('button', { class: 'deck-prev', 'aria-label': t('deck.previous'), onclick: () => move(-1) }, t('deck.previousGlyph'));
+  const next = h('button', { class: 'deck-next', 'aria-label': t('deck.next'), onclick: () => move(1) }, t('deck.nextGlyph'));
   const counter = h('span', { class: 'deck-count', 'aria-live': 'polite' });
   const pager = h('div', { class: 'deck-pager' }, previous, counter, next);
   root.append(...(sections.length > 1 ? [tabs] : []), content, pager);
@@ -31,8 +34,8 @@ export function createDeck(sections: DeckSection[], state: DeckState, className 
     list.replaceChildren(...(pages[state.page] ?? []));
     previous.disabled = state.page === 0;
     next.disabled = state.page >= pages.length - 1;
-    counter.textContent = `${sections[state.section].name} · ${state.page + 1} / ${Math.max(1, pages.length)}`;
-    content.setAttribute('aria-label', `${sections[state.section].name}, page ${state.page + 1} of ${pages.length}`);
+    counter.textContent = t('deck.counter', { section: sections[state.section].name, page: state.page + 1, pages: Math.max(1, pages.length) });
+    content.setAttribute('aria-label', t('deck.pageLabel', { section: sections[state.section].name, page: state.page + 1, pages: pages.length }));
     root.dataset.page = String(state.page);
     root.dataset.pages = String(pages.length);
     root.dataset.section = String(state.section);
@@ -71,7 +74,7 @@ export function createDeck(sections: DeckSection[], state: DeckState, className 
       page.push(item); used += height + (page.length > 1 ? 8 : 0);
     }
     if (page.length) pages.push(page);
-    if (!pages.length) pages.push([h('div', { class: 'card muted' }, 'Nothing here yet. Keep playing to discover more.')]);
+    if (!pages.length) pages.push([h('div', { class: 'card muted' }, t('common.nothingHere'))]);
     const direction = pendingDirection;
     showPage(direction); pendingDirection = null;
     if (direction === null) tabFeedback(tabs);
@@ -96,12 +99,12 @@ export function createDeck(sections: DeckSection[], state: DeckState, className 
   tabs.addEventListener('keydown', e => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    const index = e.key === 'Home' ? 0 : e.key === 'End' ? sections.length - 1 : (state.section + (e.key === 'ArrowRight' ? 1 : -1) + sections.length) % sections.length;
+    const index = e.key === 'Home' ? 0 : e.key === 'End' ? sections.length - 1 : (state.section + (e.key === 'ArrowRight' ? 1 : -1) * flip() + sections.length) % sections.length;
     select(index); (tabs.children[index] as HTMLElement).focus();
   });
   content.addEventListener('keydown', e => {
     if (e.target !== content || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-    e.preventDefault(); move(e.key === 'ArrowRight' ? 1 : -1);
+    e.preventDefault(); move((e.key === 'ArrowRight' ? 1 : -1) * flip());
   });
   let touch: { x: number; y: number } | null = null;
   content.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') touch = { x: e.clientX, y: e.clientY }; });
@@ -109,7 +112,7 @@ export function createDeck(sections: DeckSection[], state: DeckState, className 
     if (!touch) return;
     const dx = e.clientX - touch.x, dy = e.clientY - touch.y; touch = null;
     if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      suppressClickUntil = performance.now() + 350; move(dx < 0 ? 1 : -1);
+      suppressClickUntil = performance.now() + 350; move((dx < 0 ? 1 : -1) * flip());
     }
   });
   content.addEventListener('pointercancel', () => { touch = null; });
@@ -125,7 +128,7 @@ export function createDeck(sections: DeckSection[], state: DeckState, className 
 /** Turn headings into categories and lists into individual cards. Preserve their event handlers. */
 export function deckSections(source: HTMLElement): DeckSection[] {
   const sections: DeckSection[] = [];
-  let current: DeckSection = { name: 'Overview', items: [] };
+  let current: DeckSection = { name: t('common.overview'), items: [] };
   const add = (node: HTMLElement) => {
     if (node.matches('.col, .grid2, .settings-audio')) current.items.push(...Array.from(node.children) as HTMLElement[]);
     else if (node.matches('.row.wrap') && [...node.children].every(child => child.matches('.chip, .tag'))) current.items.push(...Array.from(node.children) as HTMLElement[]);

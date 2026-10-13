@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { analytics } from '../core/analytics';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../data/balls';
@@ -126,14 +127,14 @@ export function runConfig(p: Profile, opts: { arena: string; difficulty: number;
 // ------------------------------------------------------------------ unlocks
 export function describeUnlock(u: Unlock): string {
   switch (u.type) {
-    case 'upgrade': return `New upgrade: ${UPGRADE_MAP[u.id]?.icon ?? ''} ${UPGRADE_MAP[u.id]?.name ?? u.id}`;
-    case 'part': return `New part: ${PART_MAP[u.id]?.icon ?? ''} ${PART_MAP[u.id]?.name ?? u.id}`;
-    case 'core': return `New core: ${CORE_MAP[u.id]?.name ?? u.id}`;
-    case 'cosmetic': return `New trail: ${TRAILS.find((t) => t.id === u.id)?.name ?? u.id}`;
-    case 'flag': return `New ability: ${u.id}`;
-    case 'coins': return `+${u.amount} Coins`;
-    case 'cores': return `+${u.amount} Cores`;
-    case 'research': return `+${u.amount} Research`;
+    case 'upgrade': return t('unlock.upgrade', { icon: UPGRADE_MAP[u.id]?.icon ?? '', name: UPGRADE_MAP[u.id]?.name ?? u.id });
+    case 'part': return t('unlock.part', { icon: PART_MAP[u.id]?.icon ?? '', name: PART_MAP[u.id]?.name ?? u.id });
+    case 'core': return t('unlock.core', { name: CORE_MAP[u.id]?.name ?? u.id });
+    case 'cosmetic': return t('unlock.cosmetic', { name: TRAILS.find((x) => x.id === u.id)?.name ?? u.id });
+    case 'flag': return t('unlock.flag', { id: u.id });
+    case 'coins': return t('unlock.coins', { n: u.amount });
+    case 'cores': return t('unlock.cores', { n: u.amount });
+    case 'research': return t('unlock.research', { n: u.amount });
   }
 }
 
@@ -156,7 +157,7 @@ export function applyUnlock(p: Profile, u: Unlock): string | null {
     case 'cosmetic':
       if (p.cosmetics.includes(u.id)) {
         p.research += 1;
-        return '+1 Research (duplicate trail)';
+        return t('unlock.duplicateTrail');
       }
       p.cosmetics.push(u.id);
       break;
@@ -230,22 +231,22 @@ export function nextGoals(p: Profile, n = 3): Goal[] {
   for (const c of CORES) {
     if (p.unlockedCores.includes(c.id)) continue;
     if (!coreRequirementMet(p, c.id)) {
-      goals.push({ kind: 'core', text: `${c.unlockReq?.text} to reveal ${c.name}`, reward: `${c.icon} ${c.name}`, cur: 0, max: 1 });
+      goals.push({ kind: 'core', text: t('goal.reveal', { req: c.unlockReq?.text ?? '', name: c.name }), reward: `${c.icon} ${c.name}`, cur: 0, max: 1 });
     } else {
-      goals.push({ kind: 'core', text: `Collect ${c.unlockCost} Cores`, reward: `Unlock ${c.icon} ${c.name}`, cur: Math.min(p.cores, c.unlockCost), max: c.unlockCost });
+      goals.push({ kind: 'core', text: t('goal.collectCores', { n: c.unlockCost }), reward: t('goal.unlockCore', { icon: c.icon, name: c.name }), cur: Math.min(p.cores, c.unlockCost), max: c.unlockCost });
     }
   }
   for (const a of ARENAS) {
-    if (!isArenaUnlocked(p, a.id) && a.unlockReq) goals.push({ kind: 'arena', text: a.unlockReq.text, reward: `New arena: ${a.name}`, cur: 0, max: 1 });
+    if (!isArenaUnlocked(p, a.id) && a.unlockReq) goals.push({ kind: 'arena', text: a.unlockReq.text, reward: t('goal.newArena', { name: a.name }), cur: 0, max: 1 });
   }
   const core = p.loadout.core;
   const m = masteryLevel(p.mastery[core] ?? 0);
   const mr = masteryRewards(core).find((r) => r.level === m.level + 1);
-  if (mr) goals.push({ kind: 'mastery', text: `${CORE_MAP[core].name} Mastery ${m.level + 1}`, reward: mr.text, cur: m.into, max: m.need });
+  if (mr) goals.push({ kind: 'mastery', text: t('goal.mastery', { name: CORE_MAP[core].name, level: m.level + 1 }), reward: mr.text, cur: m.into, max: m.need });
   const affordable = RESEARCH.find((r) => canResearch(p, r.id));
-  if (affordable) goals.push({ kind: 'research', text: `Research ${affordable.name} (you can afford it!)`, reward: affordable.desc, cur: 1, max: 1 });
+  if (affordable) goals.push({ kind: 'research', text: t('goal.research', { name: affordable.name }), reward: affordable.desc, cur: 1, max: 1 });
   const d = maxDifficulty(p);
-  if (d < DIFFICULTIES.length - 1) goals.push({ kind: 'diff', text: `Win a run on ${DIFFICULTIES[d].name}`, reward: `Unlock ${DIFFICULTIES[d + 1].name} difficulty`, cur: 0, max: 1 });
+  if (d < DIFFICULTIES.length - 1) goals.push({ kind: 'diff', text: t('goal.winOn', { name: DIFFICULTIES[d].name }), reward: t('goal.unlockDifficulty', { name: DIFFICULTIES[d + 1].name }), cur: 0, max: 1 });
 
   // most-progressed first, but keep variety: one per kind before repeating
   goals.sort((a, b) => b.cur / Math.max(1, b.max) - a.cur / Math.max(1, a.max));
@@ -339,12 +340,12 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   const talentPointsBefore = talentProgress(p).total;
   p.mastery[s.core] = (p.mastery[s.core] ?? 0) + rewards.masteryXp;
   const newTalentPoints = talentProgress(p).total - talentPointsBefore;
-  if (newTalentPoints > 0) unlocks.push(`+${newTalentPoints} Talent point${newTalentPoints === 1 ? '' : 's'}! Spend them in Talents.`);
+  if (newTalentPoints > 0) unlocks.push(t('report.talentPoints', { n: newTalentPoints }));
   const after = masteryLevel(p.mastery[s.core]);
   const masteryTexts: string[] = [];
   for (const r of masteryRewards(s.core)) {
     if (r.level > before.level && r.level <= after.level) {
-      masteryTexts.push(`Lv ${r.level}: ${r.text}`);
+      masteryTexts.push(t('report.masteryLevel', { level: r.level, text: r.text }));
       r.unlocks.forEach(push);
       analytics.emit('MasteryLevelUp', { core: s.core, level: r.level });
     }
