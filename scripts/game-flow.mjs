@@ -226,7 +226,7 @@ try {
     await ui.locator('.deck-list .offer').first().tap(); await deckReady();
     assert.equal(await page.evaluate(() => window.game.world.pendingLevels), 1);
     assert.equal(await ui.locator('.levelup').count(), 1, 'Consecutive level-ups keep the next choice open');
-    await page.getByRole('button', { name: 'Skip', exact: true }).tap();
+    await page.getByRole('button', { name: /^Skip/ }).tap();
     assert.equal(await page.evaluate(() => window.game.world.state), 'playing');
     assert.equal(await ui.locator('.levelup').count(), 0);
     mark('pause during upgrade, reroll, banish, consecutive levels and Skip');

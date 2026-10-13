@@ -24,7 +24,8 @@ export class AudioEngine {
 
   unlock(): void {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      // Firefox rejects a pending resume when the page unloads; that is not an error.
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
       return;
     }
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -307,6 +308,8 @@ export class AudioEngine {
     const root = this.boss ? 49 : 55;
     const bassPat = [0, 0, 7, 0, 10, 0, 7, 5, 0, 0, 7, 0, 12, 10, 7, 5];
     const lead = [12, 15, 17, 19, 22, 19, 17, 15];
+    // Background tabs throttle the timer; skip missed notes instead of playing them all at once.
+    if (this.nextNote < ctx.currentTime) this.nextNote = ctx.currentTime + 0.05;
     while (this.nextNote < ctx.currentTime + 0.2) {
       const s = this.step % 16;
       const d = this.nextNote - ctx.currentTime;

@@ -9,7 +9,7 @@ import {
   DEFENSE_Y, FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, W,
   type Ball, type Enemy, type Fx,
 } from '../sim/types';
-import { MOMENTUM_COLORS, MOMENTUM_NAMES, POWER_START, POWER_END, momentumTier, type World } from '../sim/world';
+import { MOMENTUM_COLORS, MOMENTUM_NAMES, POWER_START, POWER_END, type World } from '../sim/world';
 import { effectiveTier } from '../sim/physics';
 import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
@@ -20,7 +20,9 @@ interface Ring { x: number; y: number; r: number; life: number; max: number; col
 interface Boom { x: number; y: number; r: number; life: number; color: string }
 interface Beam { x0: number; y0: number; x1: number; y1: number; life: number; color: string }
 interface FloatText { x: number; y: number; text: string; life: number; max: number; color: string; size: number; vy: number }
-interface Banner { text: string; sub?: string; color: string; big: boolean; t: number; dur: number }
+interface Banner { text: string; sub?: string; color: string; big: boolean; t: number; dur: number; wait: number }
+/** Seconds a minor banner may wait in the queue before it is too stale to show. */
+const BANNER_STALE = 2;
 interface Starfall { pts: number[]; life: number }
 interface Debris { x: number; y: number; vx: number; vy: number; spin: number; r: number; life: number; color: string }
 
@@ -132,8 +134,7 @@ export class Renderer {
       case 'starfall':
         this.starfalls.push({ pts: f.pts, life: .85 });
         this.rings.push({ x: W / 2, y: 400, r: 360, life: .9, max: .9, color: '#bca7ff' });
-        this.banners.unshift({ text: 'STARFALL', sub: 'Circuit complete / 7s overdrive', color: '#bca7ff', big: true, t: 0, dur: 1.8 });
-        if (this.banners.length > 6) this.banners.pop();
+        this.queueBanner({ text: 'STARFALL', sub: 'Circuit complete / 7s overdrive', color: '#bca7ff', big: true, t: 0, dur: 1.8, wait: 0 }, true);
         break;
       case 'hit': {
         const n = f.crit ? 14 : 6;
@@ -175,7 +176,7 @@ export class Renderer {
         this.beams.push({ ...f, life: 0.16 });
         break;
       case 'banner':
-        if (this.banners.length < 6) this.banners.push({ text: f.text, sub: f.sub, color: f.color, big: !!f.big, t: 0, dur: f.big ? 2.2 : 1.5 });
+        this.queueBanner({ text: f.text, sub: f.sub, color: f.color, big: !!f.big, t: 0, dur: f.big ? 2.2 : 1.5, wait: 0 });
         break;
       case 'shake':
         if (this.opts.shake) this.shake = Math.min(22, this.shake + f.amt);
@@ -196,6 +197,20 @@ export class Renderer {
         break;
       default:
         break;
+    }
+  }
+
+  private queueBanner(b: Banner, front = false): void {
+    const q = this.banners;
+    // The same announcement already waiting (e.g. repeated synergy/combo calls) is refreshed, not repeated.
+    const dup = q.findIndex((x, i) => i > 0 && x.text === b.text && x.sub === b.sub);
+    if (dup > 0) q.splice(dup, 1);
+    if (front) q.unshift(b);
+    else q.push(b);
+    // Over capacity: drop the oldest waiting minor banner, then the oldest waiting one.
+    while (q.length > 6) {
+      const minor = q.findIndex((x, i) => i > 0 && !x.big && x !== b);
+      q.splice(minor > 0 ? minor : 1, 1);
     }
   }
 
@@ -225,9 +240,13 @@ export class Renderer {
     }
     this.texts = this.texts.filter((t) => t.life > 0);
     if (this.banners.length) {
+      // A busy queue drains faster, and minor news that waited too long is dropped,
+      // so banners never describe something that ended seconds ago.
       const b = this.banners[0];
-      b.t += dt * (this.banners.length > 2 ? 1.8 : 1);
+      b.t += dt * Math.min(b.big ? 1.5 : 3, 1 + 0.75 * (this.banners.length - 1));
       if (b.t >= b.dur) this.banners.shift();
+      for (let i = 1; i < this.banners.length; i++) this.banners[i].wait += dt;
+      this.banners = this.banners.filter((q, i) => i === 0 || q.big || q.wait < BANNER_STALE);
     }
     this.shake = Math.max(0, this.shake - dt * 40);
     this.flash.a = Math.max(0, this.flash.a - dt * 2.5);
@@ -252,8 +271,12 @@ export class Renderer {
     drawResonance(ctx, w, this.time);
     this.drawZones(w);
     this.drawPickups(w);
+    // Arrivals slide in from under the header instead of covering its telemetry.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(-40, FIELD_TOP - 2, W + 80, H); ctx.clip();
     for (const e of w.enemies) if (e.alive) this.drawEnemy(w, e);
     this.drawBossExtras(w);
+    ctx.restore();
     this.drawProjectiles(w);
     this.drawThreats(w);
     this.drawEffects();
@@ -414,7 +437,8 @@ export class Renderer {
         case 'oil':
           ctx.fillStyle = o.burning > 0 ? 'rgba(255,110,30,0.28)' : 'rgba(20,14,30,0.75)';
           ctx.beginPath();
-          ctx.ellipse(o.x, o.y, o.r, o.r * 0.7, 0, 0, TAU);
+          // Circular, matching the ignition and burn area used by the simulation.
+          ctx.arc(o.x, o.y, o.r, 0, TAU);
           ctx.fill();
           ctx.strokeStyle = o.burning > 0 ? '#ff8a3d' : 'rgba(160,120,255,0.35)';
           ctx.lineWidth = 2;
@@ -422,7 +446,7 @@ export class Renderer {
           if (o.burning > 0 && this.emits(36)) {
             const a = Math.random() * TAU;
             const r = Math.random() * o.r;
-            this.particles.spawn(o.x + Math.cos(a) * r, o.y + Math.sin(a) * r * 0.7, 0, -60, 0.5, 4, Math.random() < 0.5 ? '#ff8a3d' : '#ffd166', 1);
+            this.particles.spawn(o.x + Math.cos(a) * r, o.y + Math.sin(a) * r, 0, -60, 0.5, 4, Math.random() < 0.5 ? '#ff8a3d' : '#ffd166', 1);
           }
           break;
         case 'crate':
@@ -880,6 +904,7 @@ export class Renderer {
       const dx = pts[i] - x0;
       const dy = pts[i + 1] - y0;
       const len = Math.hypot(dx, dy);
+      if (!Number.isFinite(len)) continue; // a portal or Rift Phase jump, not a path
       while (acc < len) {
         const t = acc / len;
         const fade = 1 - Math.min(1, (total + acc) / 900);
@@ -1112,11 +1137,15 @@ export class Renderer {
       // combo
       if (w.combo.count >= 3) {
         const c = Math.floor(w.combo.count);
-        const pulse = 1 + Math.max(0, w.combo.timer - w.build.stats.comboWindow + 0.15) * 3;
+        // A brief pop on each hit, bounded so the count never grows into its subtitle.
+        const pulse = 1 + clamp(w.combo.timer - w.build.stats.comboWindow + 0.15, 0, 0.15) * 3;
         ctx.textAlign = 'right';
         ctx.fillStyle = c >= 100 ? '#ff7ad9' : c >= 50 ? '#ffb13b' : c >= 25 ? '#ffe066' : '#ffffff';
         ctx.font = `900 ${Math.round(24 * pulse)}px ${FONT}`;
-        ctx.fillText(`${formatNum(c)}x`, right, 26, Math.min(110, right - W / 2 - 64));
+        // Anchor the baseline so the pop grows upward, away from the COMBO line.
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(`${formatNum(c)}x`, right, 35, Math.min(110, right - W / 2 - 64));
+        ctx.textBaseline = 'middle';
         ctx.font = `700 ${smallText(10)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
         ctx.fillText(`COMBO +${Math.round((w.comboMult() - 1) * 100)}%`, right, 48, 110);
@@ -1177,7 +1206,8 @@ export class Renderer {
     // momentum readout of the lead ball
     const lead = w.balls.find((b) => b.kind === 'main' && b.state === 'flight');
     if (lead) {
-      const t = momentumTier(lead.momentum);
+      // Match the ball's own glow, including tiers granted by Combo Reactor.
+      const t = effectiveTier(w, lead);
       if (t > 0) {
         ctx.textAlign = 'center';
         ctx.font = `800 ${smallText(10)}px ${FONT}`;

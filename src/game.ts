@@ -30,6 +30,8 @@ export class Game {
   readonly renderer: Renderer;
   readonly ui: UI;
   world: World | null = null;
+  /** Debug-panel time scale; multiplies every simulation and effect step. */
+  timeScale = 1;
   private demo: World | null = null;
   private demoRng = new Rng(99);
   private mode: 'menu' | 'run' = 'menu';
@@ -85,6 +87,7 @@ export class Game {
       document.getElementById('app')!.append(this.debugEl);
     } else if (!wantDebug && this.debugEl) {
       this.debugEl.remove();
+      this.timeScale = 1;
       this.debugEl = null;
     }
   }
@@ -175,14 +178,14 @@ export class Game {
 
   abandonRun(): void {
     if (!this.world) return;
-    this.finishRun();
+    this.finishRun(true);
   }
 
   continueEndless(): void {
     this.world?.continueEndless();
   }
 
-  finishRun(): void {
+  finishRun(abandoned = false): void {
     const w = this.world;
     if (!w) return;
     const s = w.summary();
@@ -194,7 +197,7 @@ export class Game {
     this.mode = 'menu';
     this.paused = false;
     this.newDemo();
-    this.ui.postRun(s, report);
+    this.ui.postRun(s, report, abandoned);
   }
 
   // ------------------------------------------------------------------ input
@@ -287,7 +290,7 @@ export class Game {
 
   private tick(dt: number): void {
     if (this.slow.t > 0) this.slow.t -= dt;
-    const ts = this.slow.t > 0 ? this.slow.scale : 1;
+    const ts = (this.slow.t > 0 ? this.slow.scale : 1) * this.timeScale;
     const w = this.mode === 'run' ? this.world : this.demo;
     if (!w) return;
 
@@ -353,6 +356,8 @@ export class Game {
     if (t.eliteHint > 0) t.eliteHint -= dt;
     const inFlight = w.balls.some((b) => b.state === 'flight' && b.kind === 'main');
     t.idle = inFlight ? 0 : t.idle + dt;
+    // Surge disables canSurge() the moment it fires, so record its first use here.
+    if (w.surge.active > 0) t.surgeHinted = true;
     let hint: string | null = null;
     if (w.state !== 'playing' || this.paused) hint = null;
     else if (!t.launched) hint = this.profile.settings.aimMode === 'slingshot' ? 'Pull back and release to launch' : 'Drag to aim · Release to launch';
@@ -360,10 +365,8 @@ export class Game {
     else if (t.t < 20 && w.resonance.nodes.length && !w.resonance.completed) hint = 'Hit all 3 diamond signals to unleash STARFALL.';
     else if (t.t >= 20 && t.t < 26 && inFlight) hint = 'Bad angle? RECALL brings your balls home. Tap ↶ or press R.';
     else if (t.eliteHint > 0) hint = 'Elites are tough — but drop 💠 Cores for permanent unlocks.';
-    else if (w.canSurge() && !t.surgeHinted) {
-      hint = 'SURGE is charged! Tap it (or Space) to supercharge every ball.';
-      if (w.surge.active > 0) t.surgeHinted = true;
-    } else if (w.maxBallsAllowed() > 1 && !t.holdHinted && t.idle > 2.5) {
+    else if (w.canSurge() && !t.surgeHinted) hint = 'SURGE is charged! Tap it (or Space) to supercharge every ball.';
+    else if (w.maxBallsAllowed() > 1 && !t.holdHinted && t.idle > 2.5) {
       hint = 'Tip: keep holding to auto-fire balls as they return.';
       if (w.aim.active) t.holdHinted = true;
     }

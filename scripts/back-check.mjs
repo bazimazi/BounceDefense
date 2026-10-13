@@ -152,11 +152,11 @@ try {
     await page.evaluate(() => { const w = window.game.world; w.pendingLevels = 2; w.level = 3; w.openLevelUp(); }); await ready();
     const offers = await page.evaluate(() => window.game.world.offers);
     await back('browser'); assert.equal(await ui.locator('.pause-overlay').count(), 1);
-    await back('escape'); assert.equal(await page.getByRole('button', { name: 'Skip', exact: true }).count(), 1);
+    await back('escape'); assert.equal(await page.getByRole('button', { name: /^Skip/ }).count(), 1);
     assert.deepEqual(await page.evaluate(() => window.game.world.offers), offers);
     assert.equal(await page.evaluate(() => window.game.world.pendingLevels), 2);
-    await page.getByRole('button', { name: 'Skip', exact: true }).tap(); await ready();
-    await page.getByRole('button', { name: 'Skip', exact: true }).tap(); await ready();
+    await page.getByRole('button', { name: /^Skip/ }).tap(); await ready();
+    await page.getByRole('button', { name: /^Skip/ }).tap(); await ready();
     await page.evaluate(() => { const g = window.game; g.world.state = 'over'; g.world.victory = true; g.ui.victoryChoice(g.world); });
     await back('hardware'); await back('browser');
     assert.equal(await page.getByRole('button', { name: /Claim rewards/ }).count(), 1);

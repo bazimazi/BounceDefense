@@ -8,14 +8,14 @@ import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '..
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import type { PartSlot } from '../data/types';
 import {
-  buyPart, buyWorkshop, canResearch, canUnlockCore, coreRequirementMet, doResearch, isArenaUnlocked, maxDifficulty,
+  buyPart, buyWorkshop, canResearch, canUnlockCore, coreRequirementMet, describeUnlock, doResearch, isArenaUnlocked, maxDifficulty,
   nextGoals, partsForSlot, rewardMultiplier, unlockCore, workshopCost, type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
-import type { RunSummary } from '../meta/types';
+import type { DiscoveryCat, RunSummary } from '../meta/types';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_LABELS, type StatKey } from '../sim/stats';
-import type { World } from '../sim/world';
+import { RECALL_COOLDOWN, type World } from '../sim/world';
 import type { Game } from '../game';
 import { bar, h } from './dom';
 import { talentScreen } from './talents';
@@ -27,6 +27,11 @@ import { cancelWithin, enter, feedback, retire, revealItems, revealView, tabFeed
 import { homeIcon } from './home-icons';
 
 const RARITY_LABEL = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
+const TIER_LABEL = { known: 'Known', hidden: 'Hidden', legendary: 'Legendary' };
+const DISCOVERY_LABEL: Record<DiscoveryCat, string> = {
+  enemies: 'Enemy', bosses: 'Boss', synergies: 'Synergy', evolutions: 'Evolution',
+  reactions: 'Reaction', upgrades: 'Upgrade', arenas: 'Arena', events: 'Event',
+};
 
 export class UI {
   readonly navigation = new Navigation();
@@ -446,7 +451,7 @@ export class UI {
           cost === null ? h('span', { class: 'chip' }, 'MAX') : h('button', {
             class: 'gold', disabled: p.coins < cost,
             onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.workshop(); } },
-          }, `🪙 ${formatNum(cost)}`));
+          }, h('span', { class: 'coin-badge', 'aria-hidden': 'true' }, '🪙'), formatNum(cost)));
       })),
     ));
   }
@@ -513,14 +518,14 @@ export class UI {
         break;
       case 'synergies':
         body = SYNERGIES.map((s) => d.synergies.includes(s.id)
-          ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${s.icon} ${s.name} `, h('span', { class: 'tag' }, s.tier)), h('div', { class: 'desc' }, s.desc), h('div', { class: 'small muted' }, s.hint))
+          ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${s.icon} ${s.name} `, h('span', { class: 'tag' }, TIER_LABEL[s.tier])), h('div', { class: 'desc' }, s.desc), h('div', { class: 'small muted' }, s.hint))
           : unknown(s.tier === 'known' ? `Hint: ${s.hint}` : s.hint));
         break;
       case 'evolutions':
         body = EVOLUTIONS.map((e) => {
           const known = d.evolutions.includes(e.id);
           const showRecipe = known || this.game.flags().includes('codex');
-          const recipe = e.recipe.map((r) => `${UPGRADE_MAP[r.id].name}${r.level > 1 ? ` Lv${r.level}` : ''}`).join(' + ');
+          const recipe = e.recipe.map((r) => `${UPGRADE_MAP[r.id].name}${r.level > 1 ? ` Lv ${r.level}` : ''}`).join(' + ');
           return known || showRecipe
             ? h('div', { class: `card ${known ? '' : 'locked'}` }, h('div', { class: 'name' }, `${e.icon} ${known ? e.name : '???'}`), h('div', { class: 'desc' }, known ? e.desc : 'Not yet evolved.'), h('div', { class: 'small', style: 'color:var(--gold);margin-top:4px' }, recipe))
             : unknown('Max out an upgrade and find its catalyst. (Research "Evolution Codex" to reveal recipes.)');
@@ -572,7 +577,7 @@ export class UI {
           return h('div', { class: `card ${done ? 'selected' : ''}` },
             h('div', { class: 'name' }, `${c.icon} ${c.name} ${done ? '✓' : ''}`),
             h('div', { class: 'desc' }, c.desc),
-            h('div', { class: 'small', style: 'color:var(--gold);margin-top:3px' }, c.rewards.map((r) => (r.type === 'coins' || r.type === 'cores' || r.type === 'research') ? `+${r.amount} ${r.type}` : `${r.type}: ${r.id}`).join(', ')));
+            h('div', { class: 'small', style: 'color:var(--gold);margin-top:3px' }, c.rewards.map(describeUnlock).join(', ')));
         })),
         h('h3', { 'data-tab-label': 'Badges' }, `Achievements ${p.achievements.length}/${ACHIEVEMENTS.length}`),
         h('div', { class: 'col' }, ACHIEVEMENTS.map((a) => {
@@ -666,7 +671,7 @@ export class UI {
                 this.deckStates.clear();
                 this.game.save();
                 this.home();
-              }, () => this.root.querySelector<HTMLButtonElement>('.settings-footer button')?.focus({ preventScroll: true }));
+              }, () => this.root.querySelector<HTMLButtonElement>('.settings-footer button')?.focus({ preventScroll: true }), 'Cancel');
             },
           }, 'Reset progress')),
         h('div', { class: 'settings-help' }, 'Drag to aim. Release to launch. Use Recall and Surge during a run.'),
@@ -694,7 +699,7 @@ export class UI {
     const pause = h('button', { class: 'hudbtn', 'aria-label': 'Pause game', style: 'right:10px;top:10px', onclick: () => { this.click(); this.game.pause(); } }, '❚❚');
     const surge = h('button', { class: 'surge', 'aria-label': 'Surge (Space)', title: 'Surge / Space', style: 'right:12px;bottom:12px', onclick: () => this.game.world?.activateSurge() }, h('span', {}, 'SURGE')) as HTMLButtonElement;
     const recall = h('button', { class: 'recall', 'aria-label': 'Recall balls (R)', title: 'Recall / R / 10s cooldown', onclick: () => this.game.world?.activateRecall() },
-      h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, '↶'), h('span', { class: 'recall-label' }, 'RECALL'), h('small', {}, 'R / READY')) as HTMLButtonElement;
+      h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, '↶'), h('span', { class: 'recall-label' }, 'RECALL'), h('small', {}, 'READY')) as HTMLButtonElement;
     this.surgeBtn = surge;
     this.recallBtn = recall;
     const telemetry = h('div', { class: 'compact-telemetry' },
@@ -740,9 +745,9 @@ export class UI {
     if (label.textContent !== text) label.textContent = text;
     if (this.recallBtn) {
       this.recallBtn.disabled = !w.canRecall() || !this.game.controlsEnabled;
-      this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / 10) * 100}%`);
+      this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / RECALL_COOLDOWN) * 100}%`);
       const small = this.recallBtn.querySelector('small')!;
-      const status = w.recallCooldown > 0 ? `${Math.ceil(w.recallCooldown)}s` : w.canRecall() ? 'R / READY' : 'R / NO BALLS';
+      const status = w.recallCooldown > 0 ? `${Math.ceil(w.recallCooldown)}s` : w.canRecall() ? 'READY' : 'NO BALLS';
       if (small.textContent !== status) small.textContent = status;
     }
     if (this.compactTelemetry && this.root.hasAttribute('data-compact-hud')) {
@@ -815,12 +820,12 @@ export class UI {
     const card = (o: Offer) => {
       if (o.kind === 'evolution') {
         const e = EVOLUTION_MAP[o.id];
-        return h('button', { class: 'offer evolution', onclick: () => this.pick(w, o) },
+        return h('button', { class: 'offer evolution', disabled: this.banishMode, onclick: () => this.pick(w, o) },
           h('div', { class: 'oicon' }, e.icon),
           h('div', {}, h('div', { class: 'oname', style: `color:${e.color}` }, `EVOLVE: ${e.name}`), h('div', { class: 'odesc' }, e.desc)));
       }
       if (o.kind !== 'upgrade') {
-        return h('button', { class: 'offer', onclick: () => this.pick(w, o) },
+        return h('button', { class: 'offer', disabled: this.banishMode, onclick: () => this.pick(w, o) },
           h('div', { class: 'oicon' }, o.kind === 'heal' ? '💚' : '🪙'),
           h('div', {}, h('div', { class: 'oname' }, o.kind === 'heal' ? 'Repair' : 'Salvage'), h('div', { class: 'odesc' }, o.kind === 'heal' ? 'Restore 30% HP.' : '+25 coins.')));
       }
@@ -866,7 +871,7 @@ export class UI {
           class: this.banishMode ? 'danger' : '', disabled: w.banishes <= 0,
           onclick: () => { this.click(); this.banishMode = !this.banishMode; this.levelUp(w); },
         }, this.banishMode ? 'Tap a card…' : `🚫 Banish (${w.banishes})`) : null,
-        h('button', { class: 'ghost', onclick: () => this.pick(w, { kind: 'coins' }) }, 'Skip'),
+        h('button', { class: 'ghost', 'aria-label': 'Skip (+25 coins)', title: 'Skip (+25 coins)', onclick: () => this.pick(w, { kind: 'coins' }) }, 'Skip'),
       ),
     );
     this.showOverlay(overlay, 'upgrade');
@@ -931,8 +936,8 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ post run
-  postRun(s: RunSummary, r: RunReport): void {
-    this.navigation.reset(() => this.home(), { key: 'results', restore: () => this.postRun(s, r) });
+  postRun(s: RunSummary, r: RunReport, abandoned = false): void {
+    this.navigation.reset(() => this.home(), { key: 'results', restore: () => this.postRun(s, r, abandoned) });
     this.hideHud();
     this.closeOverlay();
     const bs = s.buildStats;
@@ -946,7 +951,7 @@ export class UI {
       ...(r.difficultyUnlocked ? [`🔥 New difficulty: ${r.difficultyUnlocked}`] : []),
     ];
     this.show(h('div', { class: 'screen solid' },
-      h('div', { class: `result-title ${s.victory ? 'win' : 'lose'}` }, s.victory ? 'RUN COMPLETE' : 'DEFEATED'),
+      h('div', { class: `result-title ${s.victory ? 'win' : 'lose'}` }, s.victory ? 'RUN COMPLETE' : abandoned ? 'RUN ENDED' : 'DEFEATED'),
       h('div', { class: 'center small muted' }, `${ARENA_MAP[s.arena].name} · ${DIFFICULTIES[s.difficulty].name} · ${formatTime(s.time)}${s.daily ? ' · Daily' : ''}`),
       h('div', { class: 'scroll', style: 'margin-top:10px' },
         h('div', { class: 'buildcard' },
@@ -977,7 +982,7 @@ export class UI {
           h('div', { class: 'card' }, h('div', { class: 'name' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`), h('div', { class: 'desc' }, SYNERGY_MAP[id].desc))))] : null,
         s.evolutions.length ? [h('h3', {}, 'Evolutions'), h('div', { class: 'col' }, s.evolutions.map(id =>
           h('div', { class: 'card' }, h('div', { class: 'name', style: `color:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`), h('div', { class: 'desc' }, EVOLUTION_MAP[id].desc))))] : null,
-        r.discoveries.some((d) => d.cat !== 'upgrades') ? [h('h3', {}, 'New discoveries'), h('div', { class: 'col' }, r.discoveries.filter((d) => d.cat !== 'upgrades').slice(0, 10).map((d) => h('div', { class: 'unlock', style: 'color:#d59bff' }, `✦ ${d.cat.slice(0, -1).replace('enemie', 'enemy')}: ${d.name}`)))] : null,
+        r.discoveries.some((d) => d.cat !== 'upgrades') ? [h('h3', {}, 'New discoveries'), h('div', { class: 'col' }, r.discoveries.filter((d) => d.cat !== 'upgrades').slice(0, 10).map((d) => h('div', { class: 'unlock', style: 'color:#d59bff' }, `✦ ${DISCOVERY_LABEL[d.cat]}: ${d.name}`)))] : null,
         unlockLines.length ? [h('h3', {}, 'Unlocked'), h('div', { class: 'col' }, unlockLines.map(u => h('div', { class: 'unlock' }, u)))] : null,
         h('h3', {}, 'Next goals'),
         this.goalList(r.goals),

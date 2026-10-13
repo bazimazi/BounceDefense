@@ -118,7 +118,7 @@ try {
     assert.equal(await page.evaluate(() => [...document.querySelectorAll('.deck-list .offer')].every(offer => offer.getBoundingClientRect().width >= offer.offsetWidth * .98)), true, 'Upgrade entrances preserve their touch-target size');
     await motion('upgrade offers', '.levelup[data-view="upgrade"]');
     await page.getByRole('button', { name: /Reroll/ }).tap(); await motion('reroll offers', '.deck-content');
-    await page.getByRole('button', { name: 'Skip', exact: true }).tap(); await settle();
+    await page.getByRole('button', { name: /^Skip/ }).tap(); await settle();
     await page.evaluate(() => { const g = window.game; g.world.victory = true; g.world.state = 'over'; g.ui.victoryChoice(g.world); });
     await motion('victory', '.levelup[data-view="victory"]');
     await page.getByRole('button', { name: /Claim rewards/ }).tap(); await motion('results', '.screen[data-view="results"]');

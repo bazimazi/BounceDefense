@@ -112,7 +112,7 @@ export const WORKSHOP: WorkshopDef[] = [
   { id: 'salvage', name: 'Salvage', icon: '🪙', desc: (l) => `+${l * 8}% coins`, maxLevel: 5, cost: costCurve(70, 1.6), mods: (l) => [{ stat: 'coinGain', mult: 0.08 * l }] },
   { id: 'study', name: 'Field Study', icon: '📘', desc: (l) => `+${l * 5}% XP`, maxLevel: 4, cost: costCurve(80, 1.7), mods: (l) => [{ stat: 'xpGain', mult: 0.05 * l }] },
   { id: 'primer', name: 'Momentum Primer', icon: '🌀', desc: (l) => `Balls launch with ${l * 2} momentum`, maxLevel: 3, cost: costCurve(150, 1.9), mods: (l) => [{ stat: 'momentumStart', add: 2 * l }] },
-  { id: 'head_start', name: 'Head Start', icon: '🏁', desc: (l) => (l ? 'Begin each run with a free upgrade choice' : 'Begin each run with a free upgrade choice'), maxLevel: 1, cost: () => 900, mods: () => [] },
+  { id: 'head_start', name: 'Head Start', icon: '🏁', desc: () => 'Begin each run with a free upgrade choice', maxLevel: 1, cost: () => 900, mods: () => [] },
   { id: 'spare_ball', name: 'Spare Ball', icon: '⚪', desc: () => 'Start every run with +1 ball', maxLevel: 1, cost: () => 2500, mods: (l) => [{ stat: 'maxBalls', add: l }] },
 ];
 export const WORKSHOP_MAP: Record<string, WorkshopDef> = Object.fromEntries(WORKSHOP.map((w) => [w.id, w]));

@@ -118,7 +118,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'shard_forge', name: 'Shard Forge', icon: '🔷', category: 'multiply', rarity: 'common', maxLevel: 3,
     tags: ['swarm'],
-    desc: () => `Shards and clones deal +20% damage; splits create +1 shard.`,
+    desc: (l) => `Shards and clones deal +20% damage.${l === 2 ? ' Splits now create +1 shard.' : l < 2 ? ' At Lv 2, splits create +1 shard.' : ''}`,
     mods: (l) => [{ stat: 'shardPower', add: 0.2 * l }, { stat: 'splitCount', add: l >= 2 ? 1 : 0 }],
   },
 
@@ -132,7 +132,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'wildfire', name: 'Wildfire', icon: '🌋', category: 'element', rarity: 'rare', maxLevel: 3, locked: true,
     tags: ['fire'],
-    desc: () => `Burning enemies spread fire on death (+33% chance) and burn 20% harder.`,
+    desc: () => `Burning enemies spread fire on death (+34% chance) and burn 20% harder.`,
     mods: (l) => [{ stat: 'burnSpread', add: 0.34 * l }, { stat: 'burnPower', mult: 0.2 * l }],
   },
   {
@@ -150,7 +150,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'chain_lightning', name: 'Chain Lightning', icon: '⚡', category: 'element', rarity: 'common', maxLevel: 5,
     tags: ['lightning', 'element', 'chain'],
-    desc: () => `+15% chance on hit to arc lightning between nearby enemies (+1 jump).`,
+    desc: (l) => `+15% chance on hit to arc lightning between nearby enemies${l > 1 ? ' (+1 jump).' : '. Later levels add +1 jump each.'}`,
     mods: (l) => [{ stat: 'chainChance', add: 0.15 * l }, { stat: 'chainCount', add: l - 1 }],
   },
   {

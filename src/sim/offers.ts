@@ -19,6 +19,8 @@ export interface OfferContext {
   count: number;
   /** 0-based index of this level-up in the run. */
   levelIndex: number;
+  /** Bloodless: healing offers would do nothing. */
+  noHeal?: boolean;
 }
 
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 100, rare: 48, epic: 18, legendary: 6 };
@@ -92,6 +94,6 @@ export function makeOffers(ctx: OfferContext): Offer[] {
     candidates.splice(candidates.indexOf(pick), 1);
     out.push({ kind: 'upgrade', id: pick, level: ctx.build.level(pick) + 1 });
   }
-  if (out.length === 0) out.push({ kind: 'heal' }, { kind: 'coins' });
+  if (out.length === 0) out.push(...(ctx.noHeal ? [] : [{ kind: 'heal' } as const]), { kind: 'coins' });
   return out;
 }

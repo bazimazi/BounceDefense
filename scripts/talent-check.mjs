@@ -72,9 +72,12 @@ try {
     await page.setViewport({ width, height: 844, isMobile: true, hasTouch: true });
     await page.evaluate(() => window.game.ui.talents());
     await button('Conduit');
-    assert.equal(await page.$$eval('.talent-tree', els => els.filter(el => getComputedStyle(el).display !== 'none').length), 1);
+    // Departing views animate out as inert ghosts; only the live screen's tree counts.
+    assert.equal(await page.$$eval('#ui .talent-tree', els => els.filter(el => getComputedStyle(el).display !== 'none').length), 1);
     await learn('voltage', 1);
     await button('Apply talents');
+    // Measure the settled layout, not a frame of the page-entry animation.
+    await page.waitForFunction(() => !document.getAnimations().some(a => a.id.startsWith('ui:') && a.playState === 'running'));
     const bounds = await page.$eval('.talent-screen', el => {
       const r = el.getBoundingClientRect();
       return { x: r.x, right: r.right, overflow: el.scrollWidth > el.clientWidth };

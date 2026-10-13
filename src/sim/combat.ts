@@ -16,10 +16,16 @@ export interface HitInfo {
 /** Max depth of proc chains (explosion -> chain -> explosion ...). Keeps cascades finite. */
 export const MAX_DEPTH = 4;
 
-// Per-depth scratch lists so nested queries never clobber a list being iterated.
+// Scratch lists form a stack keyed by call nesting, not proc depth: a kill inside an
+// explosion can start another query at the same depth, which must not clobber the list
+// still being iterated. Every acquire() is paired with release() in a finally block.
 const lists: Enemy[][] = [];
-function listAt(depth: number): Enemy[] {
-  return (lists[depth] ??= []);
+let nested = 0;
+function acquire(): Enemy[] {
+  return (lists[nested++] ??= []);
+}
+function release(): void {
+  lists[--nested].length = 0;
 }
 
 const ELEMENT_COLORS = { fire: '#ff7a2f', ice: '#9fdcff', lightning: '#5ee7ff', bleed: '#ff2a55' };
@@ -75,12 +81,16 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
     w.emit({ t: 'burst', x: e.x, y: e.y, color: '#cfefff', n: 22, speed: 320, size: 3 });
     w.emit({ t: 'text', x: e.x, y: e.y - e.r - 10, text: 'SHATTER', color: '#cfefff' });
     w.emit({ t: 'sfx', name: 'shatter' });
-    const list = listAt(1);
-    w.grid.query(e.x, e.y, 85, list);
-    for (const o of list) {
-      if (o === e || !o.alive) continue;
-      damageEnemy(w, o, dmg / talentMult * 0.4, { src: 'shatter', crit: false, depth: 1 });
-      applyChill(w, o, 1, 1);
+    const list = acquire();
+    try {
+      w.grid.query(e.x, e.y, 85, list);
+      for (const o of list) {
+        if (o === e || !o.alive) continue;
+        damageEnemy(w, o, dmg / talentMult * 0.4, { src: 'shatter', crit: false, depth: 1 });
+        applyChill(w, o, 1, 1);
+      }
+    } finally {
+      release();
     }
   }
 
@@ -110,7 +120,7 @@ export function splitBall(w: World, b: Ball, count: number): void {
   const base = Math.atan2(b.dy, b.dx);
   for (let i = 0; i < count; i++) {
     const off = (i - (count - 1) / 2) * 0.5 + (count === 1 ? 0.35 : 0);
-    const a = base + off + Math.PI * (i % 2 === 0 ? 0 : 0);
+    const a = base + off;
     w.spawnBall('shard', b.x, b.y, Math.cos(a), Math.sin(a), b);
   }
   w.emit({ t: 'sfx', name: 'split' });
@@ -243,9 +253,13 @@ export function killEnemy(w: World, e: Enemy, info: HitInfo, overflow: number): 
     explode(w, e.x, e.y, e.def.deathBlast.radius, e.def.deathBlast.damage * (1 + w.time / 300), info.depth + 1, { color: '#ff3b3b', src: 'enemyBlast' });
   }
   if (e.st.burnT > 0 && st.burnSpread > 0 && w.rng.chance(st.burnSpread) && info.depth < MAX_DEPTH) {
-    const list = listAt(info.depth + 1);
-    w.grid.query(e.x, e.y, 85, list);
-    for (const o of list) if (o !== e && o.alive) applyBurn(w, o, e.st.burnDps, info.depth + 1);
+    const list = acquire();
+    try {
+      w.grid.query(e.x, e.y, 85, list);
+      for (const o of list) if (o !== e && o.alive) applyBurn(w, o, e.st.burnDps, info.depth + 1);
+    } finally {
+      release();
+    }
     w.emit({ t: 'ring', x: e.x, y: e.y, r: 85, color: ELEMENT_COLORS.fire });
   }
   if ((info.src === 'explosion' || info.src === 'barrel') && info.depth < MAX_DEPTH && w.rng.chance(st.chainReaction)) {
@@ -280,17 +294,21 @@ export function killEnemy(w: World, e: Enemy, info: HitInfo, overflow: number): 
 }
 
 export function nearestEnemy(w: World, x: number, y: number, range: number, exclude?: Enemy, excludeIds?: number[]): Enemy | null {
-  const list = listAt(7);
-  w.grid.query(x, y, range, list);
+  const list = acquire();
   let best: Enemy | null = null;
-  let bd = Infinity;
-  for (const o of list) {
-    if (!o.alive || o === exclude || (excludeIds && excludeIds.includes(o.id))) continue;
-    const d = (o.x - x) ** 2 + (o.y - y) ** 2;
-    if (d < bd) {
-      bd = d;
-      best = o;
+  try {
+    w.grid.query(x, y, range, list);
+    let bd = Infinity;
+    for (const o of list) {
+      if (!o.alive || o === exclude || (excludeIds && excludeIds.includes(o.id))) continue;
+      const d = (o.x - x) ** 2 + (o.y - y) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = o;
+      }
     }
+  } finally {
+    release();
   }
   return best;
 }
@@ -311,22 +329,26 @@ export function explode(
   w.explosionsThisStep++;
   const src = opts.src ?? 'explosion';
   const burn = opts.burn || w.build.has('burning_explosion') || w.build.has('evo_inferno');
-  const list = listAt(Math.min(depth, 6));
-  w.grid.query(x, y, r, list);
   const st = w.build.stats;
-  for (const e of list) {
-    if (!e.alive) continue;
-    damageEnemy(w, e, dmg, { src: src === 'surge' ? 'explosion' : src, crit: false, depth });
-    if (e.alive) {
-      if (!e.boss) {
-        const dx = e.x - x;
-        const dy = e.y - y;
-        const d = Math.hypot(dx, dy) || 1;
-        e.kx += (dx / d) * 160;
-        e.ky += (dy / d) * 90;
+  const list = acquire();
+  try {
+    w.grid.query(x, y, r, list);
+    for (const e of list) {
+      if (!e.alive) continue;
+      damageEnemy(w, e, dmg, { src: src === 'surge' ? 'explosion' : src, crit: false, depth });
+      if (e.alive) {
+        if (!e.boss) {
+          const dx = e.x - x;
+          const dy = e.y - y;
+          const d = Math.hypot(dx, dy) || 1;
+          e.kx += (dx / d) * 160;
+          e.ky += (dy / d) * 90;
+        }
+        if (burn && depth < MAX_DEPTH + 1) applyBurn(w, e, dmg * st.burnPower * 0.8 * st.elementPower, depth + 1);
       }
-      if (burn && depth < MAX_DEPTH + 1) applyBurn(w, e, dmg * st.burnPower * 0.8 * st.elementPower, depth + 1);
     }
+  } finally {
+    release();
   }
   if (depth < MAX_DEPTH) {
     for (const o of w.obstacles) {
@@ -349,19 +371,8 @@ export function chainLightning(w: World, from: Enemy, dmg: number, count: number
   let cx = from.x;
   let cy = from.y;
   let extra = 0;
-  const list = listAt(Math.min(depth, 6));
   for (let i = 0; i < count + extra && i < 16; i++) {
-    w.grid.query(cx, cy, 170, list);
-    let next: Enemy | null = null;
-    let bd = Infinity;
-    for (const o of list) {
-      if (!o.alive || hit.includes(o.id)) continue;
-      const d = (o.x - cx) ** 2 + (o.y - cy) ** 2;
-      if (d < bd) {
-        bd = d;
-        next = o;
-      }
-    }
+    const next = nearestEnemy(w, cx, cy, 170, undefined, hit);
     if (!next) break;
     hit.push(next.id);
     let d = dmg;
@@ -442,9 +453,13 @@ export function applyChill(w: World, e: Enemy, stacks: number, depth: number): v
     w.emit({ t: 'ring', x: e.x, y: e.y, r: e.r + 14, color: ELEMENT_COLORS.ice });
     w.emit({ t: 'sfx', name: 'freeze', vol: 0.5 });
     if (w.build.has('glacial_heart') && depth < 2) {
-      const list = listAt(depth + 1);
-      w.grid.query(e.x, e.y, 70 + 20 * w.build.power('glacial_heart'), list);
-      for (const o of list) if (o !== e) applyChill(w, o, 1, depth + 1);
+      const list = acquire();
+      try {
+        w.grid.query(e.x, e.y, 70 + 20 * w.build.power('glacial_heart'), list);
+        for (const o of list) if (o !== e) applyChill(w, o, 1, depth + 1);
+      } finally {
+        release();
+      }
     }
   }
 }

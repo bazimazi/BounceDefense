@@ -1,7 +1,7 @@
 import { angleDiff, clamp, closestOnSegment, reflect, type Vec2 } from '../core/math';
 import { ballHitEnemy, sparkNearest } from './combat';
 import {
-  FIELD_TOP, FLOOR_Y, LAUNCHER_X, LAUNCHER_Y, TRAIL_LEN, W,
+  FIELD_TOP, FLOOR_Y, LAUNCHER_X, LAUNCHER_Y, SIM_DT, TRAIL_LEN, W,
   type Ball, type Enemy, type Segment,
 } from './types';
 import { momentumTier, TIER_SPEED, type World } from './world';
@@ -24,13 +24,16 @@ export function enforceAngle(b: { dx: number; dy: number }): void {
   }
 }
 
-export function effectiveTier(w: World, b: Ball): number {
+/** The parts of a ball that its speed and steering depend on (shared with the aim tracer). */
+type Mover = Pick<Ball, 'x' | 'y' | 'dx' | 'dy' | 'wallBounces' | 'boost' | 'momentum'>;
+
+export function effectiveTier(w: World, b: Pick<Ball, 'momentum'>): number {
   let t = momentumTier(b.momentum);
   if (w.combo.count >= 25 && w.build.has('combo_reactor')) t = Math.max(t, 2);
   return t;
 }
 
-export function ballSpeed(w: World, b: Ball): number {
+export function ballSpeed(w: World, b: Mover): number {
   const st = w.build.stats;
   let s = st.speed * (1 + Math.min(st.wallAccel * b.wallBounces, 1)) * b.boost * TIER_SPEED[effectiveTier(w, b)];
   for (const e of w.fieldEnemies) {
@@ -42,7 +45,8 @@ export function ballSpeed(w: World, b: Ball): number {
   return s;
 }
 
-function steer(w: World, b: Ball, dt: number, spd: number): void {
+/** `stormDir` lets the aim tracer use a gravity-storm direction it has advanced ahead of time. */
+function steer(w: World, b: Mover, dt: number, spd: number, stormDir?: number): void {
   const st = w.build.stats;
   let ax = 0;
   let ay = 0;
@@ -97,7 +101,8 @@ function steer(w: World, b: Ball, dt: number, spd: number): void {
       ay += (dy / d) * pull;
     }
   }
-  if (w.event?.id === 'gravity_storm') ax += 380 * w.event.dir;
+  const storm = stormDir ?? (w.event?.id === 'gravity_storm' ? w.event.dir : 0);
+  if (storm) ax += 380 * storm;
   if (ax !== 0 || ay !== 0) {
     b.dx += (ax * dt) / spd;
     b.dy += (ay * dt) / spd;
@@ -449,20 +454,60 @@ export function stepBall(w: World, b: Ball, dt: number): void {
 }
 
 // ------------------------------------------------------------------ aim preview
+/** Marks a teleport/phase in a traced polyline: renderers must not join across it. */
+export const TRACE_BREAK = NaN;
+
 /**
- * Traces the path a launched ball would take (walls, deflectors, bumpers, crates),
- * stopping at the first enemy. Writes polyline points to `out`. Uses the exact same
- * reflection rules as the real simulation so the preview never lies.
+ * Traces the path a launched ball would take, stopping at the first enemy. It uses the
+ * same reflection rules, speed and per-tick steering (gravity wells, magnets, homing,
+ * gravity storms) as the real ball, and follows portals, Rift Phase and safety-net
+ * floor bounces. Writes polyline points to `out`; a TRACE_BREAK pair separates jumps.
  */
 export function traceAim(w: World, maxLen: number, maxBounces: number, out: number[]): { ex: number; ey: number; enemy: Enemy | null } {
   out.length = 0;
-  const g = { x: LAUNCHER_X, y: LAUNCHER_Y - 16, dx: w.aim.dx, dy: w.aim.dy, r: w.build.stats.radius };
+  const st = w.build.stats;
+  const g = {
+    x: LAUNCHER_X, y: LAUNCHER_Y - 16, dx: w.aim.dx, dy: w.aim.dy, r: st.radius,
+    wallBounces: 0, boost: 1, momentum: Math.max(st.momentumStart, w.savedMomentum[w.savedMomentum.length - 1] ?? 0),
+  };
   out.push(g.x, g.y);
   let len = 0;
   let bounces = 0;
-  const step = 4;
+  let remaining = 0; // distance left in the current simulated tick
+  let portalCd = 0;
+  let floorBounces = st.floorBounces;
+  let phased = false;
+  let curved = 0;
+  // Gravity storms flip on a timer; advance a copy so long previews bend the right way.
+  const ev = w.event;
+  let storm = ev?.id === 'gravity_storm' ? { timer: ev.timer, dir: ev.dir, left: ev.dur - ev.t } : null;
+  const maxStep = Math.max(2, g.r * 0.6);
   const segs = w.dynSegments.length ? w.segments.concat(w.dynSegments) : w.segments;
-  while (len < maxLen) {
+  const wall = (n = 1) => { g.wallBounces += w.event?.id === 'double_bounce' ? 2 * n : n; };
+  const jump = (fx: number, fy: number) => out.push(fx, fy, TRACE_BREAK, TRACE_BREAK);
+  path: while (len < maxLen) {
+    if (remaining <= 0) {
+      // One simulation tick, in the same order and sub-steps as stepBall.
+      portalCd -= SIM_DT;
+      if (storm) {
+        storm.left -= SIM_DT;
+        storm.timer -= SIM_DT;
+        if (storm.timer <= 0) {
+          storm.timer = 4;
+          storm.dir = -storm.dir;
+        }
+        if (storm.left <= 0) storm = null;
+      }
+      g.boost = 1 + (g.boost - 1) * Math.exp(-SIM_DT * 2.5);
+      const spd = ballSpeed(w, g);
+      const dx = g.dx;
+      const dy = g.dy;
+      steer(w, g, SIM_DT, spd, storm ? storm.dir : 0);
+      if (Math.abs(g.dx - dx) + Math.abs(g.dy - dy) > 1e-6) curved++;
+      remaining = spd * SIM_DT;
+    }
+    const step = Math.min(remaining, maxStep);
+    remaining -= step;
     g.x += g.dx * step;
     g.y += g.dy * step;
     len += step;
@@ -473,9 +518,24 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
       const dy = g.y - tmp.y;
       const d2 = dx * dx + dy * dy;
       if (d2 >= g.r * g.r) continue;
-      const d = Math.sqrt(d2) || 1;
-      const nx = dx / d;
-      const ny = dy / d;
+      const d = Math.sqrt(d2);
+      let nx: number;
+      let ny: number;
+      if (d < 1e-6) {
+        // Same fallback as collideSegments: the segment normal facing against travel.
+        nx = -(s.by - s.ay);
+        ny = s.bx - s.ax;
+        const l = Math.hypot(nx, ny) || 1;
+        nx /= l;
+        ny /= l;
+        if (nx * g.dx + ny * g.dy > 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+      } else {
+        nx = dx / d;
+        ny = dy / d;
+      }
       g.x = tmp.x + nx * (g.r + 0.01);
       g.y = tmp.y + ny * (g.r + 0.01);
       if (g.dx * nx + g.dy * ny < 0) {
@@ -483,6 +543,7 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
         g.dx = rv.x;
         g.dy = rv.y;
         enforceAngle(g);
+        wall();
         bounced = true;
       }
     }
@@ -497,11 +558,13 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
           const ny = dy / d;
           g.x = o.x + nx * (rr + 0.01);
           g.y = o.y + ny * (rr + 0.01);
+          if (o.kind === 'bumper') g.boost = 1.35;
           if (g.dx * nx + g.dy * ny < 0) {
             reflect(g.dx, g.dy, nx, ny, rv);
             g.dx = rv.x;
             g.dy = rv.y;
             enforceAngle(g);
+            if (o.kind === 'bumper') wall();
             bounced = true;
           }
         }
@@ -512,9 +575,11 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
         const dy = g.y - cy;
         const d2 = dx * dx + dy * dy;
         if (d2 < g.r * g.r) {
-          const d = Math.sqrt(d2) || 1;
-          const nx = d2 > 0 ? dx / d : 0;
-          const ny = d2 > 0 ? dy / d : 1;
+          // Same fallback as collideObstacles when the center is inside the crate.
+          const inside = d2 < 1e-12;
+          const d = inside ? 1 : Math.sqrt(d2);
+          const nx = inside ? 0 : dx / d;
+          const ny = inside ? (g.dy > 0 ? -1 : 1) : dy / d;
           g.x = cx + nx * (g.r + 0.01);
           g.y = cy + ny * (g.r + 0.01);
           if (g.dx * nx + g.dy * ny < 0) {
@@ -522,15 +587,35 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
             g.dx = rv.x;
             g.dy = rv.y;
             enforceAngle(g);
+            wall();
             bounced = true;
           }
         }
+      } else if (o.kind === 'portal' && portalCd <= 0) {
+        const inA = (g.x - o.ax) ** 2 + (g.y - o.ay) ** 2 < o.r * o.r;
+        const inB = !inA && (g.x - o.bx) ** 2 + (g.y - o.by) ** 2 < o.r * o.r;
+        if (inA || inB) {
+          jump(g.x, g.y);
+          g.x = (inA ? o.bx : o.ax) + g.dx * 2;
+          g.y = (inA ? o.by : o.ay) + g.dy * 2;
+          g.momentum += 2 * st.momentumGain;
+          portalCd = 0.45;
+          out.push(g.x, g.y);
+          curved = 0;
+        }
       }
     }
+    if (g.y < FIELD_TOP + g.r - 2) g.y = FIELD_TOP + g.r;
+    if (g.x < g.r - 2 || g.x > W - g.r + 2) g.x = clamp(g.x, g.r, W - g.r);
     if (bounced) {
       out.push(g.x, g.y);
+      curved = 0;
       bounces++;
       if (bounces > maxBounces) return { ex: g.x, ey: g.y, enemy: null };
+    } else if (curved >= 3) {
+      // Sample bending paths often enough to draw them as curves.
+      out.push(g.x, g.y);
+      curved = 0;
     }
     w.grid.query(g.x, g.y, g.r, w.q2);
     for (const e of w.q2) {
@@ -539,7 +624,24 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
         return { ex: g.x, ey: g.y, enemy: e };
       }
     }
-    if (g.y > FLOOR_Y) break;
+    if (g.y > FLOOR_Y) {
+      // Same order as handleFloor: Rift Phase first, then safety-net bounces.
+      if (!phased && w.build.has('void_core')) {
+        phased = true;
+        jump(g.x, FLOOR_Y);
+        g.y = FIELD_TOP + g.r + 6;
+        g.dy = Math.abs(g.dy);
+        out.push(g.x, g.y);
+      } else if (floorBounces > 0) {
+        floorBounces--;
+        g.y = FLOOR_Y - 0.5;
+        g.dy = -Math.abs(g.dy);
+        out.push(g.x, g.y);
+        bounces++;
+        if (bounces > maxBounces) return { ex: g.x, ey: g.y, enemy: null };
+      } else break path;
+      curved = 0;
+    }
   }
   out.push(g.x, g.y);
   return { ex: g.x, ey: g.y, enemy: null };

@@ -581,9 +581,11 @@ export class World {
 
   // ------------------------------------------------------------------ level ups
   openLevelUp(): void {
+    // Pacts make some upgrades inert; never offer a card that cannot do anything.
+    const inert = [...(this.loneBall ? ['extra_ball'] : []), ...(this.noHeal ? ['vampiric', 'regen'] : [])];
     this.offers = makeOffers({
-      build: this.build, rng: this.rng, pool: this.pool, banished: this.banished,
-      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps,
+      build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
+      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps, noHeal: this.noHeal,
     });
     this.state = 'levelup';
     this.bus.emit('levelUp', { offers: this.offers });
@@ -995,7 +997,8 @@ export class World {
   // ------------------------------------------------------------------ end
   finish(victory: boolean): void {
     if (this.endTimer >= 0 || this.state === 'over') return;
-    this.victory = victory;
+    // Endless follows a won run: falling there ends the run but keeps the victory.
+    this.victory = victory || this.director.endless;
     this.endTimer = victory ? 2.5 : 1.2;
     this.emit({ t: 'slowmo', dur: this.endTimer, scale: 0.3 });
     if (!victory) {

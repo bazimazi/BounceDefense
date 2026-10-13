@@ -55,10 +55,11 @@ for (const core of cores) {
   }
   const ms = performance.now() - t0;
   deathTimes = deathTimes.sort((a, b) => a - b);
-  const median = deathTimes.length ? deathTimes[Math.floor(deathTimes.length / 2)] : 0;
+  // Pre-boss deaths only; none means every run reached the boss.
+  const median = deathTimes.length ? `${deathTimes[Math.floor(deathTimes.length / 2)].toFixed(0)}s` : '-';
   console.log(
     `${core.padEnd(8)} win ${((wins / runs) * 100).toFixed(0).padStart(3)}%  avgTime ${(totalTime / runs).toFixed(0).padStart(4)}s  ` +
-      `medianDeath ${median.toFixed(0).padStart(4)}s  lvl ${(totalLevel / runs).toFixed(1)}  kills ${(totalKills / runs).toFixed(0)}  ` +
+      `medianDeath ${median.padStart(5)}  lvl ${(totalLevel / runs).toFixed(1)}  kills ${(totalKills / runs).toFixed(0)}  ` +
       `reachBoss ${((reachedBoss / runs) * 100).toFixed(0)}%  bestCombo ${bestCombo}  evo/run ${(evolutions / runs).toFixed(2)}  syn/run ${(synergies / runs).toFixed(2)}  (${(ms / runs).toFixed(0)}ms/run)`,
   );
 }

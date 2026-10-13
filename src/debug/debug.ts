@@ -26,14 +26,19 @@ export function createDebugPanel(game: Game): HTMLElement {
   const panel = h('div', { class: 'debug' },
     h('div', { class: 'row' }, h('b', {}, 'DEBUG'), h('span', { class: 'spacer' }), fpsEl),
     btn('+Level', () => { const x = w(); if (x) x.pendingLevels++; }),
-    btn('+Ball', () => { const x = w(); if (x) { x.build.addUpgrade('extra_ball'); x.hand++; x.onBuildChanged([]); } }),
+    btn('+Ball', () => {
+      const x = w();
+      if (!x || x.build.level('extra_ball') >= UPGRADE_MAP.extra_ball.maxLevel) return;
+      x.onBuildChanged(x.build.addUpgrade('extra_ball'));
+      x.hand++;
+    }),
     btn('God', () => { god = !god; }),
     btn('Kill all', () => { const x = w(); x?.enemies.forEach((e) => !e.boss && damageEnemy(x, e, 1e9, { src: 'spark', crit: false, depth: 5 })); }),
     btn('Boss', () => { const x = w(); if (x) x.director.bossTime = x.time; }),
     btn('Elite', () => w()?.director.spawnElite(2, 1)),
     btn('Surge', () => { const x = w(); if (x) x.surge.charge = x.surge.max; }),
     btn('+Combo50', () => w()?.addCombo(50)),
-    h('div', {}, 'Time:', btn('¼', () => setTs(0.25)), btn('1', () => setTs(1)), btn('3', () => setTs(3))),
+    h('div', {}, 'Time:', btn('¼', () => { game.timeScale = 0.25; }), btn('1', () => { game.timeScale = 1; }), btn('3', () => { game.timeScale = 3; })),
     enemySel,
     btn('Spawn', () => w()?.spawnEnemy(enemySel.value, W / 2 + (Math.random() - 0.5) * 300, 150)),
     btn('Spawn elite', () => w()?.spawnEnemy(enemySel.value, W / 2, 150, { elite: ['armored', 'regen'] })),
@@ -53,12 +58,7 @@ export function createDebugPanel(game: Game): HTMLElement {
     btn('Log analytics', () => console.table(analyticsLog.slice(-30))),
   );
 
-  let ts = 1;
-  function setTs(v: number) {
-    ts = v;
-  }
-
-  // piggyback on rAF for fps + god mode + time scale
+  // piggyback on rAF for fps + god mode
   const tick = () => {
     frames++;
     const now = performance.now();
@@ -70,13 +70,7 @@ export function createDebugPanel(game: Game): HTMLElement {
       fpsEl.textContent = `${fps}fps ${x ? `e${x.enemies.length} b${x.balls.length} p${game.renderer.particles.n}` : ''}`;
     }
     const x = w();
-    if (x) {
-      if (god) x.hp = x.maxHp;
-      if (ts !== 1 && x.state === 'playing') {
-        // extra (or fewer) sim steps for time scaling
-        if (ts > 1) for (let i = 0; i < Math.round((ts - 1) * 2); i++) x.step(1 / 120);
-      }
-    }
+    if (x && god) x.hp = x.maxHp;
     if (panel.isConnected) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

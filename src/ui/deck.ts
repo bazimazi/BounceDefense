@@ -147,7 +147,10 @@ export function deckSections(source: HTMLElement): DeckSection[] {
     const rows = Array.from(grid.children);
     return Array.from({ length: Math.ceil(rows.length / 4) }, (_, page) => {
       const card = item.cloneNode(true) as HTMLElement;
-      card.querySelector('.statgrid')!.replaceChildren(...rows.slice(page * 4, page * 4 + 4).map(row => row.cloneNode(true)));
+      const stats = card.querySelector('.statgrid')!;
+      stats.replaceChildren(...rows.slice(page * 4, page * 4 + 4).map(row => row.cloneNode(true)));
+      // Continuation cards carry only their stats; the heading stays on the first card.
+      if (page > 0) for (const child of [...card.children]) if (!child.contains(stats)) child.remove();
       return card;
     });
   });

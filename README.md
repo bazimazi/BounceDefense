@@ -138,8 +138,8 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 | Meta | Coins, Cores and Research; Workshop (capped), Research tree, Mastery 1–20, 17 achievements, 14 challenges, Codex, trails, build presets |
 | Modes | Standard run, Endless continuation after a victory, Daily Seed |
 
-Core feel systems: constant-speed readable physics with an aim preview that uses the exact same
-reflection code, combo meter with diversity rules, momentum tiers (Charged → Overcharged → Hyper → Unstable),
+Core feel systems: constant-speed readable physics with an aim preview that runs the ball's own
+reflection, steering (gravity wells, magnets, storms), portal and floor rules, combo meter with diversity rules, momentum tiers (Charged → Overcharged → Hyper → Unstable),
 the Surge active ability, hit-stop and slow-motion moments, pooled particles, aggregated damage numbers,
 and layered, voice-limited SFX with adaptive music.
 

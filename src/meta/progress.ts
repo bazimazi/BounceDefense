@@ -297,10 +297,10 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   st.maxMomentumTier = Math.max(st.maxMomentumTier, s.maxMomentumTier);
   st.elitesKilled += s.eliteKills;
   st.playTime += s.time;
-  for (const b of s.bossesDefeated) {
+  s.bossesDefeated.forEach((b, i) => {
     p.bossKills[b] = (p.bossKills[b] ?? 0) + 1;
-    analytics.emit('BossDefeated', { id: b, fightTime: s.bossFightTimes[s.bossesDefeated.indexOf(b)] ?? 0 });
-  }
+    analytics.emit('BossDefeated', { id: b, fightTime: s.bossFightTimes[i] ?? 0 });
+  });
   if (s.victory) {
     p.cleared[s.arena] = Math.max(p.cleared[s.arena] ?? -1, s.difficulty);
     analytics.emit('ArenaCompleted', { arena: s.arena, difficulty: s.difficulty });
@@ -378,6 +378,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
       p.achievements.push(a.id);
       achievements.push(`${a.icon} ${a.name}`);
       a.rewards.forEach(push);
+      analytics.emit('AchievementUnlocked', { id: a.id });
     }
   }
 

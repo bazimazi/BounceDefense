@@ -30,7 +30,7 @@ export const CORES: CoreDef[] = [
   {
     id: 'cryo', name: 'Cryo Core', icon: '❄️', color: '#9fdcff', element: 'ice',
     desc: 'Heavy and cold. Freezes the battlefield, then shatters it.',
-    passive: 'Deep Cold: +25% chill chance, +15% ball size. Frozen enemies take +25% more damage.',
+    passive: 'Deep Cold: +25% chill chance, +15% ball size, +10% damage. Frozen enemies take +25% more damage.',
     mods: [{ stat: 'chillChance', add: 0.25 }, { stat: 'radius', mult: 0.15 }, { stat: 'frozenVuln', add: 0.25 }, { stat: 'damage', mult: 0.1 }],
     startUpgrades: ['frostbite'],
     unlockCost: 5,
@@ -38,7 +38,7 @@ export const CORES: CoreDef[] = [
   },
   {
     id: 'blood', name: 'Blood Core', icon: '🩸', color: '#ff2a55',
-    desc: 'Drains life with every hit. Stronger when you are healthy.',
+    desc: 'Drains life with every hit. Trades hull for sustain.',
     passive: 'Thirst: +3% lifesteal and +20% bleed chance, but -20 max HP.',
     mods: [{ stat: 'lifesteal', add: 0.03 }, { stat: 'bleedChance', add: 0.2 }, { stat: 'maxHp', add: -20 }],
     startUpgrades: ['vampiric'],

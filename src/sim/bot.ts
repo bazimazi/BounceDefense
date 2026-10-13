@@ -3,7 +3,7 @@ import { DEFAULT_UNLOCKED_UPGRADES, UPGRADES } from '../data/upgrades';
 import type { RunSummary } from '../meta/types';
 import type { Offer } from './offers';
 import { traceAim } from './physics';
-import { LAUNCHER_X, LAUNCHER_Y, SIM_DT } from './types';
+import { SIM_DT } from './types';
 import { World, type RunConfig } from './world';
 
 /**
@@ -43,8 +43,6 @@ export function botStep(w: World, rng: Rng, skill = 1): void {
   w.beginAim();
   w.setAim(Math.cos(bestA), Math.sin(bestA));
   w.release();
-  void LAUNCHER_X;
-  void LAUNCHER_Y;
 }
 
 export function botChoose(w: World, rng: Rng, strategy: BotStrategy): Offer {

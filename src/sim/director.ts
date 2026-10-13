@@ -95,9 +95,11 @@ export class Director {
         if (e) w.banner('MINI-BOSS', '#ff7ad9', 'A hulking elite arrives');
       }
       if (t >= this.eventTime && !w.event && !this.squadsPaused) {
+        // Abyss promises hostile events everywhere, even in arenas whose own list has none.
         const hostile = ['blood_moon', 'gravity_storm', 'blackout'];
-        const pool = w.cfg.difficulty >= 4 ? w.arena.events.filter((e) => hostile.includes(e)) : w.arena.events;
-        w.startEvent(w.rng.pick(pool.length ? pool : w.arena.events));
+        const own = w.arena.events.filter((e) => hostile.includes(e));
+        const pool = w.cfg.difficulty >= 4 ? (own.length ? own : hostile) : w.arena.events;
+        w.startEvent(w.rng.pick(pool));
         this.eventTime = t + w.rng.range(85, 105);
       }
     }
@@ -157,7 +159,7 @@ export class Director {
     const e = w.spawnEnemy(id, w.rng.range(80, W - 80), FIELD_TOP - 30, { elite: pool.slice(0, mods), hpMult });
     if (e) {
       const names = e.elite.map((m) => ELITE_MODS.find((x) => x.id === m)!.name).join(' ');
-      w.emit({ t: 'text', x: e.x, y: FIELD_TOP + 30, text: `ELITE ${names.toUpperCase()} ${e.def.name.toUpperCase()}`, color: '#ff7ad9' });
+      w.emit({ t: 'text', x: e.x, y: FIELD_TOP + 44, text: `ELITE ${names.toUpperCase()} ${e.def.name.toUpperCase()}`, color: '#ff7ad9' });
       w.emit({ t: 'sfx', name: 'elite' });
     }
     return e;
