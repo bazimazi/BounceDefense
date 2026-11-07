@@ -59,10 +59,13 @@ try {
       document.dispatchEvent(new Event('backbutton', { cancelable: true }));
     });
     await ready(); assert.equal(await ui.locator('.pause-overlay').count(), 1);
+    // Back can pause the final slow-motion after the hull breaks; ending from Pause keeps the real outcome.
+    await page.evaluate(() => window.game.world.finish(false));
     await page.getByRole('button', { name: 'Abandon', exact: true }).tap(); await ready();
     await page.getByRole('button', { name: 'End run', exact: true }).tap(); await ready();
+    assert.equal(await ui.locator('.result-title').textContent(), 'DEFEATED');
     await page.getByRole('button', { name: 'Home', exact: true }).tap(); await ready();
-    mark('two queued browser/hardware Back presses cannot exit or unpause First Contact');
+    mark('two queued browser/hardware Back presses cannot exit or unpause First Contact; paused defeat keeps its outcome');
     await page.evaluate(() => { const g = window.game; g.profile.tutorialDone = true; g.profile.coins = 10000; g.profile.mastery.striker = 6000; g.save(); g.ui.home(); });
     await ready();
 
@@ -112,6 +115,11 @@ try {
     await back('touch'); await page.getByRole('button', { name: 'Discard changes', exact: true }).tap(); await ready();
     assert.equal(await ui.locator('.topbar h2').textContent(), 'New Run');
     assert.deepEqual(await page.evaluate(() => window.game.profile.talents), {});
+    // Forward onto the old prompt finds nothing left to discard: stay on Talents, keep one Back step.
+    await page.goForward(); await ready(); await page.goForward(); await ready();
+    assert.equal(await page.getByRole('dialog').count(), 0, 'A retired discard prompt does not reopen');
+    assert.equal(await ui.locator('.topbar h2').textContent(), 'Talents');
+    await back('browser'); assert.equal(await ui.locator('.topbar h2').textContent(), 'New Run');
     await page.getByRole('button', { name: 'Edit talents', exact: true }).tap(); await ready();
     await ui.locator('#talent-bankcraft').tap(); await ui.locator('#talent-learn').tap();
     await page.getByRole('button', { name: 'Apply talents', exact: true }).tap();
@@ -139,6 +147,7 @@ try {
     await back('browser'); assert.equal(await ui.locator('.pause-overlay').count(), 1);
     await page.getByRole('button', { name: 'Abandon', exact: true }).tap(); await ready();
     await back('hardware'); assert.equal(await ui.locator('.pause-overlay').count(), 1);
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Abandon', 'Cancelling returns focus to the invoking control');
     await page.getByRole('button', { name: /Resume/ }).tap(); await ready();
     assert.equal(await page.evaluate(() => window.game.controlsEnabled), true);
     await page.evaluate(() => {
@@ -148,6 +157,33 @@ try {
     await ready(); assert.equal(await page.evaluate(() => window.game.controlsEnabled), true, 'Resume works immediately after Back');
     mark('held Escape, pointer release, paused Settings and abandon cancellation; browser Back pauses live run');
 
+    // One traversal can skip several entries. Each must stop at the run's guard, never drop the run.
+    const synced = () => page.evaluate(() => {
+      const n = window.game.ui.navigation;
+      return n.current.depth === history.state.depth && (n.key === 'pause') === window.game.paused;
+    });
+    const world = await page.evaluate(() => (window.__run = window.game.world, true));
+    // A Back computed before Pause pushed its entry lands two levels up.
+    await page.evaluate(() => { history.back(); document.querySelector('.game-hud .hudbtn').click(); }); await ready();
+    assert.equal(await ui.locator('.pause-overlay').count(), 1); assert.equal(await synced(), true);
+    await back('hardware'); assert.equal(await page.evaluate(() => window.game.controlsEnabled), true);
+    await page.evaluate(() => { history.back(); history.back(); }); await ready();
+    assert.equal(await ui.locator('.pause-overlay').count(), 1, 'Both run guard entries survive the race');
+    // A long-press history jump from paused Settings straight to the menus.
+    await page.getByRole('button', { name: 'Settings', exact: true }).tap(); await ready();
+    await page.evaluate(() => history.go(-(history.state.depth - 1))); await ready();
+    assert.equal(await ui.locator('.pause-overlay').count(), 1, 'A multi-step jump pauses instead of discarding the run');
+    assert.equal(await page.evaluate(() => window.game.world === window.__run && window.game.paused), world);
+    assert.equal(await synced(), true);
+    // Engines may drop a scripted step when another lands in the same task; Back must recover.
+    await page.evaluate(() => { document.querySelector('.pause-overlay .primary').click(); history.forward(); }); await ready();
+    assert.equal(await synced(), true);
+    if (await page.evaluate(() => window.game.paused)) { await back('hardware'); }
+    assert.equal(await page.evaluate(() => window.game.controlsEnabled), true, 'Back responds after a dropped traversal');
+    await back('hardware'); assert.equal(await ui.locator('.pause-overlay').count(), 1);
+    await back('hardware'); assert.equal(await page.evaluate(() => window.game.controlsEnabled), true);
+    mark('raced, multi-step and dropped traversals keep the run and both guard entries');
+
     // Mandatory choices survive pause/back and the same offers remain available.
     await page.evaluate(() => { const w = window.game.world; w.pendingLevels = 2; w.level = 3; w.openLevelUp(); }); await ready();
     const offers = await page.evaluate(() => window.game.world.offers);
@@ -155,6 +191,15 @@ try {
     await back('escape'); assert.equal(await page.getByRole('button', { name: /^Skip/ }).count(), 1);
     assert.deepEqual(await page.evaluate(() => window.game.world.offers), offers);
     assert.equal(await page.evaluate(() => window.game.world.pendingLevels), 2);
+    // Banish targeting is a sub-mode: Back leaves it without pausing or spending a banish.
+    await page.evaluate(() => { const g = window.game; g.world.banishes = 1; g.ui.levelUp(g.world); }); await ready();
+    await page.getByRole('button', { name: /Banish \(1\)/ }).tap(); await ready();
+    await back('hardware');
+    assert.equal(await page.evaluate(() => window.game.paused), false, 'Back leaves banish mode before pausing');
+    assert.equal(await page.getByRole('button', { name: /Banish \(1\)/ }).count(), 1);
+    await page.getByRole('button', { name: /Banish \(1\)/ }).tap(); await ready();
+    await back('browser'); assert.equal(await page.getByRole('button', { name: /Banish \(1\)/ }).count(), 1);
+    assert.deepEqual(await page.evaluate(() => window.game.world.offers), offers);
     await page.getByRole('button', { name: /^Skip/ }).tap(); await ready();
     await page.getByRole('button', { name: /^Skip/ }).tap(); await ready();
     await page.evaluate(() => { const g = window.game; g.world.state = 'over'; g.world.victory = true; g.ui.victoryChoice(g.world); });
@@ -172,7 +217,7 @@ try {
     await page.getByRole('button', { name: 'Home', exact: true }).tap(); await ready();
     await page.goForward(); await ready();
     assert.equal(await ui.locator('.home').count(), 1, 'Retired entries cannot resurrect a run or stale results');
-    mark('upgrade and victory choices survive Back; Results parent and forward cannot pay rewards twice');
+    mark('upgrade, banish and victory choices survive Back; Results parent and forward cannot pay rewards twice');
 
     await homeNav('Settings'); await category('System');
     await (await reveal(page.getByRole('button', { name: 'Reset progress', exact: true }))).tap(); await ready();

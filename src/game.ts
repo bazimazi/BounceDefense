@@ -184,7 +184,8 @@ export class Game {
 
   abandonRun(): void {
     if (!this.world) return;
-    this.finishRun(true);
+    // Back can pause during the final slow-motion; a run that already ended keeps its real outcome.
+    this.finishRun(this.world.endTimer < 0 && this.world.state !== 'over');
   }
 
   continueEndless(): void {

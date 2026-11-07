@@ -36,6 +36,9 @@ export class Navigation {
   private inputLocked = false;
   private unlockTimer = 0;
   private operation: { root: Entry; children: Entry[] } | null = null;
+  /** A history step we issued to undo a Forward onto a retired dialog; its popstate is ignored. */
+  private bounce: { session: string; id: number; depth: number } | null = null;
+  private watchdog = 0;
 
   constructor() {
     window.addEventListener('popstate', e => this.pop(e.state));
@@ -45,7 +48,7 @@ export class Navigation {
     });
   }
 
-  get busy(): boolean { return this.pending || !!this.operation || this.inputLocked; }
+  get busy(): boolean { return this.pending || !!this.operation || !!this.bounce || this.inputLocked; }
   get key(): string { return this.current?.key ?? 'home'; }
 
   view(key: string, restore: () => void, options: Omit<View, 'key' | 'restore'> = {}): void {
@@ -81,7 +84,8 @@ export class Navigation {
       this.current = this.operation.children[0] ?? this.operation.root;
       return;
     }
-    const depth = this.read(history.state)?.depth ?? this.current?.depth ?? 0;
+    // While a bounce is in flight, history.state still describes the entry being left.
+    const depth = this.bounce?.depth ?? this.read(history.state)?.depth ?? this.current?.depth ?? 0;
     this.session = `${Date.now()}-${++this.serial}`;
     this.entries.clear();
     const root: Entry = { key: 'home', restore: restoreHome, id: ++this.serial, depth: 0 };
@@ -90,7 +94,7 @@ export class Navigation {
     this.pending = false;
     if (depth > 0) {
       this.operation = { root, children };
-      history.go(-depth);
+      this.traverse(-depth);
     } else this.commitReset(root, children);
   }
 
@@ -105,16 +109,43 @@ export class Navigation {
   }
 
   private requestBack(steps: number, explicit: boolean): boolean {
-    if (this.pending || this.operation || (this.inputLocked && !explicit)) return true;
+    if (this.pending || this.operation || this.bounce || (this.inputLocked && !explicit)) return true;
     if (!this.current || this.current.key === 'home') return false;
     this.lockInput();
     if (steps === 1 && this.current.guard?.when()) {
       this.current.guard.act();
     } else {
       this.pending = true;
-      history.go(-Math.min(steps, this.current.depth));
+      this.traverse(-Math.min(steps, this.current.depth));
     }
     return true;
+  }
+
+  /**
+   * Scripted traversals are asynchronous and not guaranteed: WebKit keeps only the last one
+   * queued in a task, and Firefox lets a pushState in the same task cancel it. history.state
+   * changes in the same task that fires popstate, so if neither happened in time, the step
+   * was dropped. Recover instead of waiting forever with Back disabled.
+   */
+  private traverse(delta: number): void {
+    window.clearTimeout(this.watchdog);
+    this.watchdog = window.setTimeout(() => this.recover(), 800);
+    history.go(delta);
+  }
+
+  private recover(): void {
+    const state = this.read(history.state);
+    if (this.operation) {
+      // Still above the root of the retired stack: walk down again. At the root, commit.
+      if (state && state.depth > 0) this.traverse(-state.depth);
+      else this.pop(history.state);
+    } else if (this.bounce && state && state.id !== this.bounce.id) {
+      this.traverse(this.bounce.depth - state.depth);
+    } else {
+      // A dropped Back simply did not happen; the player can press it again.
+      this.pending = false;
+      this.bounce = null;
+    }
   }
 
   private read(value: unknown): NavigationState | null {
@@ -155,7 +186,13 @@ export class Navigation {
   }
 
   private pop(value: unknown): void {
+    window.clearTimeout(this.watchdog);
     const state = this.read(value);
+    const bounce = this.bounce;
+    if (bounce) {
+      this.bounce = null;
+      if (state?.session === bounce.session && state.id === bounce.id) return;
+    }
     const operation = this.operation;
     if (operation) {
       this.commitReset(operation.root, operation.children);
@@ -171,14 +208,33 @@ export class Navigation {
     }
     // popstate arrives AFTER history has moved. Restore the guarded entry before
     // opening Pause or a discard dialog, so the new layer has the correct parent.
-    if (backward && from.guard?.when()) {
-      this.rearm(from, state?.depth ?? 0);
+    // One traversal can skip several entries (a long-press history menu, engines that merge
+    // queued steps, or a Back computed before Pause pushed its entry). Entries are left
+    // deepest-first, so the first active guard stops the traversal: a live run is never
+    // dropped by landing on Home, and a draft is never left without its prompt.
+    const landing = state?.depth ?? 0;
+    const stop = backward ? [from, ...[...this.entries.values()].filter(e => e.depth > landing && e.depth < from.depth)
+      .sort((a, b) => b.depth - a.depth)].find(e => e.guard?.when()) : undefined;
+    if (backward && stop) {
+      this.rearm(stop, landing);
       this.lockInput();
-      from.guard.act();
+      if (stop !== from) {
+        this.direction = 'back';
+        this.restoring = true;
+        try { stop.restore(); from.cancel?.(); } finally { this.restoring = false; }
+      }
+      stop.guard!.act();
       return;
     }
     const target = state?.session === this.session ? this.entries.get(state.id) : undefined;
     if (!target || (target.valid && !target.valid())) {
+      // Forward onto a dialog whose question no longer applies (a discard prompt after the
+      // draft was applied) steps back to the page the player was on instead of leaving it.
+      if (target && from && state && state.depth > from.depth && this.entries.get(from.id) === from && (!from.valid || from.valid())) {
+        this.bounce = { session: this.session, id: from.id, depth: from.depth };
+        this.traverse(from.depth - state.depth);
+        return;
+      }
       // Forward after a completed run, or old entries after reload, must never
       // resurrect a World, an obsolete dialog, or an unapplied talent draft.
       if (this.root) {

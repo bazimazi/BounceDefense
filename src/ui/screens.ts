@@ -299,7 +299,7 @@ export class UI {
           else this.confirmAction(t('talents.discardTitle'), t('talents.discardMessage'), t('talents.discard'), () => {
             view.discard();
             this.navigation.dismiss(2);
-          }, () => view.element.querySelector<HTMLButtonElement>('.topbar button')?.focus({ preventScroll: true }), t('talents.keepEditing'));
+          }, () => view.element.querySelector<HTMLButtonElement>('.topbar button')?.focus({ preventScroll: true }), t('talents.keepEditing'), () => view.dirty);
         },
       },
     });
@@ -724,7 +724,17 @@ export class UI {
   beginRun(w: World): void {
     const options = {
       valid: () => this.game.world === w,
-      guard: { when: () => this.game.world === w, act: () => this.game.pause() },
+      guard: {
+        when: () => this.game.world === w,
+        // Banish targeting is a sub-mode of the upgrade choice: Back leaves it before pausing.
+        act: () => {
+          if (this.banishMode && w.state === 'levelup' && this.overlay?.dataset.view === 'upgrade') {
+            this.banishMode = false;
+            this.click();
+            this.levelUp(w);
+          } else this.game.pause();
+        },
+      },
     };
     // Keep two guarded entries even for First Contact/Daily, which skip Setup.
     // Two queued browser Back presses must stay in this document until popstate runs.
@@ -839,10 +849,10 @@ export class UI {
     this.overlay = null;
   }
 
-  private confirmAction(title: string, message: string, label: string, proceed: () => void, cancel: () => void, cancelLabel = t('pause.keepPlaying')): void {
+  private confirmAction(title: string, message: string, label: string, proceed: () => void, cancel: () => void, cancelLabel = t('pause.keepPlaying'), relevant = () => true): void {
     const world = this.game.world;
-    this.navigation.view(`confirm:${title}`, () => this.confirmAction(title, message, label, proceed, cancel, cancelLabel), {
-      cancel, valid: () => !world || this.game.world === world,
+    this.navigation.view(`confirm:${title}`, () => this.confirmAction(title, message, label, proceed, cancel, cancelLabel, relevant), {
+      cancel, valid: () => (!world || this.game.world === world) && relevant(),
     });
     const back = h('button', { onclick: () => this.navigation.dismiss() }, cancelLabel);
     const confirm = h('button', { class: 'danger', onclick: () => { this.closeOverlay(); proceed(); } }, label);
@@ -957,7 +967,9 @@ export class UI {
         h('button', { class: 'primary big', onclick: () => { this.click(); this.navigation.dismiss(); } }, t('pause.resume')),
         h('div', { class: 'row' },
           h('button', { style: 'flex:1', onclick: () => { this.click(); this.settings(); } }, t('pause.settings')),
-          h('button', { class: 'danger', style: 'flex:1', onclick: () => this.confirmAction(t('pause.endTitle'), t('pause.endMessage'), t('pause.endRun'), () => this.game.abandonRun(), () => this.pauseMenu(w)) }, t('pause.abandon')),
+          // Returning to the Pause entry already re-renders the menu; cancelling only restores focus.
+          h('button', { class: 'danger', style: 'flex:1', onclick: () => this.confirmAction(t('pause.endTitle'), t('pause.endMessage'), t('pause.endRun'), () => this.game.abandonRun(),
+            () => this.root.querySelector<HTMLButtonElement>('.pause-overlay .overlay-actions .danger')?.focus({ preventScroll: true })) }, t('pause.abandon')),
         ),
       ),
     );
