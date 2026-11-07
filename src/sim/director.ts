@@ -14,7 +14,8 @@ const ELITE_POOL: [string, number][] = [
  * enemies), elites, events and bosses — not just HP inflation.
  */
 export class Director {
-  budget = 2.65;
+  /** Enough for the first squad on the opening step. */
+  budget = 3;
   next: SquadDef | null = null;
   bossActive = false;
   bossId = '';
@@ -31,7 +32,8 @@ export class Director {
   constructor(private w: World) {
     const tut = !!w.cfg.tutorial;
     this.bossTime = tut ? 330 : 400;
-    this.eliteTimer = tut ? 150 : Math.min(110, w.diff.eliteEvery);
+    // Even the hardest tiers give the build ~90 seconds to form before the first elite.
+    this.eliteTimer = tut ? 150 : Math.max(90, Math.min(110, w.diff.eliteEvery));
     this.eventTime = tut ? 75 : 65;
   }
 
@@ -40,8 +42,9 @@ export class Director {
   }
 
   threatRate(t: number): number {
-    const tut = this.w.cfg.tutorial && t < 60 ? 0.7 : 1;
-    const base = 0.22 + t * 0.0038 + Math.max(0, t - 240) * 0.003;
+    const tut = this.w.cfg.tutorial && t < 45 ? 0.8 : 1;
+    // A lively opening (fodder to smash right away) that meets the long-run curve by ~4 minutes.
+    const base = 0.3 + t * 0.0034 + Math.max(0, t - 240) * 0.003;
     return base * this.w.diff.spawnMult * tut;
   }
 
@@ -88,11 +91,11 @@ export class Director {
       this.eliteTimer -= dt;
       if (this.eliteTimer <= 0) {
         this.eliteTimer = w.diff.eliteEvery * w.rng.range(0.85, 1.15);
-        this.spawnElite(w.diff.eliteModCount, 1);
+        this.spawnElite(this.eliteMods(), 1);
       }
       if (!this.miniDone && t >= this.bossTime * 0.62) {
         this.miniDone = true;
-        const e = this.spawnElite(Math.min(3, w.diff.eliteModCount + 1), 1.5, 'brute');
+        const e = this.spawnElite(Math.min(3, this.eliteMods() + 1), 1.5, 'brute');
         if (e) w.banner(i18n('fx.miniBoss'), '#ff7ad9', i18n('fx.miniBossSub'));
       }
       if (t >= this.eventTime && !w.event && !this.squadsPaused) {
@@ -117,6 +120,11 @@ export class Director {
     }
   }
 
+  /** Elite modifier count ramps up with time: one early, the difficulty's full count from 5 minutes. */
+  eliteMods(): number {
+    return Math.min(this.w.diff.eliteModCount, 1 + Math.floor(this.w.time / 150));
+  }
+
   private place(s: SquadDef): [string, number, number][] {
     const w = this.w;
     const out: [string, number, number][] = [];
@@ -139,7 +147,8 @@ export class Director {
 
   spawnSquad(s: SquadDef): void {
     const w = this.w;
-    const traitChance = w.cfg.difficulty >= 4 ? 0.15 : w.cfg.difficulty >= 3 ? 0.08 : 0;
+    // Elite traits on ordinary enemies phase in over the first 90 seconds.
+    const traitChance = (w.cfg.difficulty >= 4 ? 0.15 : w.cfg.difficulty >= 3 ? 0.08 : 0) * Math.min(1, w.time / 90);
     for (const [id, x, y] of this.place(s)) {
       const e = w.spawnEnemy(id, x, y);
       if (e && traitChance && w.rng.chance(traitChance)) {
@@ -178,6 +187,7 @@ export class Director {
     const e = w.spawnEnemy(def.enemy, W / 2, BOSS_SPAWN_Y, { hpMult });
     if (!e) return;
     BOSS_SCRIPTS[def.enemy]?.init(w, e);
+    w.resonance.avoidBosses();
     this.bossActive = true;
     this.bossId = id;
     this.bossesSpawned++;

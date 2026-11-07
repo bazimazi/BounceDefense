@@ -1,10 +1,14 @@
 import { Rng } from '../core/rng';
 import { damageEnemy } from './combat';
-import type { Ball } from './types';
+import { DEFENSE_Y, FIELD_TOP, type Ball } from './types';
 import type { World } from './world';
 
 export const CIRCUIT_DURATION = 24;
 export const RESONANCE_COLOR = '#bca7ff';
+/** Starfall strikes every boss for at least this share of its maximum health (before armor). */
+export const STARFALL_BOSS_SHARE = 0.06;
+/** Depth bosses settle at; sensors keep clear of this band. */
+const BOSS_REST_Y = 240;
 export interface ResonanceNode { x: number; y: number; lit: boolean; pulse: number }
 
 // Targets are pass-through sensors: they reward a route without changing its physics.
@@ -46,22 +50,39 @@ export class ResonanceCircuit {
   }
 
   private open(): void {
-    // Avoid repeating a route; relocate sensors if a solid obstacle covers them.
+    // Avoid repeating a route; relocate sensors if a solid obstacle or a boss covers them.
     this.pattern = (this.pattern + this.rng.int(1, PATTERNS.length - 1)) % PATTERNS.length;
-    this.nodes = PATTERNS[this.pattern].map(([x, y]) => {
-      for (let i = 0; i < 8; i++) {
-        const blocked = this.w.obstacles.some(o => {
-          if (o.kind === 'bumper' || o.kind === 'barrel') return Math.hypot(x - o.x, y - o.y) < o.r + 44;
-          if (o.kind === 'crate') return x > o.x - 44 && x < o.x + o.w + 44 && y > o.y - 44 && y < o.y + o.h + 44;
-          if (o.kind === 'portal') return Math.hypot(x - o.ax, y - o.ay) < o.r + 44 || Math.hypot(x - o.bx, y - o.by) < o.r + 44;
-          return false;
-        });
-        if (!blocked) break;
-        y -= 38;
-      }
-      return { x, y, lit: false, pulse: 0 };
-    });
+    this.nodes = PATTERNS[this.pattern].map(([x, y]) => ({ x, y: this.clearY(x, y), lit: false, pulse: 0 }));
     this.remaining = CIRCUIT_DURATION;
+  }
+
+  /** A boss arrived mid-circuit: move unlit sensors out of its body and shield ring. */
+  avoidBosses(): void {
+    for (const n of this.nodes) if (!n.lit) n.y = this.clearY(n.x, n.y);
+  }
+
+  private blocked(x: number, y: number): boolean {
+    const obstacle = this.w.obstacles.some(o => {
+      if (o.kind === 'bumper' || o.kind === 'barrel') return Math.hypot(x - o.x, y - o.y) < o.r + 44;
+      if (o.kind === 'crate') return x > o.x - 44 && x < o.x + o.w + 44 && y > o.y - 44 && y < o.y + o.h + 44;
+      if (o.kind === 'portal') return Math.hypot(x - o.ax, y - o.ay) < o.r + 44 || Math.hypot(x - o.bx, y - o.by) < o.r + 44;
+      return false;
+    });
+    if (obstacle) return true;
+    // Bosses sway sideways and settle at a fixed depth: keep their whole band clear,
+    // including Fortress shields, so every signal stays reachable during the fight.
+    return this.w.enemies.some(e => e.alive && e.boss && Math.abs(y - Math.max(e.y, BOSS_REST_Y)) < e.r + 80);
+  }
+
+  /** Nearest clear height for a sensor, searching alternately below and above its pattern spot. */
+  private clearY(x: number, y: number): number {
+    for (let i = 0; i < 16; i++) {
+      const off = Math.ceil(i / 2) * 38 * (i % 2 ? 1 : -1);
+      const ny = y + off;
+      if (ny < FIELD_TOP + 70 || ny > DEFENSE_Y - 150) continue;
+      if (!this.blocked(x, ny)) return ny;
+    }
+    return y;
   }
 
   touch(ball: Ball): void {
@@ -90,11 +111,15 @@ export class ResonanceCircuit {
     this.overdrive = 7;
     const damage = w.build.stats.damage * 4 * w.comboMult();
     // Snapshot before dealing damage: deaths can add enemies and end a boss fight.
-    const targets = w.enemies.filter(e => e.alive && e.y > 96)
+    // The five threats closest to the line are struck, and every boss takes a heavy blow,
+    // so linking signals is a real plan during boss fights.
+    const bosses = w.enemies.filter(e => e.alive && e.boss);
+    const targets = w.enemies.filter(e => e.alive && !e.boss && e.y > 96)
       .sort((a, b) => b.y - a.y || a.id - b.id).slice(0, 5);
-    const pts = targets.flatMap(e => [e.x, e.y]);
+    const pts = [...bosses, ...targets].flatMap(e => [e.x, e.y]);
     w.emit({ t: 'starfall', pts });
     for (const e of targets) damageEnemy(w, e, damage, { src: 'nova', crit: false, depth: 0 });
+    for (const e of bosses) damageEnemy(w, e, Math.max(damage, e.maxHp * STARFALL_BOSS_SHARE), { src: 'nova', crit: false, depth: 0 });
     for (const p of w.projectiles) p.alive = false;
     w.addBuff('resonance', 7, [{ stat: 'damage', mult: .25 }, { stat: 'speed', mult: .1 }]);
     w.heal(4, false);

@@ -30,6 +30,18 @@ export function closestOnSegment(
   return t;
 }
 
+/** True when segments PQ and AB properly cross (touching endpoints count as crossing). */
+export function segmentsCross(
+  px: number, py: number, qx: number, qy: number,
+  ax: number, ay: number, bx: number, by: number,
+): boolean {
+  const d1 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+  const d2 = (bx - ax) * (qy - ay) - (by - ay) * (qx - ax);
+  const d3 = (qx - px) * (ay - py) - (qy - py) * (ax - px);
+  const d4 = (qx - px) * (by - py) - (qy - py) * (bx - px);
+  return d1 * d2 <= 0 && d3 * d4 <= 0;
+}
+
 /** Reflect direction (dx,dy) about unit normal (nx,ny). Writes into out. */
 export function reflect(dx: number, dy: number, nx: number, ny: number, out: Vec2): void {
   const d = dx * nx + dy * ny;

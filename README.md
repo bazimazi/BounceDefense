@@ -17,6 +17,7 @@ npm run dev        # dev server (open on your phone via the LAN URL)
 npm run build      # typecheck + production build to dist/
 npm test           # vitest unit + simulation tests
 npm run sim -- --runs 20 --core striker,pyro,tesla --arena proving --diff 0 [--full] [--tutorial]
+npm run balance -- --runs 16 --core striker,pyro --diff 0,1,2 [--meta none|mid|max] [--full]
 ```
 
 Browser smoke test (headless Chrome or Edge, with screenshots and console-error capture):
@@ -216,12 +217,22 @@ All artwork remains procedural, with no downloaded assets or new dependencies.
   momentum, leaves temporary balls in play, and has a ten-second cooldown.
 - **Resonance circuit:** three pass-through diamond signals appear five seconds into the run.
   Link them in any order within 24 seconds; each signal adds momentum, combo and Surge charge.
-  Linking all three calls **Starfall**, striking the five threats closest to the defense line and
-  clearing enemy projectiles. It also grants seven seconds of +25% damage / +10% speed,
-  two base XP and four hull repair (Bloodless blocks the repair). A fresh circuit arrives after
-  twelve seconds; a missed circuit returns after four. Routes vary with the run seed.
-- **Pacing:** the first squad arrives within roughly two seconds. Arena anomalies start after
-  65 seconds (75 in the tutorial) and recur every 85–105 seconds, outside boss fights.
+  Linking all three calls **Starfall**, striking the five threats closest to the defense line,
+  hitting every boss for at least 6% of its health, and clearing enemy projectiles. It also grants
+  seven seconds of +25% damage / +10% speed, two base XP and four hull repair (Bloodless blocks the
+  repair). A fresh circuit arrives after twelve seconds; a missed circuit returns after four.
+  Routes vary with the run seed, and signals always stay clear of obstacles and of a boss's band
+  (including Fortress shields), so every signal is reachable during boss fights.
+- **Pacing:** the first squad arrives on the opening step and the opening threat rate keeps fodder
+  on the field, converging on the long-run curve by about four minutes. Arena anomalies start after
+  65 seconds (75 in the tutorial) and recur every 85–105 seconds, outside boss fights. Elites arrive
+  no earlier than 90 seconds and gain their difficulty's full modifier count over five minutes;
+  elite traits on ordinary enemies (Inferno, Abyss) phase in over the first 90 seconds.
+- **Multi-ball:** Extra Ball is guaranteed a slot in the second upgrade hand if it has not appeared
+  yet (never under Lone Ball), so every run meets the hold-to-stream verb early.
+- **Fair geometry:** Rift Phase re-enters away from corner pockets, a ball may make at most two
+  portal jumps between bounces or hits, and a ball that stays trapped in a small area for three
+  seconds, or touches no enemy for fifteen, is sent home. These guards make endless loops impossible.
 
 The pause screen includes a flight manual. Run results count power shots, starfalls and recalls.
 
@@ -241,9 +252,9 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 | Bosses | 3 scripted mechanical fights: Fortress (rotating shields), Magnetar (gravity and pulses), Hydra (splits) |
 | Arenas | 3 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells |
 | Arena events | 7 (Double Bounce, Ball Frenzy, Jackpot, Overcharge, Blood Moon, Gravity Storm, Blackout) |
-| Difficulty | 5 tiers that add rules, plus 6 Risk Pacts that trade challenge for rewards |
+| Difficulty | 5 tiers that add rules and steeper health growth and line damage, plus 6 Risk Pacts that trade challenge for rewards |
 | Meta | Coins, Cores and Research; Workshop (capped), Research tree, Mastery 1–20, 17 achievements, 14 challenges, Codex, trails, build presets |
-| Modes | Standard run, Endless continuation after a victory, Daily Seed |
+| Modes | Standard run, Endless continuation after a victory, Daily Seed (the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; the day's best is shown on Home) |
 
 Core feel systems: constant-speed readable physics with an aim preview that runs the ball's own
 reflection, steering (gravity wells, magnets, storms), portal and floor rules, combo meter with diversity rules, momentum tiers (Charged → Overcharged → Hyper → Unstable),
@@ -340,8 +351,25 @@ debug panel). A remote sink can be attached later without touching gameplay code
 
 `npm run sim` runs the autoplayer (it samples angles with the real aim tracer) and reports win rate,
 boss-reach rate, median death time, levels, and how each upgrade correlates with winning.
-The bot is intentionally mediocre, and humans should outperform it. Tuning levers live in
-`sim/director.ts` (threat rate, timeline), `World.makeEnemy` (HP scaling), `xpForLevel`, and `data/`.
+The bot is intentionally mediocre, and humans should outperform it.
+
+`npm run balance` is the reference for difficulty tuning. Its bot plays like a decent casual
+player: it aims straight at the most advanced threat with some noise, reacts every 0.25–0.6 s,
+holds a third of its shots into the power window and fires Surge when ready. `--meta none|mid|max`
+adds a fresh, a mid-progression (about ten runs) or a complete Workshop with talents:
+
+```bash
+npm run balance -- --runs 16 --core striker,pyro,tesla,cryo,blood,void --arena proving --diff 0,1,2 --meta none
+npm run balance -- --runs 16 --core striker,tesla --diff 2,3,4 --full --meta max
+```
+
+Current targets (win rate): a fresh profile wins about 85% on Normal, 70% on Veteran and 45% on
+Nightmare; mid progression about 90% / 70% / 50% on Veteran / Nightmare / Inferno; a complete
+meta about 95% / 85% / 65% on Nightmare / Inferno / Abyss. Extra balls are the strongest scaling in
+a run, so the Workshop's Spare Ball raises Extra Ball's cap (up to six balls) instead of granting a
+ball at launch, which doubled early damage and made every tier trivial. Tuning levers live in
+`sim/director.ts` (threat rate, timeline, elites), `World.makeEnemy` (HP scaling with each tier's
+`growth`), `DifficultyDef.dmgMult`, `xpForLevel`, and `data/`.
 
 ## Roadmap ideas
 

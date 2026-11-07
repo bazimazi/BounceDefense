@@ -97,38 +97,40 @@ export const ARENA_MAP: Record<string, ArenaDef> = Object.fromEntries(ARENAS.map
 export const DIFFICULTIES: DifficultyDef[] = [
   {
     id: 'normal', name: 'Normal', color: '#8fe3a0', desc: 'The intended first experience.',
-    hpMult: 1, speedMult: 1, spawnMult: 1, eliteEvery: 150, eliteModCount: 1, bossHpMult: 1, secondBoss: false, rewardMult: 1,
+    hpMult: 1, speedMult: 1, spawnMult: 1, eliteEvery: 150, eliteModCount: 1, bossHpMult: 1, growth: 1, dmgMult: 1, secondBoss: false, rewardMult: 1,
     rules: [],
   },
   {
     id: 'veteran', name: 'Veteran', color: '#ffd166', desc: 'More elites, composition squads earlier.',
-    hpMult: 1.25, speedMult: 1.08, spawnMult: 1.15, eliteEvery: 110, eliteModCount: 1, bossHpMult: 1.3, secondBoss: false, rewardMult: 1.4,
+    hpMult: 1.25, speedMult: 1.08, spawnMult: 1.15, eliteEvery: 110, eliteModCount: 1, bossHpMult: 1.3, growth: 1.15, dmgMult: 1.1, secondBoss: false, rewardMult: 1.4,
     rules: ['Elites appear more often', 'Advanced squads unlocked'],
   },
   {
     id: 'nightmare', name: 'Nightmare', color: '#ff7b54', desc: 'Two bosses. Elites carry two modifiers.',
-    hpMult: 1.5, speedMult: 1.12, spawnMult: 1.3, eliteEvery: 90, eliteModCount: 2, bossHpMult: 1.5, secondBoss: true, rewardMult: 1.9,
-    rules: ['A second boss arrives', 'Elites have 2 modifiers'],
+    hpMult: 1.5, speedMult: 1.12, spawnMult: 1.3, eliteEvery: 90, eliteModCount: 2, bossHpMult: 1.5, growth: 1.3, dmgMult: 1.25, secondBoss: true, rewardMult: 1.9,
+    rules: ['A second boss arrives', 'Elites have 2 modifiers', 'Enemies toughen faster and hit harder'],
   },
   {
     id: 'inferno', name: 'Inferno', color: '#ff3d3d', desc: 'Regular enemies may spawn with elite traits.',
-    hpMult: 1.85, speedMult: 1.16, spawnMult: 1.45, eliteEvery: 75, eliteModCount: 2, bossHpMult: 1.8, secondBoss: true, rewardMult: 2.5,
-    rules: ['A second boss arrives', '8% of enemies spawn with an elite trait'],
+    hpMult: 1.85, speedMult: 1.16, spawnMult: 1.45, eliteEvery: 75, eliteModCount: 2, bossHpMult: 1.8, growth: 1.65, dmgMult: 1.5, secondBoss: true, rewardMult: 2.5,
+    rules: ['A second boss arrives', '8% of enemies spawn with an elite trait', 'Enemies toughen faster and hit harder'],
   },
   {
     id: 'abyss', name: 'Abyss', color: '#c77dff', desc: 'Everything at once. Arena events are always hostile.',
-    hpMult: 2.3, speedMult: 1.2, spawnMult: 1.6, eliteEvery: 60, eliteModCount: 3, bossHpMult: 2.2, secondBoss: true, rewardMult: 3.2,
-    rules: ['A second boss arrives', '15% of enemies spawn with an elite trait', 'Elites have 3 modifiers'],
+    hpMult: 2.3, speedMult: 1.2, spawnMult: 1.6, eliteEvery: 60, eliteModCount: 3, bossHpMult: 2.4, growth: 2.2, dmgMult: 2, secondBoss: true, rewardMult: 3.2,
+    rules: ['A second boss arrives', '15% of enemies spawn with an elite trait', 'Elites have 3 modifiers', 'Enemies toughen much faster and hit much harder'],
   },
 ];
 
+// Rewards track measured difficulty (npm run balance): Haste is the hardest pact, Lone Ball the mildest
+// once Extra Ball's slot goes to other upgrades.
 export const PACTS: PactDef[] = [
-  { id: 'haste', name: 'Haste', icon: '💨', desc: '+40% enemy speed.', reward: 0.4, rule: 'haste' },
+  { id: 'haste', name: 'Haste', icon: '💨', desc: '+40% enemy speed.', reward: 0.5, rule: 'haste' },
   { id: 'fortified', name: 'Fortified', icon: '🧱', desc: '+35% enemy health.', reward: 0.35, rule: 'fortified' },
-  { id: 'fragile', name: 'Glass Heart', icon: '💔', desc: 'Half max HP.', reward: 0.5, mods: [{ stat: 'maxHp', mult: -0.5 }], rule: 'fragile' },
+  { id: 'fragile', name: 'Glass Heart', icon: '💔', desc: 'Half max HP.', reward: 0.4, mods: [{ stat: 'maxHp', mult: -0.5 }], rule: 'fragile' },
   { id: 'no_heal', name: 'Bloodless', icon: '🚫', desc: 'No healing of any kind.', reward: 0.3, rule: 'noHeal' },
-  { id: 'lone_ball', name: 'Lone Ball', icon: '1️⃣', desc: 'You can never have more than one ball.', reward: 0.8, rule: 'loneBall' },
-  { id: 'no_reroll', name: 'Fate Sealed', icon: '🔒', desc: 'No rerolls or banishes.', reward: 0.25, rule: 'noReroll' },
+  { id: 'lone_ball', name: 'Lone Ball', icon: '1️⃣', desc: 'You can never have more than one ball.', reward: 0.35, rule: 'loneBall' },
+  { id: 'no_reroll', name: 'Fate Sealed', icon: '🔒', desc: 'No rerolls or banishes.', reward: 0.15, rule: 'noReroll' },
 ];
 export const PACT_MAP: Record<string, PactDef> = Object.fromEntries(PACTS.map((p) => [p.id, p]));
 

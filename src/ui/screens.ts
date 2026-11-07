@@ -8,7 +8,7 @@ import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '..
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
-  buyPart, buyWorkshop, canResearch, canUnlockCore, coreRequirementMet, describeUnlock, doResearch, isArenaUnlocked, maxDifficulty,
+  buyPart, buyWorkshop, canResearch, canUnlockCore, coreRequirementMet, dailyRecord, describeUnlock, doResearch, isArenaUnlocked, maxDifficulty,
   nextGoals, partsForSlot, rewardMultiplier, unlockCore, workshopCost, type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
@@ -223,6 +223,7 @@ export class UI {
     const canAffordCore = CORES.some((c) => canUnlockCore(p, c.id));
     const mastery = masteryLevel(p.mastery[p.loadout.core] ?? 0);
     const available = talentProgress(p).total - talentSpent(p.talents);
+    const daily = dailyRecord(p);
     this.show(h('div', { class: `screen home ${p.tutorialDone ? '' : 'home-first-run'}`, style: `--core-color:${coreDef.color}` },
       h('div', { class: 'home-topline' },
         h('span', { class: 'eyebrow home-system' }, h('i', { 'aria-hidden': 'true' }), t('home.system')), this.currency()),
@@ -256,7 +257,8 @@ export class UI {
           h('div', { class: 'core-readout' }, h('span', { class: 'status-dot', style: `background:${coreDef.color}` }),
             t('home.equipped', { core: coreDef.name }), h('span', { class: 'spacer' }), h('span', { class: 'core-mastery' }, t('home.mastery'), h('b', {}, mastery.level))),
           p.tutorialDone ? h('div', { class: 'grid2 home-nav' },
-            nav('daily', t('home.nav.daily'), t('home.nav.dailyDesc'), '#9ac9ff', () => this.dailyRun()),
+            nav('daily', t('home.nav.daily'), daily.claimed ? t('home.nav.dailyBest', { n: formatNum(daily.best) }) : t('home.nav.dailyBonus'),
+              '#9ac9ff', () => this.dailyRun(), !daily.claimed),
             nav('talents', t('home.nav.talentsCount', { n: available }), t('home.nav.talentsDesc'), '#c8a5ff', () => this.talents(), available > 0),
             nav('loadout', t('home.nav.loadout'), t('home.nav.loadoutDesc'), '#91ead4', () => this.loadout(), canAffordCore),
             nav('workshop', t('home.nav.workshop'), t('home.nav.workshopDesc'), '#ffbe86', () => this.workshop()),
@@ -314,12 +316,23 @@ export class UI {
     if (!pactsOn) s.pacts.clear();
     const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
     const rerender = () => { this.click(); this.runSetup(); };
+    const arena = ARENA_MAP[s.arena];
+    const core = CORE_MAP[p.loadout.core] ?? CORE_MAP.striker;
+    const parts = [p.loadout.shell, p.loadout.impact, p.loadout.momentum].map((id) => PART_MAP[id]).filter((x) => x && x.mods.length + (x.behavior ? 1 : 0) > 0);
     this.show(h('div', { class: 'screen' },
       this.topbar(t('setup.title')),
       h('div', { class: 'scroll' },
+        // The first page is a pre-flight check: specialisation, equipment, then where you are going.
         h('div', { class: 'card setup-overview' }, h('div', { class: 'name' }, t('setup.talents', { spent: talentSpent(p.talents), total: talentProgress(p).total })),
           h('div', { class: 'desc' }, t('setup.talentsDesc')),
           h('button', { style: 'margin-top:8px', onclick: () => this.talents() }, t('setup.editTalents'))),
+        h('div', { class: 'card setup-overview', style: `border-inline-start: 4px solid ${core.color}` },
+          h('div', { class: 'name' }, t('setup.loadout', { icon: core.icon, core: core.name, level: masteryLevel(p.mastery[core.id] ?? 0).level })),
+          h('div', { class: 'desc' }, parts.length ? parts.map((x) => `${x.icon} ${x.name}`).join(' · ') : core.passive),
+          h('button', { style: 'margin-top:8px', onclick: () => this.loadout() }, t('setup.editLoadout'))),
+        h('div', { class: 'card setup-mission', style: `border-inline-start: 4px solid ${arena.theme.accent}` },
+          h('div', { class: 'name' }, t('setup.mission', { arena: arena.name, difficulty: DIFFICULTIES[s.difficulty].name })),
+          h('div', { class: 'desc' }, t('setup.missionDesc', { boss: BOSSES.find((b) => b.id === arena.bossId)?.name ?? '' }))),
         h('h3', {}, t('setup.arena')),
         h('div', { class: 'col' }, ARENAS.map((a) => {
           const ok = isArenaUnlocked(p, a.id);
@@ -883,7 +896,7 @@ export class UI {
       },
       h('div', { class: 'oicon' }, u.icon),
       h('div', { style: 'flex:1' },
-        h('div', {}, h('span', { class: 'oname' }, u.name), h('span', { class: 'olv', style: o.level === 1 ? 'background:var(--green);color:#0a0612' : '' }, o.level === 1 ? t('levelup.new') : t('levelup.level', { level: o.level, max: u.maxLevel }))),
+        h('div', {}, h('span', { class: 'oname' }, u.name), h('span', { class: 'olv', style: o.level === 1 ? 'background:var(--green);color:#0a0612' : '' }, o.level === 1 ? t('levelup.new') : t('levelup.level', { level: o.level, max: w.build.maxLevel(o.id) }))),
         h('div', { class: 'odesc' }, u.desc(o.level)),
         h('div', { class: 'otags' }, t('levelup.tags', { rarity: rarityLabel(u.rarity), tags: u.tags.map(tagLabel).join(' · ') })),
         hints));
@@ -977,6 +990,8 @@ export class UI {
       ...r.challenges.map((c) => t('results.challenge', { name: c })),
       ...(r.arenaUnlocked ? [t('results.newArena', { name: r.arenaUnlocked })] : []),
       ...(r.difficultyUnlocked ? [t('results.newDifficulty', { name: r.difficultyUnlocked })] : []),
+      ...(r.daily?.bonus ? [t('results.dailyBonus')] : []),
+      ...(r.daily?.newBest ? [t('results.dailyBest', { n: formatNum(r.daily.best) })] : []),
     ];
     this.show(h('div', { class: 'screen solid' },
       h('div', { class: `result-title ${s.victory ? 'win' : 'lose'}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),

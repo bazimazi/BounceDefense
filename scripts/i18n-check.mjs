@@ -235,7 +235,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.dir), 'ltr');
     assert.equal(await ui.locator('h2').textContent(), en['settings.title']);
     await page.getByRole('button', { name: en['common.back'], exact: true }).tap(); await ready();
-    assert.equal(await ui.locator('.home-nav button').first().textContent(), en['home.nav.daily'] + en['home.nav.dailyDesc']);
+    assert.equal(await ui.locator('.home-nav button').first().textContent(), en['home.nav.daily'] + en['home.nav.dailyBonus']);
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.home-nav-tile')).fontFamily.includes('Vazirmatn')), false);
     mark('Persian survives a reload; switching back to English restores LTR layout and text');
     await context.close();

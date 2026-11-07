@@ -50,6 +50,14 @@ export class AudioEngine {
     this.setVolumes(this.sfxVolume, this.musicVolume);
   }
 
+  /** Silences everything while the app is in the background (phones keep WebAudio running otherwise). */
+  setBackground(hidden: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (hidden && ctx.state === 'running') ctx.suspend().catch(() => {});
+    else if (!hidden && ctx.state === 'suspended') ctx.resume().catch(() => {});
+  }
+
   setVolumes(sfx: number, music: number): void {
     this.sfxVolume = sfx;
     this.musicVolume = music;

@@ -21,6 +21,8 @@ export interface OfferContext {
   levelIndex: number;
   /** Bloodless: healing offers would do nothing. */
   noHeal?: boolean;
+  /** An upgrade guaranteed a slot in this hand when it can be offered (e.g. the first Extra Ball). */
+  featured?: string;
 }
 
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 100, rare: 48, epic: 18, legendary: 6 };
@@ -33,7 +35,7 @@ export function isOfferable(id: string, ctx: OfferContext): boolean {
   if (ctx.banished.has(id)) return false;
   if (def.core && def.core !== ctx.build.core) return false;
   const lvl = ctx.build.level(id);
-  if (lvl >= def.maxLevel) return false;
+  if (lvl >= ctx.build.maxLevel(id)) return false;
   if (lvl === 0) {
     if (!ctx.pool.has(id)) return false;
     if (ctx.build.upgrades.size >= MAX_DISTINCT_UPGRADES) return false;
@@ -93,6 +95,15 @@ export function makeOffers(ctx: OfferContext): Offer[] {
     if (!pick) break;
     candidates.splice(candidates.indexOf(pick), 1);
     out.push({ kind: 'upgrade', id: pick, level: ctx.build.level(pick) + 1 });
+  }
+  const f = ctx.featured;
+  if (f && isOfferable(f, ctx) && !out.some((o) => o.kind === 'upgrade' && o.id === f)) {
+    // Replace the last ordinary card; evolutions always keep their slot.
+    let slot = -1;
+    for (let i = out.length - 1; i >= 0; i--) if (out[i].kind === 'upgrade') { slot = i; break; }
+    const offer = { kind: 'upgrade', id: f, level: ctx.build.level(f) + 1 } as const;
+    if (slot >= 0) out[slot] = offer;
+    else if (out.length < ctx.count) out.push(offer);
   }
   if (out.length === 0) out.push(...(ctx.noHeal ? [] : [{ kind: 'heal' } as const]), { kind: 'coins' });
   return out;

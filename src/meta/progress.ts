@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { analytics } from '../core/analytics';
+import { dailyKey } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../data/balls';
 import { BOSS_MAP, ENEMY_MAP } from '../data/enemies';
@@ -196,6 +197,18 @@ export function computeRewards(s: RunSummary, newDiscoveries: number): RunReward
   };
 }
 
+/** The first finished Daily Seed run each day pays this coin multiplier and bonus Research. */
+export const DAILY_COIN_BONUS = 1.5;
+export const DAILY_RESEARCH_BONUS = 1;
+/** A Daily Seed run must last this long (or be won) to claim the bonus, so quitting at once cannot farm it. */
+export const DAILY_MIN_TIME = 90;
+
+/** Today's Daily Seed record, reset when the UTC day has changed. */
+export function dailyRecord(p: Profile, today = dailyKey()): Profile['daily'] {
+  if (p.daily.day !== today) p.daily = { day: today, claimed: false, best: 0, runs: 0 };
+  return p.daily;
+}
+
 // ------------------------------------------------------------------ discovery names
 export function discoveryName(cat: DiscoveryCat, id: string): string {
   switch (cat) {
@@ -232,6 +245,9 @@ export function nextGoals(p: Profile, n = 3): Goal[] {
     if (p.unlockedCores.includes(c.id)) continue;
     if (!coreRequirementMet(p, c.id)) {
       goals.push({ kind: 'core', text: t('goal.reveal', { req: c.unlockReq?.text ?? '', name: c.name }), reward: `${c.icon} ${c.name}`, cur: 0, max: 1 });
+    } else if (p.cores >= c.unlockCost) {
+      // Affordable already: point at the action instead of a finished "collect" bar.
+      goals.push({ kind: 'core', text: t('goal.coreReady', { name: c.name }), reward: `${c.icon} ${c.passive}`, cur: 1, max: 1 });
     } else {
       goals.push({ kind: 'core', text: t('goal.collectCores', { n: c.unlockCost }), reward: t('goal.unlockCore', { icon: c.icon, name: c.name }), cur: Math.min(p.cores, c.unlockCost), max: c.unlockCost });
     }
@@ -273,9 +289,11 @@ export interface RunReport {
   goals: Goal[];
   arenaUnlocked: string | null;
   difficultyUnlocked: string | null;
+  /** Daily Seed outcome: whether this run claimed today's bonus and set a new best. */
+  daily: { bonus: boolean; best: number; newBest: boolean } | null;
 }
 
-export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: DiscoveryCat; id: string }[]): RunReport {
+export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: DiscoveryCat; id: string }[], today = dailyKey()): RunReport {
   const arenasBefore = ARENAS.filter((a) => isArenaUnlocked(p, a.id)).map((a) => a.id);
   const diffBefore = maxDifficulty(p);
   const st = p.stats;
@@ -324,6 +342,20 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
 
   // ---- currencies
   const rewards = computeRewards(s, researchFromDiscovery);
+  let daily: RunReport['daily'] = null;
+  if (s.daily) {
+    const rec = dailyRecord(p, today);
+    const bonus = !rec.claimed && (s.victory || s.time >= DAILY_MIN_TIME);
+    if (bonus) {
+      rec.claimed = true;
+      rewards.coins = Math.round(rewards.coins * DAILY_COIN_BONUS);
+      rewards.research += DAILY_RESEARCH_BONUS;
+    }
+    const newBest = s.kills > rec.best;
+    rec.best = Math.max(rec.best, s.kills);
+    rec.runs++;
+    daily = { bonus, best: rec.best, newBest };
+  }
   p.coins += rewards.coins;
   p.cores += rewards.cores;
   p.research += rewards.research;
@@ -397,6 +429,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     goals: nextGoals(p, 3),
     arenaUnlocked,
     difficultyUnlocked: diffAfter > diffBefore ? DIFFICULTIES[diffAfter].name : null,
+    daily,
   };
 }
 

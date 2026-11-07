@@ -1,8 +1,8 @@
 import { t, type UiKey } from '../i18n';
-import { angleDiff, clamp, closestOnSegment, reflect, type Vec2 } from '../core/math';
+import { angleDiff, clamp, closestOnSegment, reflect, segmentsCross, type Vec2 } from '../core/math';
 import { ballHitEnemy, sparkNearest } from './combat';
 import {
-  FIELD_TOP, FLOOR_Y, LAUNCHER_X, LAUNCHER_Y, SIM_DT, TRAIL_LEN, W,
+  FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, SIM_DT, TRAIL_LEN, W,
   type Ball, type Enemy, type Segment,
 } from './types';
 import { momentumTier, TIER_SPEED, type World } from './world';
@@ -10,8 +10,44 @@ import { momentumTier, TIER_SPEED, type World } from './world';
 /** Balls may never travel closer to horizontal than this (prevents endless side-to-side loops). */
 export const MIN_DY = 0.14;
 const HIT_COOLDOWN = 0.2;
+/** A flying ball that makes no progress and hits nothing for this long is trapped and sent home. */
+export const STUCK_TIME = 3;
+const STUCK_RADIUS = 110;
+/** A flying ball that has touched no enemy for this long is wandering uselessly and comes home. */
+export const IDLE_FLIGHT_TIME = 15;
+/** Consecutive portal jumps allowed without a bounce or hit in between. */
+export const MAX_PORTAL_HOPS = 2;
 const tmp: Vec2 = { x: 0, y: 0 };
 const rv: Vec2 = { x: 0, y: 0 };
+
+/** Height at which Rift Phase re-enters the arena. */
+export const phaseY = (r: number): number => FIELD_TOP + r + 6;
+
+/**
+ * Where a ball phasing to the top of the arena can re-enter. Corner deflectors close off small
+ * pockets against the walls, so the exit slides toward the centre until it is clear of every
+ * deflector and has a straight line into the open arena.
+ */
+export function phaseExitX(w: World, x: number, r: number): number {
+  const y = phaseY(r);
+  const cx = W / 2;
+  const cy = H / 2;
+  let px = clamp(x, r + 2, W - r - 2);
+  for (let i = 0; i < 80; i++) {
+    let ok = true;
+    for (const s of w.segments) {
+      if (s.kind !== 'deflector') continue;
+      closestOnSegment(px, y, s.ax, s.ay, s.bx, s.by, tmp);
+      if ((px - tmp.x) ** 2 + (y - tmp.y) ** 2 < (r + 2) ** 2 || segmentsCross(px, y, cx, cy, s.ax, s.ay, s.bx, s.by)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return px;
+    px += px < cx ? 4 : -4;
+  }
+  return cx;
+}
 
 export function enforceAngle(b: { dx: number; dy: number }): void {
   const l = Math.hypot(b.dx, b.dy) || 1;
@@ -133,6 +169,7 @@ export function onWallBounce(w: World, b: Ball, x: number, y: number, nx: number
   b.wallBounces += double ? 2 : 1;
   b.bounceChain++;
   b.pierceLeft = st.pierce;
+  b.portalHops = 0;
   b.pulse = 1;
   if (b.wallBounces > w.run.maxWallChain) w.run.maxWallChain = b.wallBounces;
   if (b.bounceChain > w.run.maxBounceChain) w.run.maxBounceChain = b.bounceChain;
@@ -263,7 +300,8 @@ function collideObstacles(w: World, b: Ball): void {
         break;
       }
       case 'portal': {
-        if (b.portalCd > 0) break;
+        // A ball must bounce or strike something between jumps: no portal-to-portal loops.
+        if (b.portalCd > 0 || b.portalHops >= MAX_PORTAL_HOPS) break;
         const inA = (b.x - o.ax) ** 2 + (b.y - o.ay) ** 2 < o.r * o.r;
         const inB = !inA && (b.x - o.bx) ** 2 + (b.y - o.by) ** 2 < o.r * o.r;
         if (inA || inB) {
@@ -272,6 +310,7 @@ function collideObstacles(w: World, b: Ball): void {
           b.x = tx + b.dx * 2;
           b.y = ty + b.dy * 2;
           b.portalCd = 0.45;
+          b.portalHops++;
           b.momentum += 2 * w.build.stats.momentumGain;
           b.trail.length = 0;
           w.addCombo(1);
@@ -306,6 +345,10 @@ function collideEnemies(w: World, b: Ball): void {
     if (d2 >= rr * rr) continue;
     if (recentlyHit(w, b, e.id)) continue;
     markHit(w, b, e.id);
+    // Striking enemies is progress, even from a tight ceiling trap.
+    b.stuckT = 0;
+    b.idleT = 0;
+    b.portalHops = 0;
     const d = Math.sqrt(d2) || 1;
     const nx = dx / d;
     const ny = dy / d;
@@ -372,6 +415,11 @@ function handleFloor(w: World, b: Ball): void {
     w.emit({ t: 'burst', x: b.x, y: FLOOR_Y, color: w.trailColors[1], n: 5, speed: 90 });
     return;
   }
+  sendHome(w, b, FLOOR_Y);
+}
+
+/** Ends a main ball's flight: it arcs back to the launcher, keeping momentum if the build allows. */
+function sendHome(w: World, b: Ball, fromY: number): void {
   // preserve momentum for the next launch if the build allows it
   let keep = 0;
   if (w.build.has('perpetual_motion')) keep = b.momentum;
@@ -383,8 +431,28 @@ function handleFloor(w: World, b: Ball): void {
   b.state = 'returning';
   b.returnT = 0;
   b.rx = b.x;
-  b.ry = FLOOR_Y;
+  b.ry = fromY;
   b.trail.length = 0;
+}
+
+/**
+ * Safety net against geometry traps (a ball wedged in a pocket bouncing forever). A ball that
+ * stays within a small area without hitting an enemy is released: main balls return home,
+ * temporary balls fizzle out. Legit ceiling traps keep hitting enemies, which resets the timer.
+ */
+function checkTrapped(w: World, b: Ball, dt: number): void {
+  b.idleT += dt;
+  const dx = b.x - b.anchorX;
+  const dy = b.y - b.anchorY;
+  if (dx * dx + dy * dy > STUCK_RADIUS * STUCK_RADIUS) {
+    b.anchorX = b.x;
+    b.anchorY = b.y;
+    b.stuckT = 0;
+  } else b.stuckT += dt;
+  if (b.stuckT < STUCK_TIME && b.idleT < IDLE_FLIGHT_TIME) return;
+  w.emit({ t: 'ring', x: b.x, y: b.y, r: 30, color: '#8debdc' });
+  if (b.kind === 'main') sendHome(w, b, b.y);
+  else b.dead = true;
 }
 
 export function stepBall(w: World, b: Ball, dt: number): void {
@@ -435,6 +503,7 @@ export function stepBall(w: World, b: Ball, dt: number): void {
     if (b.x < b.r - 2 || b.x > W - b.r + 2) b.x = clamp(b.x, b.r, W - b.r);
     if (b.y > FLOOR_Y) handleFloor(w, b);
   }
+  if (b.state === 'flight' && !b.dead) checkTrapped(w, b, dt);
 
   const tier = momentumTier(b.momentum);
   if (tier > prevTier && b.kind === 'main') {
@@ -476,6 +545,7 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
   let bounces = 0;
   let remaining = 0; // distance left in the current simulated tick
   let portalCd = 0;
+  let portalHops = 0;
   let floorBounces = st.floorBounces;
   let phased = false;
   let curved = 0;
@@ -484,7 +554,7 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
   let storm = ev?.id === 'gravity_storm' ? { timer: ev.timer, dir: ev.dir, left: ev.dur - ev.t } : null;
   const maxStep = Math.max(2, g.r * 0.6);
   const segs = w.dynSegments.length ? w.segments.concat(w.dynSegments) : w.segments;
-  const wall = (n = 1) => { g.wallBounces += w.event?.id === 'double_bounce' ? 2 * n : n; };
+  const wall = (n = 1) => { g.wallBounces += w.event?.id === 'double_bounce' ? 2 * n : n; portalHops = 0; };
   const jump = (fx: number, fy: number) => out.push(fx, fy, TRACE_BREAK, TRACE_BREAK);
   path: while (len < maxLen) {
     if (remaining <= 0) {
@@ -592,7 +662,7 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
             bounced = true;
           }
         }
-      } else if (o.kind === 'portal' && portalCd <= 0) {
+      } else if (o.kind === 'portal' && portalCd <= 0 && portalHops < MAX_PORTAL_HOPS) {
         const inA = (g.x - o.ax) ** 2 + (g.y - o.ay) ** 2 < o.r * o.r;
         const inB = !inA && (g.x - o.bx) ** 2 + (g.y - o.by) ** 2 < o.r * o.r;
         if (inA || inB) {
@@ -601,6 +671,7 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
           g.y = (inA ? o.by : o.ay) + g.dy * 2;
           g.momentum += 2 * st.momentumGain;
           portalCd = 0.45;
+          portalHops++;
           out.push(g.x, g.y);
           curved = 0;
         }
@@ -630,7 +701,8 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
       if (!phased && w.build.has('void_core')) {
         phased = true;
         jump(g.x, FLOOR_Y);
-        g.y = FIELD_TOP + g.r + 6;
+        g.x = phaseExitX(w, g.x, g.r);
+        g.y = phaseY(g.r);
         g.dy = Math.abs(g.dy);
         out.push(g.x, g.y);
       } else if (floorBounces > 0) {

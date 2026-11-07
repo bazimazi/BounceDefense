@@ -153,6 +153,8 @@ export class World {
   rerolls = 0;
   banishes = 0;
   banished = new Set<string>();
+  /** Extra Ball has appeared in a hand this run (it is guaranteed once, early). */
+  extraBallSeen = false;
   pool: Set<string>;
   flags: Set<string>;
 
@@ -237,7 +239,9 @@ export class World {
     for (const p of pacts) if (p.mods) mods.push(...p.mods);
     mods.push(...talentModifiers(this.talents));
     for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
-    this.build = new Build(core.id, mods, behaviors);
+    // Workshop Spare Ball raises Extra Ball's ceiling: more balls late, no early power spike.
+    const caps: Record<string, number> = (cfg.workshop.spare_ball ?? 0) > 0 ? { extra_ball: 1 } : {};
+    this.build = new Build(core.id, mods, behaviors, [], caps);
     for (const u of core.startUpgrades) this.build.addUpgrade(u);
     this.refreshBehaviors();
     this.maxHp = this.build.stats.maxHp;
@@ -337,8 +341,9 @@ export class World {
       dmgMult: kind === 'main' ? 1 : st.shardPower * (kind === 'frenzy' ? 1.4 : 1),
       powered: parent?.powered ?? false,
       life: kind === 'main' ? -1 : kind === 'frenzy' ? 9 : 12,
-      recentId: [], recentT: [], trail: [], boost: 1, portalCd: 0, phased: false,
+      recentId: [], recentT: [], trail: [], boost: 1, portalCd: 0, portalHops: 0, phased: false,
       splitGen: parent ? parent.splitGen + 1 : 0, hitCounter: 0, arcTimer: 0, firstHitDone: false, dead: false, pulse: 0,
+      anchorX: x, anchorY: y, stuckT: 0, idleT: 0,
     };
     this.balls.push(b);
     let inFlight = 0;
@@ -348,7 +353,8 @@ export class World {
   }
 
   makeEnemy(def: EnemyDef, x: number, y: number, hpMult = 1): Enemy {
-    const timeScale = 1 + (this.time / 100) * 0.3 + Math.pow(this.time / 300, 2) * 0.35;
+    const g = this.diff.growth;
+    const timeScale = 1 + (this.time / 100) * 0.3 * g + Math.pow(this.time / 300, 2) * 0.35 * g;
     const blood = this.event?.id === 'blood_moon' ? 1.5 : 1;
     const hp = def.boss ? def.hp * hpMult : def.hp * this.enemyHpMult * timeScale * blood * hpMult;
     return {
@@ -419,7 +425,7 @@ export class World {
       this.emit({ t: 'sfx', name: 'shield' });
       return;
     }
-    let amount = Math.max(1, dmg - this.build.stats.armor);
+    let amount = Math.max(1, dmg * this.diff.dmgMult - this.build.stats.armor);
     if (this.talents.last_bastion && this.hp <= this.maxHp * 0.35) amount *= 0.75;
     this.hp -= amount;
     this.run.damageTaken += amount;
@@ -584,10 +590,13 @@ export class World {
   openLevelUp(): void {
     // Pacts make some upgrades inert; never offer a card that cannot do anything.
     const inert = [...(this.loneBall ? ['extra_ball'] : []), ...(this.noHeal ? ['vampiric', 'regen'] : [])];
+    // Multi-ball is a core verb (hold to stream): make sure every run sees Extra Ball early once.
+    const featured = !this.extraBallSeen && this.levelUps >= 1 && this.build.level('extra_ball') === 0 ? 'extra_ball' : undefined;
     this.offers = makeOffers({
       build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
-      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps, noHeal: this.noHeal,
+      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps, noHeal: this.noHeal, featured,
     });
+    if (this.offers.some((o) => o.kind === 'upgrade' && o.id === 'extra_ball')) this.extraBallSeen = true;
     this.state = 'levelup';
     this.bus.emit('levelUp', { offers: this.offers });
   }
@@ -912,11 +921,11 @@ export class World {
   detonateBarrel(o: Extract<Obstacle, { kind: 'barrel' }>, depth: number): void {
     if (!o.alive) return;
     o.alive = false;
-    o.respawn = 10;
+    o.respawn = 12;
     this.run.barrelsExploded++;
     this.addCombo(2);
     const st = this.build.stats;
-    explode(this, o.x, o.y, 85, st.damage * 3 + 20, depth + 1, { color: '#ff8a3d', src: 'barrel', burn: true });
+    explode(this, o.x, o.y, 85, st.damage * 2.2 + 12, depth + 1, { color: '#ff8a3d', src: 'barrel', burn: true });
     this.emit({ t: 'shake', amt: 7 });
   }
 

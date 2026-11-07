@@ -186,6 +186,10 @@ export interface DifficultyDef {
   eliteEvery: number;
   eliteModCount: number;
   bossHpMult: number;
+  /** How fast enemy health grows over the run (1 = Normal's curve). */
+  growth: number;
+  /** Multiplier on damage that reaches the defense line, before armor. */
+  dmgMult: number;
   secondBoss: boolean;
   rewardMult: number;
   rules: string[];

@@ -41,7 +41,7 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
   dmg *= TIER_DMG[tier] * w.comboMult();
   if (w.build.has('kinetic_strike')) dmg *= Math.max(1, ballSpeed(w, b) / 780);
   if (w.build.has('sanguine')) dmg *= 1 + (1 - w.hp / w.maxHp) * w.build.power('sanguine');
-  if (w.build.has('pyro_core') && e.st.burnT > 0) dmg *= 1.1;
+  if (w.build.has('pyro_core') && e.st.burnT > 0) dmg *= 1.15;
   const cc = st.critChance + (b.wallBounces > 0 ? st.bankCrit : 0) + TIER_CRIT[tier];
   const crit = w.rng.chance(cc);
   if (crit) dmg *= st.critMult;
@@ -103,7 +103,7 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
 
   procs(w, e, procBase, crit, 0, b);
 
-  if (b.splitGen < 2 && w.rng.chance(st.splitChance)) splitBall(w, b, st.splitCount);
+  if (b.splitGen < 2 && w.rng.chance(st.splitChance * (b.splitGen ? 0.5 : 1))) splitBall(w, b, st.splitCount);
   for (const [bh, p] of w.bh) bh.onHit?.(w, b, e, crit, dmg / talentMult, p);
 
   if (e.boss || e.def.directMult) return false;

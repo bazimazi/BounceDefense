@@ -67,6 +67,17 @@ export interface Profile {
   settings: Settings;
   tutorialDone: boolean;
   runsSinceUnlock: number;
+  /** Daily Seed record for one UTC day: the first finished run claims a bonus. */
+  daily: DailyRecord;
+}
+
+export interface DailyRecord {
+  /** `dailyKey()` of the day this record describes; a new day starts fresh. */
+  day: string;
+  claimed: boolean;
+  /** Most enemies destroyed in a Daily Seed run that day. */
+  best: number;
+  runs: number;
 }
 
 export interface RunSummary {

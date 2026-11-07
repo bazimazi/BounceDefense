@@ -69,6 +69,11 @@ export function hashString(str: string): number {
   return h >>> 0;
 }
 
+/** The UTC calendar day a Daily Seed belongs to, e.g. "2026-11-7". */
+export function dailyKey(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${date.getUTCMonth() + 1}-${date.getUTCDate()}`;
+}
+
 export function dailySeed(date = new Date()): number {
-  return hashString(`bounce-${date.getUTCFullYear()}-${date.getUTCMonth() + 1}-${date.getUTCDate()}`);
+  return hashString(`bounce-${dailyKey(date)}`);
 }

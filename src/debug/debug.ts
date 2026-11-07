@@ -28,7 +28,7 @@ export function createDebugPanel(game: Game): HTMLElement {
     btn('+Level', () => { const x = w(); if (x) x.pendingLevels++; }),
     btn('+Ball', () => {
       const x = w();
-      if (!x || x.build.level('extra_ball') >= UPGRADE_MAP.extra_ball.maxLevel) return;
+      if (!x || x.build.level('extra_ball') >= x.build.maxLevel('extra_ball')) return;
       x.onBuildChanged(x.build.addUpgrade('extra_ball'));
       x.hand++;
     }),

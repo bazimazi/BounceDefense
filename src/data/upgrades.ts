@@ -107,8 +107,8 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'splitter', name: 'Split Shot', icon: '✂️', category: 'multiply', rarity: 'rare', maxLevel: 4, locked: true,
     tags: ['swarm'],
-    desc: () => `+10% chance on hit to split off shards (45% damage).`,
-    mods: (l) => [{ stat: 'splitChance', add: 0.1 * l }],
+    desc: () => `+8% chance on hit to split off shards (45% damage). Shards split half as often.`,
+    mods: (l) => [{ stat: 'splitChance', add: 0.08 * l }],
   },
   {
     id: 'echo', name: 'Echo Launch', icon: '👥', category: 'multiply', rarity: 'rare', maxLevel: 3, locked: true,

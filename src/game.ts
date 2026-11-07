@@ -65,6 +65,7 @@ export class Game {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.mode === 'run' && !this.paused && this.world?.state === 'playing') this.pause();
       if (document.hidden) this.save();
+      this.audio.setBackground(document.hidden);
     });
     this.ui.home();
     requestAnimationFrame((t) => this.frame(t));

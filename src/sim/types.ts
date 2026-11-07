@@ -41,6 +41,8 @@ export interface Ball {
   trail: number[];
   boost: number;
   portalCd: number;
+  /** Portal jumps since the last wall bounce or enemy hit (stops portal-to-portal loops). */
+  portalHops: number;
   phased: boolean;
   splitGen: number;
   hitCounter: number;
@@ -49,6 +51,12 @@ export interface Ball {
   dead: boolean;
   /** Visual pulse on impact. */
   pulse: number;
+  /** Trapped-ball watchdog: where the ball last made real progress and how long ago. */
+  anchorX: number;
+  anchorY: number;
+  stuckT: number;
+  /** Seconds of flight since this ball last touched an enemy. */
+  idleT: number;
 }
 
 export interface Status {

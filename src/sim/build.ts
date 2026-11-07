@@ -27,6 +27,8 @@ export class Build implements BuildView {
     private baseBehaviors: string[],
     /** Temporary modifiers (arena events etc.), may be mutated then recompute(). */
     public tempMods: Modifier[] = [],
+    /** Extra levels some upgrades may reach this run (meta unlocks). */
+    private capBonus: Readonly<Record<string, number>> = {},
   ) {
     this.recompute();
   }
@@ -51,12 +53,17 @@ export class Build implements BuildView {
     return this.behaviors.get(behavior) ?? 0;
   }
 
+  /** Highest level this upgrade can reach in this run. */
+  maxLevel(id: string): number {
+    return (UPGRADE_MAP[id]?.maxLevel ?? 0) + (this.capBonus[id] ?? 0);
+  }
+
   /** Adds one level of an upgrade. Returns newly-activated synergy ids. */
   addUpgrade(id: string): string[] {
     const def = UPGRADE_MAP[id];
     if (!def) throw new Error(`Unknown upgrade ${id}`);
     const lvl = this.level(id);
-    if (lvl >= def.maxLevel) return [];
+    if (lvl >= this.maxLevel(id)) return [];
     this.upgrades.set(id, lvl + 1);
     this.history.push(id);
     return this.recompute();

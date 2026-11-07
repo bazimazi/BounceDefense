@@ -14,8 +14,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'pyro', name: 'Pyro Core', icon: '🔥', color: '#ff7a2f', element: 'fire',
     desc: 'Sets the arena ablaze. Burns ignore armor.',
-    passive: 'Kindling: +20% burn chance. Burning enemies take +10% ball damage.',
-    mods: [{ stat: 'burnChance', add: 0.2 }, { stat: 'damage', mult: -0.08 }],
+    passive: 'Kindling: +20% burn chance and +15% burn damage. Burning enemies take +15% ball damage.',
+    mods: [{ stat: 'burnChance', add: 0.2 }, { stat: 'burnPower', mult: 0.15 }],
     startUpgrades: ['ignite'],
     behavior: 'pyro_core',
     unlockCost: 3,

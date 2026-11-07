@@ -186,6 +186,8 @@ button.danger { background: rgba(255, 74, 106, 0.2); border-color: rgba(255, 74,
 .deck-measure * { animation: none !important; transition: none !important; }
 .deck-pager { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 8px; align-items: center; flex-shrink: 0; border-top: 1px solid var(--line); padding-top: 6px; }
 .deck-pager button { padding: 0; font: 24px Consolas, monospace; border-radius: 9px; }
+/* A single page of upgrade cards needs no pager: keep its space, hide the inert controls. */
+.levelup .deck.offer-list[data-pages="1"] > .deck-pager { visibility: hidden; }
 .deck-count { text-align: center; font: 11px/1.3 Consolas, monospace; color: #bed6dc; }
 .difficulty-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .difficulty-options button { padding: 6px 3px; font-size: 12px; }

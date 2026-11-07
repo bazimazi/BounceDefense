@@ -1,5 +1,6 @@
 import { applyBleed, applyChill, chainLightning, damageEnemy, explode, nearestEnemy, sparkNearest, type HitInfo } from './combat';
-import { FIELD_TOP, type Ball, type Enemy } from './types';
+import { phaseExitX, phaseY } from './physics';
+import type { Ball, Enemy } from './types';
 import type { World } from './world';
 
 /**
@@ -69,8 +70,12 @@ export const BEHAVIORS: Record<string, Behavior> = {
       if (b.phased || b.kind !== 'main') return false;
       b.phased = true;
       w.emit({ t: 'ring', x: b.x, y: b.y, r: 30, color: '#c77dff' });
-      b.y = FIELD_TOP + b.r + 6;
+      b.x = phaseExitX(w, b.x, b.r);
+      b.y = phaseY(b.r);
       b.dy = Math.abs(b.dy);
+      b.anchorX = b.x;
+      b.anchorY = b.y;
+      b.stuckT = 0;
       b.trail.length = 0;
       w.emit({ t: 'ring', x: b.x, y: b.y, r: 30, color: '#c77dff' });
       w.emit({ t: 'sfx', name: 'portal' });
