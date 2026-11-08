@@ -202,7 +202,7 @@ describe('talents compose with existing power systems', () => {
 
   it('Last Bastion checks starting HP, applies after armor, preserves barriers and allows death', () => {
     const w = emptyWorld({ talents: warden });
-    const amount = 20 - w.build.stats.armor;
+    const amount = 20 * w.diff.dmgMult - w.build.stats.armor;
     w.hp = w.maxHp * 0.35 + 1;
     let before = w.hp;
     w.hurt(20, 200);

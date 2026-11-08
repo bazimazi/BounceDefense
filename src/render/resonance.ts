@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { TAU } from '../core/math';
-import { CIRCUIT_DURATION, RESONANCE_COLOR } from '../sim/resonance';
+import { CIRCUIT_DURATION, RESONANCE_COLOR, SIGNAL_HOLD } from '../sim/resonance';
 import type { World } from '../sim/world';
 
 /** The circuit is a hologram, visually distinct from solid pinball bumpers. */
@@ -29,8 +29,12 @@ export function drawResonance(ctx: CanvasRenderingContext2D, w: World, time: num
       const angle = time * .4 + j * TAU / 3;
       ctx.beginPath(); ctx.arc(n.x, n.y, r, angle, angle + 1.1); ctx.stroke();
     }
-    ctx.strokeStyle = color + '50'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, -Math.PI / 2, -Math.PI / 2 + TAU * circuit.remaining / CIRCUIT_DURATION); ctx.stroke();
+    // Unlit signals show the circuit's clock; lit ones show how long they hold before fading.
+    const clock = n.lit ? Math.max(0, n.litT) / SIGNAL_HOLD : circuit.remaining / CIRCUIT_DURATION;
+    // A fading signal blinks through its last two seconds.
+    ctx.strokeStyle = n.lit ? color + (n.litT < 2 && Math.floor(time * 6) % 2 ? '40' : 'e0') : color + '50';
+    ctx.lineWidth = n.lit ? 3 : 1;
+    ctx.beginPath(); ctx.arc(n.x, n.y, r + (n.lit ? 9 : 5), -Math.PI / 2, -Math.PI / 2 + TAU * clock); ctx.stroke();
     ctx.fillStyle = n.lit ? '#ffe3a3' : '#0a102dc0';
     ctx.strokeStyle = color;
     ctx.beginPath();
@@ -40,7 +44,7 @@ export function drawResonance(ctx: CanvasRenderingContext2D, w: World, time: num
     ctx.fillStyle = n.lit ? '#2a2048' : '#e8deff';
     ctx.fillRect(n.x - 2, n.y - 2, 4, 4);
     ctx.font = '9px Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = color; ctx.fillText(n.lit ? t('canvas.linked') : `0${i + 1}`, n.x, n.y + 40);
+    ctx.fillStyle = color; ctx.fillText(n.lit ? `${t('canvas.linked')} ${Math.max(1, Math.ceil(n.litT))}` : `0${i + 1}`, n.x, n.y + 40);
   });
   ctx.restore();
 }

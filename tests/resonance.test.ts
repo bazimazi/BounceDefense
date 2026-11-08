@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { stepBall } from '../src/sim/physics';
-import { CIRCUIT_DURATION } from '../src/sim/resonance';
+import { CIRCUIT_DURATION, SIGNAL_HOLD } from '../src/sim/resonance';
 import { SIM_DT } from '../src/sim/types';
 import { POWER_END, POWER_START, RECALL_COOLDOWN } from '../src/sim/world';
 import { emptyWorld, steps } from './helpers';
@@ -84,6 +84,22 @@ describe('resonance circuit', () => {
     expect(w.surge.charge).toBe(30); expect(w.buffs.map(b => b.id)).toContain('resonance');
     expect(w.fx.some(f => f.t === 'starfall')).toBe(true);
     expect(w.summary().starfalls).toBe(1);
+  });
+
+  it('lets a lit signal fade unless the circuit completes, and ignores temporary balls', () => {
+    const w = emptyWorld(); steps(w, 5.1);
+    const node = w.resonance.nodes[0];
+    const shard = w.spawnBall('shard', node.x, node.y, 0, -1)!;
+    w.resonance.touch(shard);
+    expect(node.lit).toBe(false);
+    const ball = w.spawnBall('main', node.x, node.y, 0, -1)!;
+    w.resonance.touch(ball);
+    expect(node.lit).toBe(true);
+    w.balls = [];
+    steps(w, SIGNAL_HOLD + 0.1);
+    expect(node.lit).toBe(false);
+    expect(w.resonance.nodes).toHaveLength(3);
+    expect(w.resonance.completed).toBe(0);
   });
 
   it('detects fast passes through a signal without altering ball direction', () => {

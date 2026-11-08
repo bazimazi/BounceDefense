@@ -2,6 +2,8 @@ import { t } from '../i18n';
 import { localize } from '../i18n/content';
 import type { Modifier } from '../sim/stats';
 import type { Profile, RunSummary, Unlock } from '../meta/types';
+import { TRAILS } from './balls';
+import { UPGRADE_MAP } from './upgrades';
 
 // ---------------------------------------------------------------- achievements
 /** Cumulative goals. They double as a roadmap: every one unlocks new content. */
@@ -50,7 +52,7 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'pyro_run', name: 'Pyromaniac', icon: '🔥', desc: 'Kill 100 enemies with fire in one run.', check: (s) => s.fireKills >= 100, rewards: [{ type: 'cores', amount: 2 }] },
   { id: 'untouchable', name: 'Untouchable', icon: '🛡️', desc: 'Win a run without taking damage.', check: (s) => s.victory && s.damageTaken <= 0, rewards: [{ type: 'cores', amount: 5 }] },
   { id: 'speed_demon', name: 'Speed Demon', icon: '⏱️', desc: 'Defeat a boss within 75 seconds of its arrival.', check: (s) => s.bossFightTimes.some((t) => t <= 75), rewards: [{ type: 'research', amount: 3 }, { type: 'coins', amount: 300 }] },
-  { id: 'minimalist', name: 'Minimalist', icon: '1️⃣', desc: 'Win while never owning more than one ball.', check: (s) => s.victory && s.maxBallsOwned <= 1, rewards: [{ type: 'cosmetic', id: 'void' }, { type: 'cores', amount: 2 }] },
+  { id: 'minimalist', name: 'Minimalist', icon: '1️⃣', desc: 'Win with the Lone Ball pact, never owning more than one ball.', check: (s) => s.victory && s.maxBallsOwned <= 1, rewards: [{ type: 'cosmetic', id: 'void' }, { type: 'cores', amount: 2 }] },
   { id: 'swarm', name: 'Swarm', icon: '🐝', desc: 'Have 10 balls in flight at once.', check: (s) => s.maxBallsInFlight >= 10, rewards: [{ type: 'cores', amount: 3 }] },
   { id: 'glass_cannon', name: 'Glass Cannon', icon: '💔', desc: 'Win with the Glass Heart pact.', check: (s) => s.victory && s.pacts.includes('fragile'), rewards: [{ type: 'research', amount: 4 }] },
   { id: 'combo_king', name: 'Combo King', icon: '👑', desc: 'Reach a 150 combo.', check: (s) => s.bestCombo >= 150, rewards: [{ type: 'coins', amount: 500 }] },
@@ -151,9 +153,9 @@ export interface MasteryReward {
 export function masteryRewards(core: string): MasteryReward[] {
   const sig = SIGNATURE_UPGRADE[core];
   const out: MasteryReward[] = [
-    { level: 2, text: t('mastery.signature'), unlocks: [{ type: 'upgrade', id: sig }] },
+    { level: 2, text: t('mastery.signature', { name: `${UPGRADE_MAP[sig]?.icon ?? ''} ${UPGRADE_MAP[sig]?.name ?? sig}` }), unlocks: [{ type: 'upgrade', id: sig }] },
     { level: 3, text: t('mastery.research2'), unlocks: [{ type: 'research', amount: 2 }] },
-    { level: 4, text: t('mastery.trail'), unlocks: [{ type: 'cosmetic', id: MASTERY_TRAIL[core] }] },
+    { level: 4, text: t('mastery.trail', { name: TRAILS.find((tr) => tr.id === MASTERY_TRAIL[core])?.name ?? '' }), unlocks: [{ type: 'cosmetic', id: MASTERY_TRAIL[core] }] },
     { level: 5, text: t('mastery.cores2'), unlocks: [{ type: 'cores', amount: 2 }] },
   ];
   for (let l = 6; l <= MASTERY_MAX; l++) {

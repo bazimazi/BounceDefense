@@ -357,7 +357,9 @@ export class UI {
             onclick: () => { s.difficulty = i; rerender(); },
           }, ok ? d.name : t('common.lockedName', { name: d.name }));
         })),
-        h('div', { class: 'small muted', style: 'margin-top:6px' }, `${DIFFICULTIES[s.difficulty].desc} ${DIFFICULTIES[s.difficulty].rules.join(' · ')}`),
+        h('div', { class: 'difficulty-info' },
+          h('div', { class: 'small' }, DIFFICULTIES[s.difficulty].desc),
+          DIFFICULTIES[s.difficulty].rules.length ? h('ul', { class: 'difficulty-rules small muted' }, DIFFICULTIES[s.difficulty].rules.map((r) => h('li', {}, r))) : null),
         pactsOn ? [
           h('h3', {}, t('setup.pacts')),
           h('div', { class: 'grid2' }, PACTS.map((pc) => h('div', {
@@ -524,6 +526,9 @@ export class UI {
     const total = tabs.reduce((a, tab) => a + tab[2], 0);
     const max = tabs.reduce((a, tab) => a + tab[3], 0);
     const unknown = (hint: string) => h('div', { class: 'card locked' }, h('div', { class: 'name' }, t('codex.unknown')), h('div', { class: 'desc' }, hint));
+    // Discoveries lead each category so the first page shows what the player has found.
+    const knownFirst = <T extends { id: string }>(list: readonly T[], found: readonly string[]): T[] =>
+      [...list].sort((a, b) => Number(found.includes(b.id)) - Number(found.includes(a.id)));
     let body: HTMLElement[] = [];
     switch (this.codexTab) {
       case 'balls':
@@ -532,17 +537,17 @@ export class UI {
           : unknown(c.unlockReq?.text ?? t('codex.coresCost', { n: c.unlockCost })));
         break;
       case 'upgrades':
-        body = UPGRADES.map((u) => d.upgrades.includes(u.id)
+        body = knownFirst(UPGRADES, d.upgrades).map((u) => d.upgrades.includes(u.id)
           ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${u.icon} ${u.name} `, h('span', { class: 'tag' }, rarityLabel(u.rarity))), h('div', { class: 'desc' }, u.desc(1)), h('div', {}, u.tags.map((tag) => h('span', { class: 'tag' }, tagLabel(tag)))))
           : unknown(u.locked ? t('codex.lockedUpgrade') : t('codex.takeUpgrade')));
         break;
       case 'synergies':
-        body = SYNERGIES.map((s) => d.synergies.includes(s.id)
+        body = knownFirst(SYNERGIES, d.synergies).map((s) => d.synergies.includes(s.id)
           ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${s.icon} ${s.name} `, h('span', { class: 'tag' }, tierLabel(s.tier))), h('div', { class: 'desc' }, s.desc), h('div', { class: 'small muted' }, s.hint))
           : unknown(s.tier === 'known' ? t('codex.hint', { hint: s.hint }) : s.hint));
         break;
       case 'evolutions':
-        body = EVOLUTIONS.map((e) => {
+        body = knownFirst(EVOLUTIONS, d.evolutions).map((e) => {
           const known = d.evolutions.includes(e.id);
           const showRecipe = known || this.game.flags().includes('codex');
           const recipe = e.recipe.map((r) => r.level > 1 ? t('codex.recipeLevel', { name: UPGRADE_MAP[r.id].name, level: r.level }) : UPGRADE_MAP[r.id].name).join(' + ');
@@ -552,12 +557,12 @@ export class UI {
         });
         break;
       case 'reactions':
-        body = REACTIONS.map((r) => d.reactions.includes(r.id)
+        body = knownFirst(REACTIONS, d.reactions).map((r) => d.reactions.includes(r.id)
           ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${r.icon} ${r.name}`), h('div', { class: 'desc' }, r.desc))
           : unknown(t('codex.reactionHint', { a: elementName(r.elements[0]), b: elementName(r.elements[1]) })));
         break;
       case 'enemies':
-        body = CODEX_ENEMIES.map((e) => d.enemies.includes(e.id)
+        body = knownFirst(CODEX_ENEMIES, d.enemies).map((e) => d.enemies.includes(e.id)
           ? h('div', { class: 'card', style: `border-inline-start:4px solid ${e.color}` }, h('div', { class: 'name' }, e.name), h('div', { class: 'desc' }, e.desc), h('div', { class: 'small', style: 'color:var(--green);margin-top:4px' }, t('codex.tip', { tip: e.tip })))
           : unknown(t('codex.notEncountered')));
         break;
@@ -941,7 +946,8 @@ export class UI {
       this.clearScreen();
       this.game.pause();
     }, { valid: () => this.game.world === w });
-    const st = w.build.stats;
+    // Balls include milestone balls, which are not an upgrade stat.
+    const st = { ...w.build.stats, maxBalls: w.maxBallsAllowed() };
     const keys: StatKey[] = ['damage', 'critChance', 'critMult', 'speed', 'maxBalls', 'pierce', 'burnChance', 'chillChance', 'chainChance', 'explosionChance', 'splitChance', 'bleedChance', 'lifesteal', 'maxHp', 'armor'];
     const overlay = h('div', { class: 'levelup pause-overlay', style: 'justify-content:flex-start' },
       h('div', { class: 'lvtitle' }, t('pause.title')),

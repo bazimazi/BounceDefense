@@ -98,13 +98,13 @@ describe('game content', () => {
 
   it('serves translated names and describers, then returns to English', () => {
     expect(UPGRADE_MAP.heavy_impact.name).toBe('Heavy Impact');
-    expect(DIFFICULTIES[1].rules).toEqual(['Elites appear more often', 'Advanced squads unlocked']);
+    expect(DIFFICULTIES[1].rules).toEqual(['Elites appear more often', 'Advanced squads unlocked', 'Enemies are tougher and hit harder']);
     setLanguage('fa');
     expect(UPGRADE_MAP.heavy_impact.name).toBe('ضربهٔ سنگین');
     expect(UPGRADE_MAP.executioner.desc(2)).toContain('15');
     expect(WORKSHOP_MAP.hull.desc(3)).toContain('30');
     expect(CORE_MAP.cryo.unlockReq?.text).toMatch(PERSIAN);
-    expect(DIFFICULTIES[1].rules).toHaveLength(2);
+    expect(DIFFICULTIES[1].rules).toHaveLength(3);
     expect(DIFFICULTIES[1].rules[0]).toMatch(PERSIAN);
     expect(talentRequirement({}, TALENT_MAP.precision)).toMatch(PERSIAN);
     expect(describeUnlock({ type: 'upgrade', id: 'wildfire' })).toMatch(PERSIAN);

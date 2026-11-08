@@ -71,6 +71,15 @@ export const COMBO_MILESTONES = [10, 25, 50, 100, 150, 200, 300];
 export const POWER_START = 0.55;
 export const POWER_END = 0.95;
 export const RECALL_COOLDOWN = 10;
+/** Seconds for Kinetic Barrier charges to refill after one is spent. */
+export const BARRIER_RECHARGE = 12;
+/**
+ * Levels that add a ball on their own. Multi-ball is a core verb (hold to stream), so every run
+ * grows into it; Extra Ball is one upgrade among many instead of a pick no build can skip.
+ */
+export const BALL_MILESTONES = [4, 11];
+/** Under Lone Ball each milestone sharpens the single ball instead (damage multiplier per milestone). */
+export const LONE_FOCUS = 0.9;
 
 export function momentumTier(m: number): number {
   let t = 0;
@@ -81,7 +90,7 @@ export function momentumTier(m: number): number {
 /** XP needed to advance from `level` to `level + 1`. */
 export function xpForLevel(level: number): number {
   const k = level - 1;
-  return Math.floor(3 + k * 1.6 + Math.pow(k, 1.4) * 0.5);
+  return Math.floor(4 + k * 2 + Math.pow(k, 1.4) * 0.62);
 }
 
 interface Counters {
@@ -153,8 +162,10 @@ export class World {
   rerolls = 0;
   banishes = 0;
   banished = new Set<string>();
-  /** Extra Ball has appeared in a hand this run (it is guaranteed once, early). */
-  extraBallSeen = false;
+  /** Balls granted by `BALL_MILESTONES` so far. */
+  milestoneBalls = 0;
+  /** Milestone announcements held back while an upgrade choice covers the arena. */
+  private milestoneNews: (() => void)[] = [];
   pool: Set<string>;
   flags: Set<string>;
 
@@ -211,7 +222,7 @@ export class World {
     this.noHeal = pacts.some((p) => p.rule === 'noHeal');
     this.loneBall = pacts.some((p) => p.rule === 'loneBall');
     this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1);
-    this.enemyHpMult = this.diff.hpMult * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1);
+    this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
     this.rerolls = noReroll ? 0 : 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0);
     this.banishes = noReroll || !this.flags.has('banish') ? 0 : 2;
@@ -300,7 +311,7 @@ export class World {
   }
 
   maxBallsAllowed(): number {
-    return this.loneBall ? 1 : this.build.stats.maxBalls;
+    return this.loneBall ? 1 : this.build.stats.maxBalls + this.milestoneBalls;
   }
 
   // ------------------------------------------------------------------ ids & fx
@@ -356,7 +367,10 @@ export class World {
     const g = this.diff.growth;
     const timeScale = 1 + (this.time / 100) * 0.3 * g + Math.pow(this.time / 300, 2) * 0.35 * g;
     const blood = this.event?.id === 'blood_moon' ? 1.5 : 1;
-    const hp = def.boss ? def.hp * hpMult : def.hp * this.enemyHpMult * timeScale * blood * hpMult;
+    const endless = this.director?.endlessPressure() ?? 1;
+    // Tier and arena toughness phase in over the opening ninety seconds, so early fodder still pops in a hit or two.
+    const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
+    const hp = def.boss ? def.hp * hpMult : def.hp * tier * timeScale * blood * hpMult * endless;
     return {
       id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed, armor: def.armor,
       kx: 0, ky: 0,
@@ -420,7 +434,7 @@ export class World {
     if (this.state === 'over') return;
     if (this.barrier.charges > 0) {
       this.barrier.charges--;
-      this.barrier.timer = 18;
+      this.barrier.timer = BARRIER_RECHARGE;
       this.emit({ t: 'ring', x, y: DEFENSE_Y, r: 40, color: '#5ad7ff' });
       this.emit({ t: 'sfx', name: 'shield' });
       return;
@@ -459,7 +473,27 @@ export class World {
       this.xpNext = xpForLevel(this.level);
       this.pendingLevels++;
       this.emit({ t: 'sfx', name: 'levelup' });
+      if (BALL_MILESTONES.includes(this.level)) this.grantMilestone();
     }
+  }
+
+  private grantMilestone(): void {
+    if (this.loneBall) {
+      this.onBuildChanged(this.build.addBaseMods([{ stat: 'damage', mult: LONE_FOCUS }]));
+      this.milestoneNews.push(() => {
+        this.banner(t('fx.loneFocus'), '#ffe3a3', t('fx.loneFocusSub', { n: Math.round(LONE_FOCUS * 100) }), true);
+        this.emit({ t: 'ring', x: LAUNCHER_X, y: LAUNCHER_Y, r: 70, color: '#ffe3a3' });
+      });
+      return;
+    }
+    this.milestoneBalls++;
+    this.hand++;
+    this.run.maxBallsOwned = Math.max(this.run.maxBallsOwned, this.maxBallsAllowed());
+    const balls = this.maxBallsAllowed();
+    this.milestoneNews.push(() => {
+      this.banner(t('fx.ballMilestone'), '#8debdc', t('fx.ballMilestoneSub', { n: balls }), true);
+      this.emit({ t: 'ring', x: LAUNCHER_X, y: LAUNCHER_Y, r: 70, color: '#8debdc' });
+    });
   }
 
   addCombo(amount: number, targetId = -1): void {
@@ -590,13 +624,10 @@ export class World {
   openLevelUp(): void {
     // Pacts make some upgrades inert; never offer a card that cannot do anything.
     const inert = [...(this.loneBall ? ['extra_ball'] : []), ...(this.noHeal ? ['vampiric', 'regen'] : [])];
-    // Multi-ball is a core verb (hold to stream): make sure every run sees Extra Ball early once.
-    const featured = !this.extraBallSeen && this.levelUps >= 1 && this.build.level('extra_ball') === 0 ? 'extra_ball' : undefined;
     this.offers = makeOffers({
       build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
-      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps, noHeal: this.noHeal, featured,
+      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps, noHeal: this.noHeal,
     });
-    if (this.offers.some((o) => o.kind === 'upgrade' && o.id === 'extra_ball')) this.extraBallSeen = true;
     this.state = 'levelup';
     this.bus.emit('levelUp', { offers: this.offers });
   }
@@ -712,6 +743,8 @@ export class World {
       this.openLevelUp();
       return;
     }
+    // Level-ups pause the arena behind their cards; announce milestones once it is visible again.
+    if (this.milestoneNews.length) for (const announce of this.milestoneNews.splice(0)) announce();
     this.time += dt;
     this.explosionsThisStep = 0;
     const st = this.build.stats;
@@ -732,7 +765,7 @@ export class World {
       this.barrier.timer -= dt;
       if (this.barrier.timer <= 0) {
         this.barrier.charges = st.barrier;
-        this.barrier.timer = 18;
+        this.barrier.timer = BARRIER_RECHARGE;
       }
     }
 
@@ -979,7 +1012,7 @@ export class World {
         break;
       case 'core':
         this.run.coresCollected += p.value;
-        this.banner('+1 CORE', '#ff7ad9');
+        this.banner(t('fx.core'), '#ff7ad9');
         this.emit({ t: 'sfx', name: 'core' });
         break;
       case 'heal':

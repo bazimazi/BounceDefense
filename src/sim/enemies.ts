@@ -150,7 +150,9 @@ export function updateEnemy(w: World, e: Enemy, dt: number): void {
   // ---- reaching the defense line
   if (e.y + e.r * 0.4 >= DEFENSE_Y) {
     e.alive = false;
-    const dmg = e.def.damage * (e.elite.length ? 1.6 : 1) * (1 + w.time / 600);
+    // Endless pressure also sharpens breaches, at half the rate it toughens enemies.
+    const endless = 1 + (w.director.endlessPressure() - 1) * 0.5;
+    const dmg = e.def.damage * (e.elite.length ? 1.6 : 1) * (1 + w.time / 600) * endless;
     w.emit({ t: 'explosion', x: e.x, y: DEFENSE_Y, r: e.r + 10, color: '#ff3b3b' });
     if (e.def.deathBlast) w.emit({ t: 'explosion', x: e.x, y: DEFENSE_Y, r: 60, color: '#ff3b3b' });
     w.hurt(dmg, e.x);

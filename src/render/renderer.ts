@@ -1090,11 +1090,13 @@ export class Renderer {
       ctx.font = `900 ${Math.round(t.size * pop)}px ${FONT}`;
       const width = Math.min(W - 40, ctx.measureText(t.text).width);
       const x = clamp(t.x, 20 + width / 2, W - 20 - width / 2);
+      // Numbers from arrivals near the top stay in the field instead of drifting over the header.
+      const y = Math.max(t.y, FIELD_TOP + t.size * 0.7);
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      ctx.strokeText(t.text, x, t.y, W - 40);
+      ctx.strokeText(t.text, x, y, W - 40);
       ctx.fillStyle = t.color;
-      ctx.fillText(t.text, x, t.y, W - 40);
+      ctx.fillText(t.text, x, y, W - 40);
     }
     ctx.globalAlpha = 1;
   }
@@ -1169,7 +1171,11 @@ export class Renderer {
       xp.addColorStop(0, '#499cb4'); xp.addColorStop(1, '#b7ffdb');
       ctx.fillStyle = xp;
       ctx.fillRect(0, FIELD_TOP - 8, W * clamp(w.xp / w.xpNext, 0, 1), 5);
-      if (!w.event) {
+      if (!w.event && w.director.endless) {
+        // Endless shows how far its pressure has climbed in place of the arena name.
+        ctx.textAlign = 'left'; ctx.font = `800 ${smallText(10)}px ${FONT}`; ctx.fillStyle = '#c77dff';
+        ctx.fillText(t('canvas.endless', { n: w.director.endlessPressure().toFixed(1) }), 16, 75, 245);
+      } else if (!w.event) {
         ctx.textAlign = 'left'; ctx.font = `600 ${smallText(9)}px ${FONT}`; ctx.fillStyle = '#6e929f';
         ctx.fillText(w.arena.name.toUpperCase(), 16, 75, 245);
       }

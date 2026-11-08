@@ -87,7 +87,7 @@ export const UPGRADES: UpgradeDef[] = [
     id: 'magnetism', name: 'Magnetism', icon: '🧲', category: 'physics', rarity: 'rare', maxLevel: 3,
     tags: ['control'],
     desc: () => `Your ball gently curves toward nearby enemies.`,
-    mods: (l) => [{ stat: 'magnetism', add: 1.4 * l }],
+    mods: (l) => [{ stat: 'magnetism', add: 1.9 * l }],
   },
   {
     id: 'accelerant', name: 'Accelerant', icon: '⏩', category: 'physics', rarity: 'common', maxLevel: 3,
@@ -98,11 +98,10 @@ export const UPGRADES: UpgradeDef[] = [
 
   // ---------------------------------------------------------------- multiplication
   {
-    id: 'extra_ball', name: 'Extra Ball', icon: '➕', category: 'multiply', rarity: 'rare', maxLevel: 4,
+    id: 'extra_ball', name: 'Extra Ball', icon: '➕', category: 'multiply', rarity: 'rare', maxLevel: 2,
     tags: ['swarm'],
     desc: () => `+1 ball. Hold to keep firing as balls return.`,
     mods: (l) => [{ stat: 'maxBalls', add: l }],
-    weight: 1.8,
   },
   {
     id: 'splitter', name: 'Split Shot', icon: '✂️', category: 'multiply', rarity: 'rare', maxLevel: 4, locked: true,
@@ -145,8 +144,8 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'permafrost', name: 'Permafrost', icon: '🧊', category: 'element', rarity: 'rare', maxLevel: 3, locked: true,
     tags: ['ice'],
-    desc: () => `Frozen enemies take +30% more damage.`,
-    mods: (l) => [{ stat: 'frozenVuln', add: 0.3 * l }],
+    desc: () => `Frozen enemies take +40% more damage.`,
+    mods: (l) => [{ stat: 'frozenVuln', add: 0.4 * l }],
   },
   {
     id: 'chain_lightning', name: 'Chain Lightning', icon: '⚡', category: 'element', rarity: 'common', maxLevel: 5,
@@ -218,7 +217,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'barrier', name: 'Kinetic Barrier', icon: '🔰', category: 'defense', rarity: 'rare', maxLevel: 3,
     tags: ['defense', 'tank'],
-    desc: () => `The defense line blocks +1 enemy. Recharges every 18s.`,
+    desc: () => `The defense line blocks +1 enemy. Recharges every 12s.`,
     mods: (l) => [{ stat: 'barrier', add: l }],
   },
 

@@ -216,11 +216,14 @@ All artwork remains procedural, with no downloaded assets or new dependencies.
 - **Tactical recall:** bring all main balls home and choose another angle. Recall resets their
   momentum, leaves temporary balls in play, and has a ten-second cooldown.
 - **Resonance circuit:** three pass-through diamond signals appear five seconds into the run.
-  Link them in any order within 24 seconds; each signal adds momentum, combo and Surge charge.
+  Link them in any order within 24 seconds by passing a launched ball through them (shards, clones
+  and frenzy balls do not count). A lit signal fades after seven seconds unless the circuit
+  completes, so Starfall rewards a deliberate route rather than balls drifting through the sensors.
+  Each signal adds momentum, combo and Surge charge.
   Linking all three calls **Starfall**, striking the five threats closest to the defense line,
   hitting every boss for at least 6% of its health, and clearing enemy projectiles. It also grants
   seven seconds of +25% damage / +10% speed, two base XP and four hull repair (Bloodless blocks the
-  repair). A fresh circuit arrives after twelve seconds; a missed circuit returns after four.
+  repair). A fresh circuit arrives after sixteen seconds; a missed circuit returns after four.
   Routes vary with the run seed, and signals always stay clear of obstacles and of a boss's band
   (including Fortress shields), so every signal is reachable during boss fights.
 - **Pacing:** the first squad arrives on the opening step and the opening threat rate keeps fodder
@@ -228,8 +231,13 @@ All artwork remains procedural, with no downloaded assets or new dependencies.
   65 seconds (75 in the tutorial) and recur every 85–105 seconds, outside boss fights. Elites arrive
   no earlier than 90 seconds and gain their difficulty's full modifier count over five minutes;
   elite traits on ordinary enemies (Inferno, Abyss) phase in over the first 90 seconds.
-- **Multi-ball:** Extra Ball is guaranteed a slot in the second upgrade hand if it has not appeared
-  yet (never under Lone Ball), so every run meets the hold-to-stream verb early.
+- **Multi-ball:** every run gains a ball at levels 4 and 11 (`BALL_MILESTONES`), so the
+  hold-to-stream verb arrives early and no build has to spend picks on it. Under the Lone Ball pact
+  each milestone grants Lone Focus (+90% damage) instead, which keeps that pact hard but winnable.
+  Extra Ball (two levels, three with the Workshop's Spare Ball) stacks on top, up to six balls.
+- **Endless:** after a victory the run can continue. Bosses rotate through all three, and enemies
+  gain `ENDLESS_RAMP` (×1.22) health per minute survived, with breach damage rising at half that
+  rate, so every build eventually falls (a good player lasts roughly 3–15 minutes).
 - **Fair geometry:** Rift Phase re-enters away from corner pockets, a ball may make at most two
   portal jumps between bounces or hits, and a ball that stays trapped in a small area for three
   seconds, or touches no enemy for fifteen, is sent home. These guards make endless loops impossible.
@@ -353,23 +361,31 @@ debug panel). A remote sink can be attached later without touching gameplay code
 boss-reach rate, median death time, levels, and how each upgrade correlates with winning.
 The bot is intentionally mediocre, and humans should outperform it.
 
-`npm run balance` is the reference for difficulty tuning. Its bot plays like a decent casual
-player: it aims straight at the most advanced threat with some noise, reacts every 0.25–0.6 s,
-holds a third of its shots into the power window and fires Surge when ready. `--meta none|mid|max`
-adds a fresh, a mid-progression (about ten runs) or a complete Workshop with talents:
+`npm run balance` is the reference for difficulty tuning. Its bot plays like a good touch-screen
+player: it aims at the most advanced threat with some noise, decides every 0.3–0.85 s, really holds
+a third of its shots into the power window, chases Resonance signals half the time when nothing is
+near the line, and fires Surge when ready. `--meta none|mid|max` adds a fresh, a mid-progression
+(about ten runs) or a complete Workshop with talents:
 
 ```bash
 npm run balance -- --runs 16 --core striker,pyro,tesla,cryo,blood,void --arena proving --diff 0,1,2 --meta none
 npm run balance -- --runs 16 --core striker,tesla --diff 2,3,4 --full --meta max
 ```
 
-Current targets (win rate): a fresh profile wins about 85% on Normal, 70% on Veteran and 45% on
-Nightmare; mid progression about 90% / 70% / 50% on Veteran / Nightmare / Inferno; a complete
-meta about 95% / 85% / 65% on Nightmare / Inferno / Abyss. Extra balls are the strongest scaling in
-a run, so the Workshop's Spare Ball raises Extra Ball's cap (up to six balls) instead of granting a
-ball at launch, which doubled early damage and made every tier trivial. Tuning levers live in
-`sim/director.ts` (threat rate, timeline, elites), `World.makeEnemy` (HP scaling with each tier's
-`growth`), `DifficultyDef.dmgMult`, `xpForLevel`, and `data/`.
+Current results (win rate, all six cores, 12 runs per cell): a fresh profile wins about 98% on
+Normal, 82% on Veteran and 55% on Nightmare; mid progression about 87% / 64% on Nightmare / Inferno;
+a complete meta about 91% / 72% on Inferno / Abyss. The tutorial stays forgiving: a slow, sloppy
+player still wins about 90% of first runs.
+
+Ball count used to decide runs on its own: a player who took Extra Ball whenever it appeared won
+every Nightmare run on a fresh profile, while one who skipped it won almost none. Balls now arrive
+through level milestones, Extra Ball is capped at two levels, and the gap between upgrade strategies
+is a few points. Difficulty leans on enemy toughness rather than spawn volume, because extra enemies
+also mean extra XP; each tier's health multiplier phases in over the first 90 seconds so early fodder
+still pops in a hit or two. Foundry and Rift add their own `hpMult`/`spawnMult`, so each arena is at
+least as demanding as the one that unlocks it despite its stronger tools. Tuning levers live in
+`sim/director.ts` (threat rate, timeline, elites, Endless ramp), `World.makeEnemy` (HP scaling with
+each tier's `growth`), `DifficultyDef`/`ArenaDef` multipliers, `xpForLevel`, and `data/`.
 
 ## Roadmap ideas
 

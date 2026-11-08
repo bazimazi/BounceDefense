@@ -165,6 +165,12 @@ export interface ArenaDef {
   squads: SquadDef[];
   events: string[];
   unlockReq?: { boss: string; text: string };
+  /**
+   * Later arenas hand the player stronger tools (barrels, oil, portals, wells); these keep each
+   * arena at least as demanding as the one that unlocks it. Both default to 1.
+   */
+  hpMult?: number;
+  spawnMult?: number;
 }
 
 export interface BossDef {

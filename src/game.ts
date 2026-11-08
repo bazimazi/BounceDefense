@@ -143,6 +143,8 @@ export class Game {
     this.tut = { launched: false, t: 0, eliteHint: 0, surgeHinted: false, holdHinted: false, idle: 0 };
     const w = this.world;
     this.ui.beginRun(w);
+    // Name the battlefield as the run opens; the tutorial keeps the screen clear for its hints.
+    if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : w.diff.name);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
       if (victory && !w.director.endless) this.ui.victoryChoice(w);

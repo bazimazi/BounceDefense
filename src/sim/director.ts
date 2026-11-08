@@ -5,6 +5,9 @@ import { BOSS_SCRIPTS, BOSS_SPAWN_Y } from './bosses';
 import { FIELD_TOP, W, type Enemy } from './types';
 import type { World } from './world';
 
+/** Endless multiplies enemy health by this much per minute survived past the victory. */
+export const ENDLESS_RAMP = 1.22;
+
 const ELITE_POOL: [string, number][] = [
   ['grunt', 0], ['runner', 30], ['brute', 60], ['shielder', 80], ['splitter', 95], ['bomber', 120], ['healer', 160], ['magnet', 170],
 ];
@@ -28,6 +31,8 @@ export class Director {
   goldenTimer = 45;
   endless = false;
   endlessCycle = 0;
+  /** Run time when Endless began. */
+  endlessStart = 0;
 
   constructor(private w: World) {
     const tut = !!w.cfg.tutorial;
@@ -41,11 +46,16 @@ export class Director {
     return this.bossActive || (!this.endless && this.w.time > this.bossTime - 8 && this.bossesSpawned === 0);
   }
 
+  /** Endless pressure: 1 before Endless, then growing every minute so every build eventually falls. */
+  endlessPressure(): number {
+    return this.endless ? Math.pow(ENDLESS_RAMP, Math.max(0, this.w.time - this.endlessStart) / 60) : 1;
+  }
+
   threatRate(t: number): number {
     const tut = this.w.cfg.tutorial && t < 45 ? 0.8 : 1;
     // A lively opening (fodder to smash right away) that meets the long-run curve by ~4 minutes.
     const base = 0.3 + t * 0.0034 + Math.max(0, t - 240) * 0.003;
-    return base * this.w.diff.spawnMult * tut;
+    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut;
   }
 
   private pickSquad(): SquadDef {
@@ -177,11 +187,9 @@ export class Director {
 
   spawnBoss(): void {
     const w = this.w;
-    let id = w.arena.bossId;
-    if (this.bossesSpawned > 0) {
-      const others = BOSSES.filter((b) => b.id !== w.arena.bossId);
-      id = others[(this.bossesSpawned - 1 + this.endlessCycle) % others.length].id;
-    }
+    // The arena's own boss first, then the others in turn; Endless keeps cycling through all of them.
+    const order = [w.arena.bossId, ...BOSSES.map((b) => b.id).filter((b) => b !== w.arena.bossId)];
+    const id = order[this.bossesSpawned % order.length];
     const def = BOSS_MAP[id];
     const hpMult = w.diff.bossHpMult * (1 + 0.5 * this.bossesSpawned) * (this.endless ? 1 + this.endlessCycle * 0.8 : 1);
     const e = w.spawnEnemy(def.enemy, W / 2, BOSS_SPAWN_Y, { hpMult });
@@ -247,6 +255,7 @@ export class Director {
 
   startEndless(): void {
     this.endless = true;
+    this.endlessStart = this.w.time;
     this.bossTime = this.w.time + 150;
     this.warned = false;
   }

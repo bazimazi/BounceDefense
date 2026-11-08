@@ -7,6 +7,9 @@ import { BOSS_SPAWN_Y } from '../src/sim/bosses';
 import { IDLE_FLIGHT_TIME, MAX_PORTAL_HOPS, phaseExitX, phaseY, STUCK_TIME } from '../src/sim/physics';
 import { STARFALL_BOSS_SHARE } from '../src/sim/resonance';
 import { FLOOR_Y, SIM_DT } from '../src/sim/types';
+import { BALL_MILESTONES, LONE_FOCUS } from '../src/sim/world';
+import { ENDLESS_RAMP } from '../src/sim/director';
+import { ENEMY_MAP } from '../src/data/enemies';
 import { emptyWorld, makeWorld, steps } from './helpers';
 
 function summary(over: Partial<RunSummary> = {}): RunSummary {
@@ -82,21 +85,42 @@ describe('geometry traps', () => {
 });
 
 describe('offers', () => {
-  it('guarantees Extra Ball in the second hand when it has not appeared yet', () => {
-    for (let seed = 1; seed <= 25; seed++) {
-      const w = makeWorld({ seed });
-      w.pendingLevels = 2;
-      w.step(SIM_DT);
-      const first = w.offers.map((o) => (o.kind === 'upgrade' ? o.id : o.kind));
-      const pick = w.offers.find((o) => o.kind !== 'upgrade' || o.id !== 'extra_ball') ?? w.offers[0];
-      w.choose(pick);
-      w.step(SIM_DT);
-      const second = w.offers.map((o) => (o.kind === 'upgrade' ? o.id : o.kind));
-      expect(first.includes('extra_ball') || second.includes('extra_ball')).toBe(true);
+  it('grows every run into multi-ball at the milestone levels, without needing Extra Ball', () => {
+    const w = emptyWorld();
+    let reached = 0;
+    while (w.level < BALL_MILESTONES[BALL_MILESTONES.length - 1]) {
+      w.gainXp(w.xpNext - w.xp);
+      if (BALL_MILESTONES.includes(w.level)) reached++;
+      expect(w.maxBallsAllowed()).toBe(1 + reached);
     }
+    expect(w.hand).toBe(1 + BALL_MILESTONES.length);
+    expect(w.summary().maxBallsOwned).toBe(1 + BALL_MILESTONES.length);
+    // Extra Ball still stacks on top of the milestones.
+    w.build.addUpgrade('extra_ball');
+    expect(w.maxBallsAllowed()).toBe(2 + BALL_MILESTONES.length);
   });
 
-  it('never features Extra Ball under Lone Ball', () => {
+  it('announces a milestone ball after the upgrade choice, not behind it', () => {
+    const w = emptyWorld();
+    while (w.level < BALL_MILESTONES[0]) w.gainXp(w.xpNext - w.xp);
+    const announced = () => w.fx.some((f) => f.t === 'banner' && f.text === '+1 BALL');
+    w.step(SIM_DT);
+    expect(w.state).toBe('levelup');
+    expect(announced()).toBe(false);
+    while (w.state === 'levelup') { w.choose(w.offers[0]); w.step(SIM_DT); }
+    expect(announced()).toBe(true);
+  });
+
+  it('Lone Ball keeps a single ball and sharpens it at each milestone instead', () => {
+    const w = emptyWorld({ pacts: ['lone_ball'] });
+    const damage = w.build.stats.damage;
+    while (w.level <= BALL_MILESTONES[BALL_MILESTONES.length - 1]) w.gainXp(w.xpNext - w.xp);
+    expect(w.maxBallsAllowed()).toBe(1);
+    expect(w.hand).toBe(1);
+    expect(w.build.stats.damage).toBeCloseTo(damage * (1 + LONE_FOCUS) ** BALL_MILESTONES.length);
+  });
+
+  it('never offers Extra Ball under Lone Ball', () => {
     const w = makeWorld({ pacts: ['lone_ball'] });
     for (let i = 0; i < 6; i++) {
       w.pendingLevels = 1;
@@ -114,6 +138,43 @@ describe('offers', () => {
     for (let i = 0; i < 6; i++) spare.build.addUpgrade('extra_ball');
     expect(spare.build.level('extra_ball')).toBe(plain.build.maxLevel('extra_ball') + 1);
     expect(spare.maxBallsAllowed()).toBe(plain.build.maxLevel('extra_ball') + 2);
+  });
+});
+
+describe('endless', () => {
+  it('cycles through every boss instead of repeating one', () => {
+    for (const [arena, diff] of [['proving', 0], ['foundry', 2], ['rift', 0]] as const) {
+      const w = makeWorld({ arena, difficulty: diff });
+      const seen: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        w.director.spawnBoss();
+        seen.push(w.director.bossId);
+        for (const e of w.enemies) e.alive = false;
+        w.enemies = [];
+        w.director.bossActive = false;
+      }
+      expect(seen[0]).toBe(w.arena.bossId);
+      expect(new Set(seen.slice(0, 3)).size).toBe(3);
+      expect(seen.slice(3)).toEqual(seen.slice(0, 3));
+    }
+  });
+
+  it('toughens enemies every minute past the victory', () => {
+    const w = emptyWorld();
+    w.time = 400;
+    const grunt = ENEMY_MAP.grunt;
+    const normal = w.makeEnemy(grunt, 270, 300).hp;
+    w.victory = true;
+    w.continueEndless();
+    expect(w.director.endlessPressure()).toBe(1);
+    w.time += 120;
+    expect(w.director.endlessPressure()).toBeCloseTo(ENDLESS_RAMP ** 2);
+    // Two minutes of ordinary time growth plus two minutes of Endless pressure.
+    w.director.endless = false;
+    const grown = w.makeEnemy(grunt, 270, 300).hp;
+    w.director.endless = true;
+    expect(grown).toBeGreaterThan(normal);
+    expect(w.makeEnemy(grunt, 270, 300).hp).toBeCloseTo(grown * ENDLESS_RAMP ** 2);
   });
 });
 

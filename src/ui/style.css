@@ -191,6 +191,9 @@ button.danger { background: rgba(255, 74, 106, 0.2); border-color: rgba(255, 74,
 .deck-count { text-align: center; font: 11px/1.3 Consolas, monospace; color: #bed6dc; }
 .difficulty-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .difficulty-options button { padding: 6px 3px; font-size: 12px; }
+.difficulty-info { margin-top: 8px; }
+.difficulty-rules { margin: 4px 0 0; padding-inline-start: 18px; }
+.difficulty-rules li { margin: 2px 0; }
 .deck-tall { max-height: 100%; overflow-y: auto; scrollbar-width: none; touch-action: pan-y; }
 .deck-tall::-webkit-scrollbar { display: none; }
 .paged-screen { overflow: hidden; }

@@ -4,12 +4,19 @@ import { DEFENSE_Y, FIELD_TOP, type Ball } from './types';
 import type { World } from './world';
 
 export const CIRCUIT_DURATION = 24;
+/**
+ * A lit signal fades after this many seconds unless the circuit completes, so Starfall rewards a
+ * deliberate route (one bank shot or a quick volley) instead of balls drifting through the sensors.
+ */
+export const SIGNAL_HOLD = 7;
+/** Seconds before a fresh circuit opens after a Starfall. */
+export const CIRCUIT_COOLDOWN = 16;
 export const RESONANCE_COLOR = '#bca7ff';
 /** Starfall strikes every boss for at least this share of its maximum health (before armor). */
 export const STARFALL_BOSS_SHARE = 0.06;
 /** Depth bosses settle at; sensors keep clear of this band. */
 const BOSS_REST_Y = 240;
-export interface ResonanceNode { x: number; y: number; lit: boolean; pulse: number }
+export interface ResonanceNode { x: number; y: number; lit: boolean; pulse: number; /** Seconds until a lit signal fades. */ litT: number }
 
 // Targets are pass-through sensors: they reward a route without changing its physics.
 const PATTERNS = [
@@ -37,6 +44,15 @@ export class ResonanceCircuit {
     this.overdrive = Math.max(0, this.overdrive - dt);
     for (const n of this.nodes) n.pulse = Math.max(0, n.pulse - dt * 2.5);
     if (this.w.endTimer >= 0) return;
+    for (const n of this.nodes) {
+      if (!n.lit) continue;
+      n.litT -= dt;
+      if (n.litT <= 0) {
+        n.lit = false;
+        n.pulse = 0.6;
+        this.w.emit({ t: 'ring', x: n.x, y: n.y, r: 30, color: '#6c6c9c' });
+      }
+    }
     if (this.nodes.length) {
       this.remaining = Math.max(0, this.remaining - dt);
       if (this.remaining <= 0) {
@@ -52,7 +68,7 @@ export class ResonanceCircuit {
   private open(): void {
     // Avoid repeating a route; relocate sensors if a solid obstacle or a boss covers them.
     this.pattern = (this.pattern + this.rng.int(1, PATTERNS.length - 1)) % PATTERNS.length;
-    this.nodes = PATTERNS[this.pattern].map(([x, y]) => ({ x, y: this.clearY(x, y), lit: false, pulse: 0 }));
+    this.nodes = PATTERNS[this.pattern].map(([x, y]) => ({ x, y: this.clearY(x, y), lit: false, pulse: 0, litT: 0 }));
     this.remaining = CIRCUIT_DURATION;
   }
 
@@ -86,10 +102,12 @@ export class ResonanceCircuit {
   }
 
   touch(ball: Ball): void {
-    if (ball.dead || ball.state !== 'flight' || this.w.endTimer >= 0 || this.w.state !== 'playing') return;
+    // Only launched balls link signals; temporary shards, clones and frenzy balls pass through.
+    if (ball.dead || ball.kind !== 'main' || ball.state !== 'flight' || this.w.endTimer >= 0 || this.w.state !== 'playing') return;
     for (const n of this.nodes) {
       if (n.lit || Math.hypot(ball.x - n.x, ball.y - n.y) > 23 + ball.r) continue;
       n.lit = true;
+      n.litT = SIGNAL_HOLD;
       n.pulse = 1;
       ball.momentum += 3 * this.w.build.stats.momentumGain;
       ball.pulse = 1;
@@ -107,7 +125,7 @@ export class ResonanceCircuit {
     this.completed++;
     this.nodes = [];
     this.remaining = 0;
-    this.cooldown = 12;
+    this.cooldown = CIRCUIT_COOLDOWN;
     this.overdrive = 7;
     const damage = w.build.stats.damage * 4 * w.comboMult();
     // Snapshot before dealing damage: deaths can add enemies and end a boss fight.

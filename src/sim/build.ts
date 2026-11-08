@@ -58,6 +58,12 @@ export class Build implements BuildView {
     return (UPGRADE_MAP[id]?.maxLevel ?? 0) + (this.capBonus[id] ?? 0);
   }
 
+  /** Adds permanent modifiers earned during the run. Returns newly-activated synergy ids. */
+  addBaseMods(mods: Modifier[]): string[] {
+    this.baseMods.push(...mods);
+    return this.recompute();
+  }
+
   /** Adds one level of an upgrade. Returns newly-activated synergy ids. */
   addUpgrade(id: string): string[] {
     const def = UPGRADE_MAP[id];

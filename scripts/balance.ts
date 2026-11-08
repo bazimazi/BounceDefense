@@ -1,16 +1,17 @@
 /**
  * Balance matrix with a human-like autoplayer. Unlike `npm run sim` (which samples angles with the
- * aim tracer), this bot aims straight at the most advanced threat with some noise, reacts every
- * 0.25-0.6 s, holds a third of its shots into the power window and fires Surge when ready.
- * It approximates a decent casual player and is the reference for difficulty tuning.
+ * aim tracer), this bot aims straight at the most advanced threat with some noise, decides every
+ * 0.3-0.85 s, really holds a third of its shots into the power window, chases Resonance signals
+ * half the time when nothing is close to the line, and fires Surge when ready.
+ * It approximates a good touch-screen player and is the reference for difficulty tuning.
  *
  *   npm run balance -- --runs 16 --core striker,pyro --arena proving --diff 0,1,2 [--meta none|mid|max]
  *                      [--workshop '{"hull":3}'] [--talents '{"hull":3}'] [--pacts haste] [--full] [--tutorial]
  *
  * Meta presets: `mid` is roughly ten runs in (half the Workshop, 6 talent points); `max` is the
- * complete Workshop with 15 talent points. Reference results (16 runs, proving):
- *   none: Normal ~85%, Veteran ~70%, Nightmare ~45%      mid: Veteran ~90%, Nightmare ~70%, Inferno ~50%
- *   max:  Nightmare ~95%, Inferno ~85%, Abyss ~65%
+ * complete Workshop with 15 talent points. Reference results (all cores, 12 runs per cell):
+ *   none: Normal ~98%, Veteran ~82%, Nightmare ~55%      mid: Nightmare ~87%, Inferno ~64%
+ *   max:  Inferno ~91%, Abyss ~72%
  */
 import { Rng } from '../src/core/rng';
 import { botChoose, defaultConfig, FULL_POOL } from '../src/sim/bot';
@@ -29,11 +30,18 @@ const META: Record<string, { workshop: Record<string, number>; talents: Record<s
   },
 };
 
-function humanStep(w: World, rng: Rng, react: { t: number }, noise: number): void {
+interface Hand { t: number; hold: number }
+
+function humanStep(w: World, rng: Rng, react: Hand, noise: number): void {
+  // A held drag releases on its own clock, like a finger waiting for the gold dial.
+  if (react.hold >= 0) {
+    react.hold -= SIM_DT;
+    if (react.hold < 0) w.release();
+  }
   react.t -= SIM_DT;
-  if (react.t > 0) return;
-  react.t = rng.range(0.25, 0.6);
-  if (w.canSurge() && rng.chance(0.5)) w.activateSurge();
+  if (react.t > 0 || react.hold >= 0) return;
+  react.t = rng.range(0.3, 0.85);
+  if (w.canSurge()) w.activateSurge();
   if (w.hand <= 0 || w.launchQueue > 0 || w.aim.active) return;
   let best: { x: number; y: number } | null = null;
   let bs = -Infinity;
@@ -42,18 +50,20 @@ function humanStep(w: World, rng: Rng, react: { t: number }, noise: number): voi
     const s = (e.boss ? 400 : 0) + e.y + (e.elite.length ? 80 : 0);
     if (s > bs) { bs = s; best = e; }
   }
-  const tx = best ? best.x + rng.range(-noise, noise) : rng.range(80, 460);
-  const ty = best ? best.y : 300;
+  const signal = w.resonance.nodes.find((n) => !n.lit);
+  let tx: number, ty: number;
+  if (signal && (!best || best.y < 560) && rng.chance(0.5)) { tx = signal.x; ty = signal.y; }
+  else if (best) { tx = best.x + rng.range(-noise, noise); ty = best.y; }
+  else { tx = rng.range(100, 440); ty = 300; }
   w.beginAim();
   w.setAim(tx - LAUNCHER_X, Math.min(ty, LAUNCHER_Y - 10) - LAUNCHER_Y);
-  if (rng.chance(0.33)) w.aim.holdTime = 0.7;
-  w.release();
+  react.hold = rng.chance(0.33) ? 0.7 : 0.06;
 }
 
 function play(cfg: RunConfig, maxTime: number, noise: number) {
   const w = new World(cfg);
   const rng = new Rng(cfg.seed ^ 0x5151);
-  const react = { t: 0 };
+  const react: Hand = { t: 0, hold: -1 };
   let minHp = 1;
   while (w.time < maxTime && w.state !== 'over') {
     if (w.state === 'levelup') {
@@ -80,7 +90,7 @@ const workshop = get('workshop', '') ? JSON.parse(get('workshop', '{}')) : meta.
 const talents = get('talents', '') ? JSON.parse(get('talents', '{}')) : meta.talents;
 const full = args.includes('--full');
 const tutorial = args.includes('--tutorial');
-const noise = Number(get('noise', '30'));
+const noise = Number(get('noise', '25'));
 const maxTime = Number(get('max', '1200'));
 
 console.log(`Human-like bot, ${runs} runs per cell${full ? ', full upgrade pool' : ''}\n`);
