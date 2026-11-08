@@ -34,7 +34,7 @@ export function defaultProfile(): Profile {
     },
     cleared: {},
     bossKills: {},
-    settings: { language: DEFAULT_LANGUAGE, sfx: 0.8, music: 0.5, shake: true, damageNumbers: true, aimMode: 'direct', debug: false },
+    settings: { language: DEFAULT_LANGUAGE, sfx: 0.8, music: 0.5, shake: true, damageNumbers: true, aimMode: 'direct', debug: false, haptics: true, leftHanded: false, reduceFlashes: false },
     tutorialDone: false,
     runsSinceUnlock: 0,
     daily: { day: '', claimed: false, best: 0, runs: 0 },

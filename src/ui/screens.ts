@@ -2,40 +2,75 @@ import { formatNum, formatTime } from '../core/math';
 import { dailySeed } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS } from '../data/arenas';
 import { CORES, CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
-import { BOSSES, BOSS_MAP, CODEX_ENEMIES } from '../data/enemies';
+import { BOSSES, CODEX_ENEMIES } from '../data/enemies';
 import { ACHIEVEMENTS, CHALLENGES, RESEARCH, WORKSHOP, masteryLevel, masteryRewards } from '../data/meta';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
+import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
   buyPart, buyWorkshop, canResearch, canUnlockCore, coreRequirementMet, dailyRecord, describeUnlock, doResearch, isArenaUnlocked, maxDifficulty,
   nextGoals, partsForSlot, rewardMultiplier, unlockCore, workshopCost, type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
+import { talentProgress } from '../meta/talents';
 import type { DiscoveryCat, RunSummary } from '../meta/types';
+import { createArenaSurface } from '../render/arena';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_FORMATS, statLabel, type StatKey } from '../sim/stats';
 import { RECALL_COOLDOWN, type World } from '../sim/world';
 import type { Game } from '../game';
 import { LANGUAGES, t, type UiKey } from '../i18n';
-import { bar, h } from './dom';
-import { talentScreen } from './talents';
-import { TALENTS, talentSpent } from '../data/talents';
-import { talentProgress } from '../meta/talents';
-import { createDeck, deckSections, type Deck, type DeckState } from './deck';
+import { amount, badge, iconButton, meter, orb, pips, richText, sectionTitle, segmented, statTile, wallet } from './components';
+import { h } from './dom';
+import { icon, type IconName } from './icons';
 import { Navigation } from './navigation';
 import { cancelWithin, enter, feedback, retire, revealItems, revealView, tabFeedback, type MotionDirection } from './motion';
-import { homeIcon } from './home-icons';
+import { newTalentState, talentPanel } from './talents';
 
 const rarityLabel = (r: Rarity) => t(`rarity.${r}` as UiKey);
 const tierLabel = (tier: 'known' | 'hidden' | 'legendary') => t(`tier.${tier}` as UiKey);
 const tagLabel = (tag: Tag) => t(`tag.${tag}` as UiKey);
 const discoveryLabel = (cat: DiscoveryCat) => t(`discovery.${cat}` as UiKey);
 const elementName = (el: string) => t(`elementName.${el}` as UiKey);
+
 /** "Striker Explosive": the distinguishing word of the core and impact, derived live so it follows the language. */
 function presetLabel(preset: { core: string; impact: string }): string {
   const short = (name: string) => { const words = name.split(' '); return (t('loadout.presetWord') === 'last' ? words.at(-1) : words[0]) ?? ''; };
   return t('loadout.presetName', { core: short(CORE_MAP[preset.core]?.name ?? preset.core), impact: short(PART_MAP[preset.impact]?.name ?? '') }).trim();
+}
+
+export type HubTab = 'armory' | 'forge' | 'battle' | 'codex' | 'goals';
+const HUB_TABS: HubTab[] = ['armory', 'forge', 'battle', 'codex', 'goals'];
+type ForgeSegment = 'workshop' | 'research' | 'talents';
+type GoalSegment = 'next' | 'challenges' | 'badges' | 'mastery';
+const DRAFT_ARM_MS = 420;
+
+/** Arena floors are baked once and cropped into the Battle carousel: each card shows the real place. */
+const arenaSurfaces = new Map<string, HTMLCanvasElement>();
+function arenaThumb(id: string): HTMLCanvasElement {
+  const canvas = h('canvas', { class: 'arena-thumb', width: 270, height: 150, 'aria-hidden': 'true' });
+  try {
+    let surface = arenaSurfaces.get(id);
+    if (!surface) { surface = createArenaSurface(ARENA_MAP[id]); arenaSurfaces.set(id, surface); }
+    canvas.getContext('2d')?.drawImage(surface, 0, 150, 540, 300, 0, 0, 270, 150);
+  } catch { /* A missing 2D context only loses the preview image. */ }
+  return canvas;
+}
+
+interface CodexEntry { id: string; known: boolean; name: string; glyph: Node | string; color?: string; lines: (string | Node)[]; hint: string }
+
+/** Tab-like controls whose selection moves a pill, and the containers whose scroll survives a re-render. */
+const SEGMENTS = '.segmented, .talent-tabs, .codex-tabs';
+const SELECTED = '[aria-selected="true"], [aria-checked="true"], .on';
+const SCROLLERS = '.scroll, .chip-scroller, .difficulty-options';
+const segmentKind = (tabs: Element) => ['segmented', 'talent-tabs', 'codex-tabs'].find(c => tabs.classList.contains(c)) ?? '';
+interface ViewSnapshot {
+  scrolls: [number, number][];
+  segments: Record<string, { index: number; rect?: DOMRect }>;
+  tabbar?: DOMRect;
+  body: string | null;
+  wallet: string | null;
 }
 
 export class UI {
@@ -46,15 +81,18 @@ export class UI {
   private recallBtn: HTMLButtonElement | null = null;
   private compactTelemetry: HTMLElement | null = null;
   private hintEl: HTMLElement | null = null;
+  private handEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
-  private screenDeck: Deck | null = null;
-  private overlayDeck: Deck | null = null;
-  private deckStates = new Map<string, DeckState>();
   private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>() };
+  private forgeSegment: ForgeSegment = 'workshop';
+  private goalSegment: GoalSegment = 'next';
   private codexTab = 'balls';
+  private armoryIndex = -1;
+  private talentState = newTalentState();
   private banishMode = false;
   private interactionKey: string | null = null;
+  private rerollLockedUntil = 0;
 
   constructor(root: HTMLElement, private game: Game) {
     this.root = root;
@@ -92,193 +130,414 @@ export class UI {
     return this.navigation.direction === 'back' ? -1 : 1;
   }
 
+  // ------------------------------------------------------------------ view plumbing
+  /**
+   * Everything a re-render must carry over, read while the old view is still attached and before
+   * its animations are cancelled: a detached element measures as 0,0, and a cancelled indicator
+   * jumps to its end. Indicators are measured where they are drawn, so a rapid second tap retargets
+   * the pill from mid-flight instead of restarting it.
+   */
+  private snapshot(el: HTMLElement | null): ViewSnapshot {
+    const selected = (tabs: Element) => [...tabs.children].findIndex(c => c.matches(SELECTED));
+    const at = (tabs: Element | null | undefined) => {
+      if (!tabs) return undefined;
+      const indicator = tabs.querySelector<HTMLElement>(':scope > .ui-tab-indicator');
+      return (indicator && indicator.offsetWidth ? indicator : tabs.children[selected(tabs)])?.getBoundingClientRect();
+    };
+    return {
+      scrolls: el ? [...el.querySelectorAll<HTMLElement>(SCROLLERS)].map(s => [s.scrollTop, s.scrollLeft]) : [],
+      segments: Object.fromEntries(el ? [...el.querySelectorAll<HTMLElement>(SEGMENTS)].map(tabs => [segmentKind(tabs), { index: selected(tabs), rect: at(tabs) }]) : []),
+      tabbar: at(el?.querySelector('.tabbar')),
+      body: el?.querySelector<HTMLElement>('[data-segment-body]')?.dataset.segmentBody ?? null,
+      wallet: el?.querySelector('.wallet')?.textContent ?? null,
+    };
+  }
+
+  private restoreScroll(el: HTMLElement, snap: ViewSnapshot, keepBody: boolean): void {
+    el.querySelectorAll<HTMLElement>(SCROLLERS).forEach((s, i) => {
+      const [top, left] = snap.scrolls[i] ?? [0, 0];
+      // A new segment starts at its top; rails and the rest of the page keep their place.
+      if (top && (keepBody || !s.hasAttribute('data-segment-body'))) s.scrollTop = top;
+      if (left) s.scrollLeft = left;
+    });
+    // A chosen chip at the edge of a sideways rail is brought fully into view.
+    for (const rail of el.querySelectorAll<HTMLElement>('.chip-scroller, .difficulty-options')) {
+      const chip = rail.querySelector<HTMLElement>(SELECTED);
+      if (!chip) continue;
+      const r = rail.getBoundingClientRect(), c = chip.getBoundingClientRect();
+      if (c.left < r.left) rail.scrollLeft -= r.left - c.left + 16;
+      else if (c.right > r.right) rail.scrollLeft += c.right - r.right + 16;
+    }
+  }
+
+  /** A local change re-renders in place: keep the scroll position and acknowledge the touched control. */
+  private settle(snap: ViewSnapshot, el: HTMLElement, interactionKey: string | null): void {
+    const body = el.querySelector<HTMLElement>('[data-segment-body]');
+    const segmentChanged = !!body && snap.body !== null && body.dataset.segmentBody !== snap.body;
+    this.restoreScroll(el, snap, !segmentChanged);
+    for (const tabs of el.querySelectorAll<HTMLElement>(SEGMENTS)) {
+      const before = snap.segments[segmentKind(tabs)];
+      tabFeedback(tabs, before?.rect);
+      const index = [...tabs.children].findIndex(c => c.matches(SELECTED));
+      if (!before || before.index < 0 || index < 0 || index === before.index) continue;
+      // Each control slides the content it switches: a page segment its body, the talent tabs their tree.
+      const target = tabs.dataset.body ? el.querySelector<HTMLElement>(tabs.dataset.body) : segmentChanged ? body : null;
+      if (target) enter(target, 'content', index > before.index ? 1 : -1);
+    }
+    // The sliding pill is a segment's acknowledgement; a second pulse ring would compete with it.
+    const target = interactionKey ? el.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(interactionKey)}"]`) : null;
+    if (target && !target.closest(SEGMENTS)) requestAnimationFrame(() => { if (target.isConnected) feedback(target); });
+    if (snap.wallet !== null && snap.wallet !== el.querySelector('.wallet')?.textContent) feedback(el.querySelector('.wallet'));
+  }
+
   private show(el: HTMLElement): void {
     this.closeOverlay();
     if (this.screenEl === el) return;
-    const same = this.screenEl?.dataset.view === this.navigation.key;
-    const oldTab = this.screenEl?.querySelector('.tabs .on');
-    const oldIndex = oldTab ? [...oldTab.parentElement!.children].indexOf(oldTab) : -1;
-    const oldTabRect = oldTab?.getBoundingClientRect();
-    const tab = el.querySelector('.tabs .on');
-    const index = tab ? [...tab.parentElement!.children].indexOf(tab) : -1;
-    const tabChanged = index !== oldIndex;
+    const old = this.screenEl;
+    const same = !!old && old.dataset.view === this.navigation.key;
     const interactionKey = this.interactionKey; this.interactionKey = null;
-    const walletChanged = this.screenEl?.querySelector('.wallet')?.textContent !== el.querySelector('.wallet')?.textContent;
-    if (!same) retire(this.screenEl, 'page', this.motionDirection);
-    this.screenDeck?.dispose();
-    cancelWithin(this.screenEl);
-    this.screenEl?.remove();
+    const snap = this.snapshot(same ? old : null);
+    if (!same) retire(old, 'page', this.motionDirection);
+    cancelWithin(old);
+    old?.remove();
     this.screenEl = el;
     el.dataset.view = this.navigation.key;
     this.root.append(el);
-    this.screenDeck = this.prepareDeck(el, !same || tabChanged);
-    if (same) {
-      const content = el.querySelector<HTMLElement>('.deck-content, .talent-forest');
-      if (content && tabChanged) enter(content, 'content', index > oldIndex ? 1 : -1);
-      const tabs = el.querySelector<HTMLElement>('.tabs');
-      if (tabs) tabFeedback(tabs, oldTabRect);
-      // The deck mounts its visible cards on the next frame. Pulse the actual changed choice.
-      requestAnimationFrame(() => {
-        if (this.screenEl !== el) return;
-        const target = interactionKey ? el.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(interactionKey)}"]`) : null;
-        feedback(target ?? el.querySelector('.selected, .aim-option[aria-pressed="true"]'));
-      });
-      feedback(el.querySelector('.setup-footer'));
-      if (walletChanged) feedback(el.querySelector('.wallet'));
-    } else {
+    if (same) this.settle(snap, el, interactionKey);
+    else {
       enter(el, 'page', this.motionDirection);
       revealView(el);
     }
   }
 
-  private showOverlay(el: HTMLElement, key: string): void {
-    const same = this.overlay?.dataset.view === key;
-    if (!same) retire(this.overlay, 'panel', 0);
-    this.overlayDeck?.dispose();
-    cancelWithin(this.overlay);
-    this.overlay?.remove();
-    this.overlay = el; el.dataset.view = key;
-    this.root.append(el);
-    this.overlayDeck = this.prepareDeck(el);
-    const content = same ? el.querySelector<HTMLElement>('.deck-content') : el;
-    if (content) enter(content, same ? 'content' : 'panel', 0);
-    if (same) feedback(el.querySelector('.offer-actions'));
-    else revealView(el);
+  /**
+   * The hub chrome (wallet, tab bar) stays put; only the page body changes. The outgoing page is
+   * removed at once rather than cross-faded: two half-transparent pages over each other read as a
+   * glitch. The incoming page slides in from the side of the tab that was tapped.
+   */
+  private renderHub(tab: HubTab, page: HTMLElement): void {
+    const old = this.screenEl;
+    const oldTab = old?.classList.contains('hub') && old.isConnected ? old.dataset.tab as HubTab : null;
+    const shell = this.hubShell(tab, page);
+    if (!oldTab || !old) { this.show(shell); return; }
+    this.closeOverlay();
+    const interactionKey = this.interactionKey; this.interactionKey = null;
+    const same = oldTab === tab;
+    const snap = this.snapshot(old);
+    const direction: MotionDirection = HUB_TABS.indexOf(tab) > HUB_TABS.indexOf(oldTab) ? 1 : -1;
+    cancelWithin(old);
+    old.remove();
+    this.screenEl = shell;
+    shell.dataset.view = this.navigation.key;
+    this.root.append(shell);
+    const tabbar = shell.querySelector<HTMLElement>('.tabbar');
+    if (tabbar) tabFeedback(tabbar, snap.tabbar);
+    if (same) this.settle(snap, shell, interactionKey);
+    else {
+      enter(shell.querySelector<HTMLElement>('.hub-page')!, 'content', direction);
+      for (const tabs of shell.querySelectorAll<HTMLElement>(SEGMENTS)) tabFeedback(tabs);
+    }
   }
 
-  private prepareDeck(el: HTMLElement, animateInitial = true): Deck | null {
-    if (el.matches('.home, .talent-screen')) return null;
-    const source = el.querySelector<HTMLElement>(':scope > .scroll, :scope > .offer-list');
-    if (!source) return null;
-    const title = el.querySelector('h2, .lvtitle, .result-title')?.textContent ?? t('common.menu');
-    const key = `${title}:${el.querySelector('.tabs .on')?.textContent ?? ''}`;
-    const state = this.deckStates.get(key) ?? { section: 0, page: 0 };
-    this.deckStates.set(key, state);
-    const deck = createDeck(deckSections(source), state, source.className.replace(/\bscroll\b|\bcol\b/g, '').trim(), animateInitial);
-    source.replaceWith(deck.element);
-    el.classList.add('paged-screen');
-    return deck;
+  private hubShell(tab: HubTab, page: HTMLElement): HTMLElement {
+    const p = this.p;
+    const first = !p.tutorialDone;
+    const title = tab === 'battle' ? null : t(`tab.${tab}` as UiKey);
+    const badges = this.badges();
+    return h('div', { class: `screen hub hub-${tab} ${first ? 'hub-first' : ''}`, 'data-tab': tab },
+      h('header', { class: 'hub-top' },
+        title ? h('h2', { class: 'hub-title' }, title) : h('div', { class: 'hub-brand', lang: 'en', dir: 'ltr' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }), 'BOUNCE', h('b', {}, 'DEFENSE')),
+        first ? null : wallet(p),
+        iconButton('gear', t('common.settings'), () => { this.click(); this.settings(); }, 'settings-btn')),
+      h('main', { class: 'hub-page' }, page),
+      first ? null : h('nav', { class: 'tabbar', role: 'tablist', 'aria-label': t('tab.label') }, HUB_TABS.map(id =>
+        h('button', {
+          role: 'tab', class: `tab tab-${id}`, 'aria-selected': String(id === tab), 'data-tab': id,
+          onclick: () => { if (id !== tab) { this.click(); this.openTab(id); } },
+        },
+        h('span', { class: 'tab-icon' }, icon(id as IconName), badge(badges[id])),
+        h('span', { class: 'tab-label' }, t(`tab.${id}` as UiKey))))),
+    );
+  }
+
+  /** Red dots mean "something here can be done now", never just "something is new". */
+  private badges(): Record<HubTab, number | boolean> {
+    const p = this.p;
+    const coreReady = CORES.some(c => canUnlockCore(p, c.id));
+    const partReady = (['shell', 'impact', 'momentum'] as PartSlot[]).some(s => partsForSlot(p, s).some(x => !x.unlocked && x.def.unlock?.coins && p.coins >= x.def.unlock.coins));
+    const talentPoints = talentProgress(p).total - talentSpent(p.talents);
+    return {
+      armory: coreReady || partReady,
+      forge: this.workshopReady() || RESEARCH.some(r => canResearch(p, r.id)) || talentPoints > 0,
+      battle: false,
+      codex: false,
+      goals: false,
+    };
+  }
+
+  private workshopReady(): boolean {
+    return WORKSHOP.some(wd => { const c = workshopCost(this.p, wd.id); return c !== null && this.p.coins >= c; });
+  }
+
+  private openTab(tab: HubTab): void {
+    if (tab === 'battle') {
+      if (this.navigation.key !== 'home') this.navigation.back();
+      else this.home();
+      return;
+    }
+    const restore = () => this.renderTab(tab);
+    if ((HUB_TABS as string[]).includes(this.navigation.key) && this.navigation.key !== 'home') this.navigation.replace(tab, restore);
+    else this.navigation.view(tab, restore);
+    this.renderTab(tab);
+  }
+
+  private renderTab(tab: HubTab): void {
+    if (tab === 'battle') { this.home(); return; }
+    const page = tab === 'armory' ? this.armoryPage() : tab === 'forge' ? this.forgePage() : tab === 'codex' ? this.codexPage() : this.goalsPage();
+    this.renderHub(tab, page);
+  }
+
+  private rerender(): void {
+    const key = this.navigation.key;
+    if (key === 'home') this.home();
+    else if ((HUB_TABS as string[]).includes(key)) this.renderTab(key as HubTab);
   }
 
   clearScreen(): void {
     retire(this.screenEl, 'page', this.motionDirection);
     cancelWithin(this.screenEl);
-    this.screenDeck?.dispose(); this.screenDeck = null;
     this.screenEl?.remove();
     this.screenEl = null;
   }
 
-  toast(text: string): void {
-    const el = h('div', { class: 'toast' }, text);
+  toast(text: string, glyph: IconName = 'check'): void {
+    const el = h('div', { class: 'toast', role: 'status' }, icon(glyph), h('span', {}, text));
     this.root.append(el);
     enter(el, 'notice', 0);
-    setTimeout(() => { retire(el, 'notice', 0); cancelWithin(el); el.remove(); }, 1800);
-  }
-
-  private currency(): HTMLElement {
-    const p = this.p;
-    return h('div', { class: 'chips wallet', 'aria-label': t('common.currencies') },
-      h('span', { class: 'chip coins', title: `${p.coins.toLocaleString()} ${t('common.coins')}` }, `🪙 ${formatNum(p.coins)}`),
-      h('span', { class: 'chip cores', title: `${p.cores.toLocaleString()} ${t('common.cores')}` }, `💠 ${formatNum(p.cores)}`),
-      h('span', { class: 'chip research', title: `${p.research.toLocaleString()} ${t('common.research')}` }, `🔬 ${formatNum(p.research)}`),
-    );
+    setTimeout(() => { retire(el, 'notice', 0); cancelWithin(el); el.remove(); }, 1900);
   }
 
   back(): boolean {
     return this.navigation.back();
   }
 
-  private topbar(title: string): HTMLElement {
+  private topbar(title: string, showWallet = true): HTMLElement {
     return h('div', { class: 'topbar menu-topbar' },
-      h('button', { class: 'ghost', 'aria-label': t('common.back'), onclick: () => { this.click(); this.back(); } }, t('common.backGlyph')),
+      iconButton('back', t('common.back'), () => { this.click(); this.back(); }, 'back-btn'),
       h('h2', {}, title),
-      this.currency(),
+      showWallet ? wallet(this.p) : null,
     );
   }
 
-  private goalList(goals: Goal[]): HTMLElement {
-    return h('div', { class: 'col' }, goals.map((g) => h('div', { class: 'card goal' },
-      h('div', { style: 'flex:1' },
-        h('div', { class: 'gtext' }, g.text),
-        h('div', { class: 'greward' }, `${t('common.rewardArrow')} ${g.reward}`),
-        g.max > 1 ? bar(g.cur / g.max, 'gold') : null,
-      ),
-      g.max > 1 ? h('div', { class: 'small muted' }, `${Math.floor(g.cur)}/${g.max}`) : null,
-    )));
+  private goalCard(g: Goal, onclick?: () => void): HTMLElement {
+    return h(onclick ? 'button' : 'div', { class: 'goal-card', onclick },
+      h('span', { class: 'goal-icon' }, icon('flag')),
+      h('span', { class: 'goal-copy' },
+        h('span', { class: 'goal-text' }, g.text),
+        g.max > 1 ? meter(g.cur / g.max, 'gold thin') : null,
+        h('span', { class: 'goal-reward' }, icon('star'), g.reward)),
+      g.max > 1 ? h('span', { class: 'goal-count' }, `${Math.floor(Math.min(g.cur, g.max))}/${g.max}`) : null);
   }
 
-  // ------------------------------------------------------------------ home
+  // ------------------------------------------------------------------ sheets & dialogs
+  /** Bottom sheets keep the page underneath in view and close with Back, the scrim or ×. */
+  private openSheet(key: string, title: string, build: () => (Node | null)[], cls = ''): void {
+    const render = () => {
+      const close = () => { this.click(); this.navigation.dismiss(); };
+      const el = h('div', { class: `levelup sheet-layer ${cls}`.trim(), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+        h('div', { class: 'sheet-scrim', onclick: close }),
+        h('div', { class: 'sheet' },
+          h('div', { class: 'sheet-grip', 'aria-hidden': 'true' }),
+          h('div', { class: 'sheet-head' }, h('h3', {}, title), iconButton('close', t('common.close'), close, 'sheet-close')),
+          h('div', { class: 'sheet-body scroll' }, build())));
+      this.showOverlay(el, `sheet:${key}`);
+    };
+    this.navigation.view(`sheet:${key}`, render);
+    render();
+  }
+
+  private confirmAction(title: string, message: string, label: string, proceed: () => void, cancel: () => void, cancelLabel = t('pause.keepPlaying'), relevant = () => true): void {
+    const world = this.game.world;
+    this.navigation.view(`confirm:${title}`, () => this.confirmAction(title, message, label, proceed, cancel, cancelLabel, relevant), {
+      cancel, valid: () => (!world || this.game.world === world) && relevant(),
+    });
+    const back = h('button', { onclick: () => this.navigation.dismiss() }, cancelLabel);
+    const confirm = h('button', { class: 'danger', onclick: () => { this.closeOverlay(); proceed(); } }, label);
+    const overlay = h('div', { class: 'levelup confirm-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'modal' },
+        h('div', { class: 'modal-icon' }, icon('info')),
+        h('div', { class: 'lvtitle' }, title), h('p', {}, message),
+        h('div', { class: 'row modal-actions' }, back, confirm)));
+    overlay.addEventListener('keydown', e => {
+      if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === back ? confirm : back).focus(); }
+    });
+    this.showOverlay(overlay, `confirm:${title}`); back.focus({ preventScroll: true });
+  }
+
+  private showOverlay(el: HTMLElement, key: string): void {
+    const same = this.overlay?.dataset.view === key;
+    if (!same) retire(this.overlay, 'panel', 0);
+    cancelWithin(this.overlay);
+    this.overlay?.remove();
+    this.overlay = el; el.dataset.view = key;
+    this.root.append(el);
+    if (same) return;
+    const panel = el.querySelector<HTMLElement>('.sheet, .modal') ?? el;
+    enter(panel, panel === el ? 'panel' : 'sheet', 0);
+    revealView(el);
+  }
+
+  private closeOverlay(): void {
+    retire(this.overlay, 'panel', 0);
+    cancelWithin(this.overlay);
+    this.overlay?.remove();
+    this.overlay = null;
+  }
+
+  // ------------------------------------------------------------------ battle (home)
   home(): void {
     this.navigation.reset(() => this.home());
     this.game.toMenu();
+    this.renderHub('battle', this.battlePage());
+  }
+
+  /** Kept for callers of the former Run Setup page: the Battle tab now holds every launch choice. */
+  runSetup(): void {
+    this.home();
+  }
+
+  private battlePage(): HTMLElement {
     const p = this.p;
-    const coreDef = CORE_MAP[p.loadout.core];
-    const nav = (icon: Parameters<typeof homeIcon>[0], label: string, description: string, color: string, fn: () => void, badge = false) =>
-      h('button', { class: 'home-nav-tile', style: `--tile-color:${color}`, onclick: () => { this.click(); fn(); } },
-        h('span', { class: 'home-nav-icon' }, homeIcon(icon)),
-        h('span', { class: 'home-nav-copy' }, h('strong', {}, label), h('small', {}, description)),
-        badge ? h('span', { class: 'home-nav-badge', title: t('home.upgradeAvailable'), 'aria-label': t('home.upgradeAvailable') }) : null,
-      );
-    const canAffordResearch = RESEARCH.some((r) => canResearch(p, r.id));
-    const canAffordCore = CORES.some((c) => canUnlockCore(p, c.id));
-    const mastery = masteryLevel(p.mastery[p.loadout.core] ?? 0);
-    const available = talentProgress(p).total - talentSpent(p.talents);
+    const s = this.setup;
+    if (!ARENA_MAP[s.arena]) s.arena = 'proving';
+    s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
+    const pactsOn = this.game.flags().includes('pacts');
+    if (!pactsOn) s.pacts.clear();
+    const stage = h('div', { class: 'battle-stage' },
+      h('h1', { class: 'title logo', lang: 'en', dir: 'ltr' }, t('home.title1'), h('span', {}, t('home.title2'))),
+      h('p', { class: 'tagline' }, t('home.subtitle')));
+    if (!p.tutorialDone) {
+      return h('div', { class: 'battle first-run' }, stage,
+        h('div', { class: 'battle-panel' },
+          h('ol', { class: 'first-steps reveal' },
+            [['aim', 'home.guide1'], ['play', 'home.guide2'], ['star', 'home.guide3']].map(([glyph, key], i) =>
+              h('li', {}, h('span', { class: 'step-icon' }, icon(glyph as IconName)), h('b', {}, String(i + 1)), h('span', {}, t(key as UiKey))))),
+          h('button', {
+            class: 'primary big launch-button play-btn', onclick: () => { this.click(); this.game.startRun({ arena: 'proving', difficulty: 0, pacts: [] }); },
+          }, icon('play'), h('span', { class: 'launch-copy' }, h('strong', {}, t('home.start')), h('small', {}, t('home.firstContact'))))));
+    }
+
+    const unlocked = isArenaUnlocked(p, s.arena);
+    const arena = ARENA_MAP[s.arena];
+    const index = ARENAS.indexOf(arena);
+    const moveArena = (d: number) => { s.arena = ARENAS[(index + d + ARENAS.length) % ARENAS.length].id; this.click(); this.home(); };
+    const cleared = p.cleared[arena.id] ?? -1;
+    const boss = BOSSES.find(b => b.id === arena.bossId);
+    const card = h('div', { class: `arena-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}` },
+      arenaThumb(arena.id),
+      h('div', { class: 'arena-info' },
+        h('div', { class: 'arena-eyebrow' }, t('home.arenaN', { n: index + 1, total: ARENAS.length })),
+        h('div', { class: 'arena-name' }, unlocked ? arena.name : t('common.lockedName', { name: arena.name })),
+        h('div', { class: 'arena-meta' }, unlocked ? [icon('skull'), boss?.name ?? ''] : [icon('lock'), arena.unlockReq?.text ?? '']),
+        cleared >= 0 ? h('span', { class: 'arena-cleared', style: `--c:${DIFFICULTIES[cleared].color}` }, icon('check'), DIFFICULTIES[cleared].name) : null));
+    this.swipe(card, moveArena);
+    const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
     const daily = dailyRecord(p);
-    this.show(h('div', { class: `screen home ${p.tutorialDone ? '' : 'home-first-run'}`, style: `--core-color:${coreDef.color}` },
-      h('div', { class: 'home-topline' },
-        h('span', { class: 'eyebrow home-system' }, h('i', { 'aria-hidden': 'true' }), t('home.system')), this.currency()),
-      h('div', { class: 'scroll home-content' },
-        h('div', { class: 'hero' },
-          h('div', { class: 'eyebrow hero-kicker' }, t('home.kicker')),
-          h('h1', { class: 'title', lang: 'en', dir: 'ltr' }, t('home.title1'), h('br'), h('span', {}, t('home.title2'))),
-          h('div', { class: 'reactor-art', 'aria-hidden': 'true' },
-            h('div', { class: 'reactor-scene' },
-              h('div', { class: 'reactor-halo' }),
-              h('div', { class: 'reactor-crosshair' }),
-              h('div', { class: 'orbit orbit-one' }), h('div', { class: 'orbit orbit-two' }),
-              h('div', { class: 'orbit-plane plane-one' }, h('i')),
-              h('div', { class: 'orbit-plane plane-two' }, h('i')),
-              h('div', { class: 'reactor-ball' }),
-              h('div', { class: 'signal-orbit' }, h('i'), h('i'), h('i')),
-              h('div', { class: 'reactor-dust' }, h('i'), h('i'), h('i'), h('i'), h('i')),
-            ),
-            h('span', { class: 'reactor-coordinate coordinate-left' }, t(`element.${coreDef.element ?? 'kinetic'}` as UiKey), h('br'),
-              t('home.coreCoordinate', { n: String(CORES.indexOf(coreDef) + 1).padStart(2, '0') })),
-            h('span', { class: 'reactor-coordinate coordinate-right' }, t('home.resonance'), h('br'), t('home.stable')),
-          ),
-          h('div', { class: 'subtitle' }, t('home.subtitle')),
-          h('div', { class: 'hero-description' }, t('home.description')),
-        ),
-        h('div', { class: 'col home-actions' },
-          h('button', { class: 'primary big launch-button', onclick: () => { this.click(); p.tutorialDone ? this.runSetup() : this.game.startRun({ arena: 'proving', difficulty: 0, pacts: [] }); } },
-            h('span', { class: 'launch-copy' }, h('strong', {}, p.tutorialDone ? t('home.play') : t('home.start')),
-              h('small', {}, p.tutorialDone ? t('home.deploy') : t('home.firstContact'))),
-            h('span', { class: 'launch-arrow', 'aria-hidden': 'true' }, t('home.launchArrow'))),
-          h('div', { class: 'core-readout' }, h('span', { class: 'status-dot', style: `background:${coreDef.color}` }),
-            t('home.equipped', { core: coreDef.name }), h('span', { class: 'spacer' }), h('span', { class: 'core-mastery' }, t('home.mastery'), h('b', {}, mastery.level))),
-          p.tutorialDone ? h('div', { class: 'grid2 home-nav' },
-            nav('daily', t('home.nav.daily'), daily.claimed ? t('home.nav.dailyBest', { n: formatNum(daily.best) }) : t('home.nav.dailyBonus'),
-              '#9ac9ff', () => this.dailyRun(), !daily.claimed),
-            nav('talents', t('home.nav.talentsCount', { n: available }), t('home.nav.talentsDesc'), '#c8a5ff', () => this.talents(), available > 0),
-            nav('loadout', t('home.nav.loadout'), t('home.nav.loadoutDesc'), '#91ead4', () => this.loadout(), canAffordCore),
-            nav('workshop', t('home.nav.workshop'), t('home.nav.workshopDesc'), '#ffbe86', () => this.workshop()),
-            nav('research', t('home.nav.research'), t('home.nav.researchDesc'), '#90dbe9', () => this.research(), canAffordResearch),
-            nav('codex', t('home.nav.codex'), t('home.nav.codexDesc'), '#aaaef9', () => this.codex()),
-            nav('goals', t('home.nav.goals'), t('home.nav.goalsDesc'), '#f4d784', () => this.goals()),
-            nav('settings', t('home.nav.settings'), t('home.nav.settingsDesc'), '#a3b8cc', () => this.settings()),
-          ) : [nav('talents', t('home.nav.talents'), t('home.nav.talentsFirstDesc'), '#c8a5ff', () => this.talents()), h('div', { class: 'first-run-guide' },
-            h('div', {}, h('b', {}, '01'), h('span', {}, t('home.guide1'))),
-            h('div', {}, h('b', {}, '02'), h('span', {}, t('home.guide2'))),
-            h('div', {}, h('b', {}, '03'), h('span', {}, t('home.guide3'))),
-          )],
-          h('div', { class: 'home-stats', 'aria-label': t('home.stats') },
-            h('div', {}, h('strong', {}, formatNum(p.stats.runs)), h('span', {}, t('home.runs'))),
-            h('div', {}, h('strong', {}, formatNum(p.stats.wins)), h('span', {}, t('home.wins'))),
-            h('div', {}, h('strong', {}, formatNum(p.stats.bestCombo)), h('span', {}, t('home.bestCombo'))),
-          ),
-        ),
-      ),
-    ));
+    const core = CORE_MAP[p.loadout.core] ?? CORE_MAP.striker;
+    const mastery = masteryLevel(p.mastery[core.id] ?? 0);
+    const goal = nextGoals(p, 1)[0];
+    const difficulty = DIFFICULTIES[s.difficulty];
+
+    return h('div', { class: 'battle' }, stage,
+      h('div', { class: 'battle-panel reveal' },
+        goal ? h('button', { class: 'goal-ribbon', onclick: () => { this.click(); this.goalSegment = 'next'; this.openTab('goals'); } },
+          h('span', { class: 'goal-ribbon-icon' }, icon('flag')),
+          h('span', { class: 'goal-ribbon-copy' }, h('small', {}, t('home.nextGoal')), h('b', {}, goal.text), goal.max > 1 ? meter(goal.cur / goal.max, 'gold thin') : null),
+          icon('forward', 'chev')) : null,
+        h('div', { class: 'arena-carousel' },
+          iconButton('back', t('home.prevArena'), () => moveArena(-1), 'carousel-btn'),
+          card,
+          iconButton('forward', t('home.nextArena'), () => moveArena(1), 'carousel-btn')),
+        // Unlocked tiers plus the next one as a visible goal; later tiers stay out of the way.
+        h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
+          const ok = i <= maxDifficulty(p);
+          return h('button', {
+            role: 'radio', 'aria-checked': String(s.difficulty === i), disabled: !ok, class: s.difficulty === i ? 'on' : '',
+            'data-motion-key': `difficulty:${i}`, style: `--c:${d.color}`,
+            onclick: () => { s.difficulty = i; this.click(); this.home(); },
+          }, ok ? null : icon('lock'), h('span', {}, d.name));
+        })),
+        h('div', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc),
+        h('div', { class: 'play-row' },
+          h('button', { class: 'side-btn daily-btn', 'aria-label': t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
+            icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)),
+          h('button', {
+            class: 'primary big launch-button play-btn', disabled: !unlocked,
+            onclick: () => { this.click(); this.game.startRun({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }); },
+          }, icon(unlocked ? 'play' : 'lock'),
+          h('span', { class: 'launch-copy' }, h('strong', {}, t('home.play')),
+            h('small', {}, mult !== 1 ? t('home.playReward', { difficulty: difficulty.name, n: mult.toFixed(2) }) : difficulty.name))),
+          pactsOn ? h('button', { class: `side-btn pacts-btn ${s.pacts.size ? 'active' : ''}`, 'aria-label': t('setup.pacts'), onclick: () => { this.click(); this.pactSheet(); } },
+            icon('pact'), h('span', {}, s.pacts.size ? t('home.pactsOn', { n: s.pacts.size }) : t('home.pactsShort')))
+            // Before Research unlocks pacts, the slot previews the feature instead of hiding it.
+            : h('button', { class: 'side-btn pacts-btn locked', 'aria-label': t('setup.pactsLocked'), onclick: () => { this.click(); this.toast(t('setup.pactsLocked').replace(/^🔒\s*/u, ''), 'lock'); } },
+              icon('lock'), h('span', {}, t('home.pactsShort')))),
+        h('button', { class: 'core-strip', style: `--core:${core.color}`, onclick: () => { this.click(); this.armoryIndex = -1; this.openTab('armory'); } },
+          orb(core.color, 'small'),
+          h('span', { class: 'core-strip-copy' },
+            h('b', {}, core.name),
+            daily.claimed && daily.best > 0 ? h('small', {}, t('home.nav.dailyBest', { n: formatNum(daily.best) })) : meter(mastery.need ? mastery.into / mastery.need : 1, 'pink thin')),
+          h('span', { class: 'core-strip-mastery' }, h('small', {}, t('home.mastery')), h('b', {}, String(mastery.level))),
+          icon('forward', 'chev'))));
+  }
+
+  private swipe(el: HTMLElement, move: (d: number) => void): void {
+    let start: { x: number; y: number } | null = null;
+    el.addEventListener('pointerdown', e => { start = { x: e.clientX, y: e.clientY }; });
+    el.addEventListener('pointercancel', () => { start = null; });
+    el.addEventListener('pointerup', e => {
+      if (!start) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y; start = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.4) move((dx < 0 ? 1 : -1) * (document.dir === 'rtl' ? -1 : 1));
+    });
+  }
+
+  private pactSheet(): void {
+    const s = this.setup;
+    const build = () => {
+      const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
+      return [
+        h('p', { class: 'sheet-intro' }, t('home.pactsIntro')),
+        h('div', { class: 'pact-list' }, PACTS.map(pc => h('button', {
+          class: `pact-row ${s.pacts.has(pc.id) ? 'on' : ''}`, role: 'switch', 'aria-checked': String(s.pacts.has(pc.id)),
+          'data-motion-key': `pact:${pc.id}`,
+          onclick: () => { if (s.pacts.has(pc.id)) s.pacts.delete(pc.id); else s.pacts.add(pc.id); this.click(); this.pactSheetRender?.(); },
+        },
+        h('span', { class: 'pact-icon' }, pc.icon),
+        h('span', { class: 'pact-copy' }, h('b', {}, pc.name), h('small', {}, pc.desc)),
+        h('span', { class: 'pact-reward' }, t('setup.pactReward', { n: Math.round(pc.reward * 100) })),
+        h('span', { class: 'check' }, icon('check'))))),
+        h('div', { class: 'sheet-total' }, t('setup.multiplier', { n: mult.toFixed(2) })),
+      ];
+    };
+    this.pactSheetRender = () => this.openSheetInPlace('pacts', t('setup.pacts'), build);
+    this.openSheet('pacts', t('setup.pacts'), build);
+  }
+
+  private pactSheetRender: (() => void) | null = null;
+
+  /** Re-render an open sheet's contents without a new history entry. */
+  private openSheetInPlace(key: string, title: string, build: () => (Node | null)[]): void {
+    if (this.overlay?.dataset.view !== `sheet:${key}`) return;
+    const body = this.overlay.querySelector<HTMLElement>('.sheet-body');
+    if (!body) return;
+    const top = body.scrollTop;
+    const interactionKey = this.interactionKey; this.interactionKey = null;
+    body.replaceChildren(...build().filter((x): x is Node => !!x));
+    body.scrollTop = top;
+    this.overlay.setAttribute('aria-label', title);
+    const target = interactionKey ? body.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(interactionKey)}"]`) : null;
+    if (target) feedback(target);
   }
 
   private dailyRun(): void {
@@ -288,229 +547,214 @@ export class UI {
     this.game.startRun({ arena, difficulty: Math.min(1, maxDifficulty(this.p)), pacts: [], seed, daily: true });
   }
 
-  // ------------------------------------------------------------------ run setup
-  talents(): void {
-    const view = talentScreen(this.p, () => { this.click(); this.game.save(); }, () => { this.click(); this.back(); });
-    this.navigation.view('talents', () => this.show(view.element), {
-      guard: {
-        when: () => view.detailOpen || view.dirty,
-        act: () => {
-          if (view.detailOpen) view.closeDetail();
-          else this.confirmAction(t('talents.discardTitle'), t('talents.discardMessage'), t('talents.discard'), () => {
-            view.discard();
-            this.navigation.dismiss(2);
-          }, () => view.element.querySelector<HTMLButtonElement>('.topbar button')?.focus({ preventScroll: true }), t('talents.keepEditing'), () => view.dirty);
-        },
-      },
-    });
-    this.show(view.element);
-  }
-
-  runSetup(): void {
-    this.navigation.view('setup', () => this.runSetup());
-    const p = this.p;
-    const s = this.setup;
-    if (!isArenaUnlocked(p, s.arena)) s.arena = 'proving';
-    s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
-    const pactsOn = this.game.flags().includes('pacts');
-    if (!pactsOn) s.pacts.clear();
-    const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
-    const rerender = () => { this.click(); this.runSetup(); };
-    const arena = ARENA_MAP[s.arena];
-    const core = CORE_MAP[p.loadout.core] ?? CORE_MAP.striker;
-    const parts = [p.loadout.shell, p.loadout.impact, p.loadout.momentum].map((id) => PART_MAP[id]).filter((x) => x && x.mods.length + (x.behavior ? 1 : 0) > 0);
-    this.show(h('div', { class: 'screen' },
-      this.topbar(t('setup.title')),
-      h('div', { class: 'scroll' },
-        // The first page is a pre-flight check: specialisation, equipment, then where you are going.
-        h('div', { class: 'card setup-overview' }, h('div', { class: 'name' }, t('setup.talents', { spent: talentSpent(p.talents), total: talentProgress(p).total })),
-          h('div', { class: 'desc' }, t('setup.talentsDesc')),
-          h('button', { style: 'margin-top:8px', onclick: () => this.talents() }, t('setup.editTalents'))),
-        h('div', { class: 'card setup-overview', style: `border-inline-start: 4px solid ${core.color}` },
-          h('div', { class: 'name' }, t('setup.loadout', { icon: core.icon, core: core.name, level: masteryLevel(p.mastery[core.id] ?? 0).level })),
-          h('div', { class: 'desc' }, parts.length ? parts.map((x) => `${x.icon} ${x.name}`).join(' · ') : core.passive),
-          h('button', { style: 'margin-top:8px', onclick: () => this.loadout() }, t('setup.editLoadout'))),
-        h('div', { class: 'card setup-mission', style: `border-inline-start: 4px solid ${arena.theme.accent}` },
-          h('div', { class: 'name' }, t('setup.mission', { arena: arena.name, difficulty: DIFFICULTIES[s.difficulty].name })),
-          h('div', { class: 'desc' }, t('setup.missionDesc', { boss: BOSSES.find((b) => b.id === arena.bossId)?.name ?? '' }))),
-        h('h3', {}, t('setup.arena')),
-        h('div', { class: 'col' }, ARENAS.map((a) => {
-          const ok = isArenaUnlocked(p, a.id);
-          const cleared = p.cleared[a.id] ?? -1;
-          return h('div', {
-            class: `card ${s.arena === a.id ? 'selected' : ''} ${ok ? '' : 'locked'}`,
-            'data-motion-key': `arena:${a.id}`,
-            style: `border-inline-start: 4px solid ${a.theme.accent}`,
-            onclick: () => { if (ok) { s.arena = a.id; rerender(); } },
-          },
-          h('div', { class: 'row' }, h('div', { class: 'name', style: 'flex:1' }, ok ? a.name : t('common.lockedName', { name: a.name })),
-            cleared >= 0 ? h('span', { class: 'chip', style: `color:${DIFFICULTIES[cleared].color}` }, `✓ ${DIFFICULTIES[cleared].name}`) : null),
-          h('div', { class: 'desc' }, ok ? t('setup.boss', { desc: a.desc, name: BOSSES.find((b) => b.id === a.bossId)?.name ?? '' }) : a.unlockReq?.text ?? ''));
-        })),
-        h('h3', {}, t('setup.difficulty')),
-        h('div', { class: 'difficulty-options' }, DIFFICULTIES.map((d, i) => {
-          const ok = i <= maxDifficulty(p);
-          return h('button', {
-            disabled: !ok,
-            'data-motion-key': `difficulty:${i}`,
-            style: s.difficulty === i ? `background:${d.color};color:#0a0612` : `color:${d.color}`,
-            onclick: () => { s.difficulty = i; rerender(); },
-          }, ok ? d.name : t('common.lockedName', { name: d.name }));
-        })),
-        h('div', { class: 'difficulty-info' },
-          h('div', { class: 'small' }, DIFFICULTIES[s.difficulty].desc),
-          DIFFICULTIES[s.difficulty].rules.length ? h('ul', { class: 'difficulty-rules small muted' }, DIFFICULTIES[s.difficulty].rules.map((r) => h('li', {}, r))) : null),
-        pactsOn ? [
-          h('h3', {}, t('setup.pacts')),
-          h('div', { class: 'grid2' }, PACTS.map((pc) => h('div', {
-            class: `card ${s.pacts.has(pc.id) ? 'selected' : ''}`,
-            'data-motion-key': `pact:${pc.id}`,
-            onclick: () => { if (s.pacts.has(pc.id)) s.pacts.delete(pc.id); else s.pacts.add(pc.id); rerender(); },
-          }, h('div', { class: 'name' }, `${pc.icon} ${pc.name}`), h('div', { class: 'desc' }, pc.desc), h('div', { class: 'small', style: 'color:var(--gold);margin-top:4px' }, t('setup.pactReward', { n: Math.round(pc.reward * 100) }))))),
-        ] : h('div', { class: 'small muted', style: 'margin-top:14px' }, t('setup.pactsLocked')),
-      ),
-      h('div', { class: 'col setup-footer', style: 'margin-top:8px' },
-        h('div', { class: 'center small', style: 'color:var(--gold)' }, t('setup.multiplier', { n: mult.toFixed(2) })),
-        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.startRun({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }); } }, t('setup.launch')),
-      ),
-    ));
-  }
-
-  // ------------------------------------------------------------------ loadout
+  // ------------------------------------------------------------------ armory
   loadout(): void {
-    this.navigation.view('loadout', () => this.loadout());
+    this.armoryIndex = -1;
+    this.openTab('armory');
+  }
+
+  private armoryPage(): HTMLElement {
     const p = this.p;
     const l = p.loadout;
-    const rerender = () => { this.click(); this.game.save(); this.loadout(); };
-    const slot = (title: string, s: PartSlot) => [
-      h('h3', {}, title),
-      h('div', { class: 'grid2' }, partsForSlot(p, s).map(({ def, unlocked }) => {
-        const selected = (l as unknown as Record<string, string>)[s] === def.id;
-        const buyable = !unlocked && def.unlock?.coins;
-        return h('div', {
-          class: `card ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}`,
-          'data-motion-key': `part:${def.id}`,
-          onclick: () => {
-            if (unlocked) { (l as unknown as Record<string, string>)[s] = def.id; rerender(); }
-            else if (buyable && buyPart(p, def.id)) { (l as unknown as Record<string, string>)[s] = def.id; this.toast(t('loadout.partUnlocked', { name: def.name })); rerender(); }
-          },
-        },
-        h('div', { class: 'name' }, `${def.icon} ${def.name}`),
-        h('div', { class: 'desc' }, def.desc),
-        !unlocked ? h('div', { class: 'small', style: `margin-top:4px;color:${buyable && p.coins >= (def.unlock!.coins ?? 0) ? 'var(--gold)' : 'var(--muted)'}` }, t('common.lockedText', { text: def.unlock!.text })) : null);
-      })),
-    ];
-    this.show(h('div', { class: 'screen' },
-      this.topbar(t('loadout.title')),
-      h('div', { class: 'scroll' },
-        h('h3', {}, t('loadout.core')),
-        h('div', { class: 'col' }, CORES.map((c) => {
-          const owned = p.unlockedCores.includes(c.id);
-          const m = masteryLevel(p.mastery[c.id] ?? 0);
-          const reqOk = coreRequirementMet(p, c.id);
-          return h('div', {
-            class: `card ${l.core === c.id ? 'selected' : ''} ${owned ? '' : 'locked'}`,
-            'data-motion-key': `core:${c.id}`,
-            style: `border-inline-start:4px solid ${c.color}`,
-            onclick: () => { if (owned) { l.core = c.id; rerender(); } },
-          },
-          h('div', { class: 'row' }, h('div', { class: 'icon' }, c.icon), h('div', { style: 'flex:1' },
-            h('div', { class: 'name' }, c.name),
-            h('div', { class: 'desc' }, c.desc))),
-          h('div', { class: 'desc', style: 'color:#d8d5f5' }, c.passive),
-          owned ? [h('div', { class: 'small muted', style: 'margin-top:6px' }, m.need ? t('loadout.mastery', { level: m.level, into: Math.floor(m.into), need: m.need }) : t('loadout.masteryMax', { level: m.level })), bar(m.need ? m.into / m.need : 1, 'pink')]
-            : h('div', { class: 'row', style: 'margin-top:8px' },
-              h('div', { class: 'small muted', style: 'flex:1' }, reqOk ? t('loadout.costs', { n: c.unlockCost }) : t('common.lockedText', { text: c.unlockReq?.text ?? '' })),
-              h('button', {
-                class: 'gold', disabled: !canUnlockCore(p, c.id),
-                onclick: (e: MouseEvent) => { e.stopPropagation(); if (unlockCore(p, c.id)) { l.core = c.id; this.game.audio.play('synergy'); this.toast(t('loadout.coreUnlocked', { icon: c.icon, name: c.name })); rerender(); } },
-              }, t('loadout.unlock', { n: c.unlockCost }))));
-        })),
-        slot(t('loadout.shell'), 'shell'),
-        slot(t('loadout.impact'), 'impact'),
-        slot(t('loadout.momentum'), 'momentum'),
-        h('h3', {}, t('loadout.trail')),
-        h('div', { class: 'row wrap trail-options' }, TRAILS.map((tr) => {
-          const owned = p.cosmetics.includes(tr.id);
-          return h('button', {
-            disabled: !owned,
-            'data-motion-key': `trail:${tr.id}`,
-            style: `background:linear-gradient(90deg,${tr.colors[0]},${tr.colors[1]});color:#0a0612;${l.trail === tr.id ? 'outline:3px solid #fff' : ''}`,
-            onclick: () => { l.trail = tr.id; rerender(); },
-          }, owned ? tr.name : '🔒');
-        })),
-        h('h3', {}, t('loadout.presets')),
-        h('div', { class: 'grid3 presets' }, [0, 1, 2].map((i) => {
-          const pr = p.presets[i];
-          return h('div', { class: 'card center', 'data-motion-key': `preset:${i}` },
-            h('div', { class: 'small' }, pr ? `${CORE_MAP[pr.core]?.icon} ${presetLabel(pr)}` : t('loadout.slot', { n: i + 1 })),
-            h('div', { class: 'row preset-actions', style: 'justify-content:center;margin-top:6px' },
-              // The stored name is kept for older saves; the card shows a label derived from the parts.
-              h('button', { class: 'small', onclick: () => { p.presets[i] = { ...l, name: presetLabel(l) }; this.toast(t('loadout.presetSaved')); rerender(); } }, t('common.save')),
-              pr ? h('button', { class: 'small', onclick: () => { Object.assign(l, { core: pr.core, shell: pr.shell, impact: pr.impact, momentum: pr.momentum, trail: pr.trail }); rerender(); } }, t('common.load')) : null,
-            ));
-        })),
-      ),
-    ));
+    const n = CORES.length;
+    const index = this.armoryIndex >= 0 ? this.armoryIndex : Math.max(0, CORES.findIndex(c => c.id === l.core));
+    const c = CORES[index];
+    const owned = p.unlockedCores.includes(c.id);
+    const reqOk = coreRequirementMet(p, c.id);
+    const m = masteryLevel(p.mastery[c.id] ?? 0);
+    const save = () => { this.game.save(); this.rerender(); };
+    const move = (d: number) => {
+      this.armoryIndex = (index + d + n) % n;
+      const next = CORES[this.armoryIndex];
+      if (p.unlockedCores.includes(next.id)) l.core = next.id;
+      this.click(); save();
+    };
+    const stage = h('div', { class: 'core-stage', 'data-motion-key': `core:${c.id}` },
+      iconButton('back', t('loadout.prevCore'), () => move(-1), 'carousel-btn'),
+      h('div', { class: 'core-orb-wrap' }, orb(c.color, `core-orb ${owned ? '' : 'locked'}`), owned ? null : h('span', { class: 'orb-lock' }, icon('lock'))),
+      iconButton('forward', t('loadout.nextCore'), () => move(1), 'carousel-btn'));
+    this.swipe(stage, move);
+    const slotRow = (slot: PartSlot) => {
+      const part = PART_MAP[(l as unknown as Record<string, string>)[slot]];
+      const ready = partsForSlot(p, slot).some(x => !x.unlocked && x.def.unlock?.coins && p.coins >= x.def.unlock.coins);
+      return h('button', { class: 'slot-row', 'data-motion-key': `slot:${slot}`, onclick: () => { this.click(); this.partSheet(slot); } },
+        h('span', { class: 'slot-icon' }, part?.icon ?? '◌'),
+        h('span', { class: 'slot-copy' }, h('small', {}, t(`loadout.${slot}` as UiKey)), h('b', {}, part?.name ?? '—'), part ? h('span', { class: 'slot-desc' }, part.desc) : null),
+        badge(ready), icon('forward', 'chev'));
+    };
+    const trail = TRAILS.find(tr => tr.id === l.trail) ?? TRAILS[0];
+    return h('div', { class: 'armory scroll' },
+      h('section', { class: 'core-showcase', style: `--core:${c.color}` },
+        stage,
+        h('div', { class: 'carousel-dots', 'aria-hidden': 'true' }, CORES.map((x, i) => h('i', { class: `${i === index ? 'on' : ''} ${p.unlockedCores.includes(x.id) ? '' : 'locked'}` }))),
+        h('div', { class: 'core-title' }, h('h2', {}, c.name), owned && l.core === c.id ? h('span', { class: 'chip equipped' }, icon('check'), t('loadout.equipped')) : null),
+        h('p', { class: 'core-desc' }, c.desc),
+        h('div', { class: 'core-passive' }, icon('star'), richText(c.passive)),
+        owned
+          ? h('div', { class: 'core-mastery-row' },
+            h('div', { class: 'row' }, h('b', {}, t('loadout.masteryLabel', { level: m.level })), h('span', { class: 'spacer' }), h('small', {}, m.need ? `${Math.floor(m.into)}/${m.need}` : t('common.max'))),
+            meter(m.need ? m.into / m.need : 1, 'pink'))
+          : h('div', { class: 'core-unlock' },
+            h('small', {}, reqOk ? t('loadout.costs', { n: c.unlockCost }) : t('common.lockedText', { text: c.unlockReq?.text ?? '' })),
+            h('button', {
+              class: 'gold', disabled: !canUnlockCore(p, c.id),
+              onclick: () => { if (unlockCore(p, c.id)) { l.core = c.id; this.game.audio.play('synergy'); this.toast(t('loadout.coreUnlocked', { icon: c.icon, name: c.name }), 'star'); save(); } },
+            }, t('loadout.unlockShort'), amount('cores', c.unlockCost)))),
+      sectionTitle(t('loadout.parts')),
+      h('div', { class: 'slot-list reveal' },
+        slotRow('shell'), slotRow('impact'), slotRow('momentum'),
+        h('button', { class: 'slot-row', 'data-motion-key': 'slot:trail', onclick: () => { this.click(); this.trailSheet(); } },
+          h('span', { class: 'slot-icon trail-swatch', style: `background:linear-gradient(135deg,${trail.colors[0]},${trail.colors[1]})` }),
+          h('span', { class: 'slot-copy' }, h('small', {}, t('loadout.trail')), h('b', {}, trail.name)),
+          icon('forward', 'chev'))),
+      sectionTitle(t('loadout.presets')),
+      h('div', { class: 'preset-row presets' }, [0, 1, 2].map(i => {
+        const pr = p.presets[i];
+        return h('div', { class: 'preset-card', 'data-motion-key': `preset:${i}` },
+          h('div', { class: 'preset-name' }, pr ? [orb(CORE_MAP[pr.core]?.color ?? '#fff', 'tiny'), presetLabel(pr)] : t('loadout.slot', { n: i + 1 })),
+          h('div', { class: 'preset-actions' },
+            // The stored name is kept for older saves; the card shows a label derived from the parts.
+            h('button', { class: 'small-btn', onclick: () => { p.presets[i] = { ...l, name: presetLabel(l) }; this.toast(t('loadout.presetSaved')); save(); } }, t('common.save')),
+            pr ? h('button', { class: 'small-btn', onclick: () => { Object.assign(l, { core: pr.core, shell: pr.shell, impact: pr.impact, momentum: pr.momentum, trail: pr.trail }); this.armoryIndex = -1; save(); } }, t('common.load')) : null));
+      })));
   }
 
-  // ------------------------------------------------------------------ workshop
-  workshop(): void {
-    this.navigation.view('workshop', () => this.workshop());
+  private partSheet(slot: PartSlot): void {
     const p = this.p;
-    this.show(h('div', { class: 'screen' },
-      this.topbar(t('workshop.title')),
-      h('div', { class: 'small muted', style: 'margin-bottom:8px' }, t('workshop.intro')),
-      h('div', { class: 'scroll col' }, WORKSHOP.map((wd) => {
+    const l = p.loadout as unknown as Record<string, string>;
+    const choose = (id: string) => { l[slot] = id; this.game.save(); this.navigation.dismiss(); };
+    this.openSheet(`part:${slot}`, t(`loadout.${slot}` as UiKey), () => partsForSlot(p, slot).map(({ def, unlocked }) => {
+      const selected = l[slot] === def.id;
+      const cost = def.unlock?.coins;
+      const affordable = !!cost && p.coins >= cost;
+      return h('button', {
+        class: `option-row ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}`, 'data-motion-key': `part:${def.id}`,
+        disabled: !unlocked && !affordable,
+        onclick: () => {
+          if (unlocked) { this.click(); choose(def.id); }
+          else if (cost && buyPart(p, def.id)) { this.game.audio.play('select'); this.toast(t('loadout.partUnlocked', { name: def.name })); choose(def.id); }
+        },
+      },
+      h('span', { class: 'option-icon' }, def.icon),
+      h('span', { class: 'option-copy' }, h('b', {}, def.name), h('small', {}, richText(def.desc)),
+        !unlocked ? h('small', { class: 'option-lock' }, icon('lock'), def.unlock!.text) : null),
+      selected ? h('span', { class: 'option-state' }, icon('check')) : !unlocked && cost ? h('span', { class: `option-price ${affordable ? 'ok' : ''}` }, amount('coins', cost)) : null);
+    }));
+  }
+
+  private trailSheet(): void {
+    const p = this.p;
+    this.openSheet('trail', t('loadout.trail'), () => [h('div', { class: 'trail-grid' }, TRAILS.map(tr => {
+      const owned = p.cosmetics.includes(tr.id);
+      return h('button', {
+        class: `trail-option ${p.loadout.trail === tr.id ? 'selected' : ''}`, disabled: !owned, 'data-motion-key': `trail:${tr.id}`,
+        onclick: () => { p.loadout.trail = tr.id; this.click(); this.game.save(); this.navigation.dismiss(); },
+      }, h('span', { class: 'trail-swatch', style: `background:linear-gradient(90deg,${tr.colors[0]},${tr.colors[1]})` }), h('b', {}, owned ? tr.name : t('loadout.lockedTrail')), owned ? null : icon('lock'));
+    }))]);
+  }
+
+  // ------------------------------------------------------------------ forge
+  workshop(): void { this.forgeSegment = 'workshop'; this.openTab('forge'); }
+  research(): void { this.forgeSegment = 'research'; this.openTab('forge'); }
+  talents(): void { this.forgeSegment = 'talents'; this.openTab('forge'); }
+
+  private forgePage(): HTMLElement {
+    const p = this.p;
+    const available = talentProgress(p).total - talentSpent(p.talents);
+    const choose = (id: string) => { this.forgeSegment = id as ForgeSegment; this.click(); this.renderTab('forge'); };
+    const body = this.forgeSegment === 'workshop' ? this.workshopBody() : this.forgeSegment === 'research' ? this.researchBody() : this.talentBody();
+    return h('div', { class: 'forge' },
+      segmented([
+        { id: 'workshop', label: t('home.nav.workshop'), dot: this.workshopReady() },
+        { id: 'research', label: t('home.nav.research'), dot: RESEARCH.some(r => canResearch(p, r.id)) },
+        { id: 'talents', label: t('home.nav.talents'), count: available > 0 ? String(available) : undefined },
+      ], this.forgeSegment, choose, t('tab.forge')),
+      h('div', { class: 'scroll forge-body', 'data-segment-body': this.forgeSegment }, body));
+  }
+
+  private workshopBody(): HTMLElement[] {
+    const p = this.p;
+    return [
+      h('p', { class: 'page-intro' }, t('workshop.intro')),
+      h('div', { class: 'shop-list reveal' }, WORKSHOP.map((wd) => {
         const lvl = p.workshop[wd.id] ?? 0;
         const cost = workshopCost(p, wd.id);
-        return h('div', { class: 'card row', 'data-motion-key': `workshop:${wd.id}` },
-          h('div', { class: 'icon' }, wd.icon),
-          h('div', { style: 'flex:1' },
-            h('div', { class: 'name' }, `${wd.name} `, h('span', { class: 'small muted' }, `${lvl}/${wd.maxLevel}`)),
-            h('div', { class: 'desc' }, lvl > 0 ? t('workshop.now', { text: wd.desc(lvl) }) : wd.desc(1)),
-            cost !== null && lvl > 0 ? h('div', { class: 'desc' }, t('workshop.next', { text: wd.desc(lvl + 1) })) : null),
-          cost === null ? h('span', { class: 'chip' }, t('common.max')) : h('button', {
-            class: 'gold', disabled: p.coins < cost,
-            onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.workshop(); } },
-          }, h('span', { class: 'coin-badge', 'aria-hidden': 'true' }, '🪙'), formatNum(cost)));
+        const affordable = cost !== null && p.coins >= cost;
+        return h('div', { class: `shop-row ${affordable ? 'affordable' : ''} ${cost === null ? 'maxed' : ''}`, 'data-motion-key': `workshop:${wd.id}` },
+          h('span', { class: 'shop-icon' }, wd.icon),
+          h('div', { class: 'shop-copy' },
+            h('div', { class: 'shop-name' }, h('b', {}, wd.name), pips(lvl, wd.maxLevel, cost !== null)),
+            h('div', { class: 'shop-desc' }, richText(lvl > 0 ? t('workshop.now', { text: wd.desc(lvl) }) : wd.desc(1))),
+            cost !== null && lvl > 0 ? h('div', { class: 'shop-next' }, richText(t('workshop.next', { text: wd.desc(lvl + 1) }))) : null),
+          cost === null ? h('span', { class: 'chip max-chip' }, t('common.max')) : h('button', {
+            class: 'gold buy-btn', disabled: !affordable, 'aria-label': t('workshop.buy', { name: wd.name, n: cost }),
+            onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.renderTab('forge'); } },
+          }, icon('coin'), h('b', {}, formatNum(cost))));
       })),
-    ));
+    ];
   }
 
-  // ------------------------------------------------------------------ research
-  research(): void {
-    this.navigation.view('research', () => this.research());
+  private researchBody(): HTMLElement[] {
     const p = this.p;
-    this.show(h('div', { class: 'screen' },
-      this.topbar(t('research.title')),
-      h('div', { class: 'small muted', style: 'margin-bottom:8px' }, t('research.intro')),
-      h('div', { class: 'scroll col' }, RESEARCH.map((r) => {
+    const state = (id: string) => p.researchNodes.includes(id) ? 2 : RESEARCH.find(r => r.id === id)!.requires.every(x => p.researchNodes.includes(x)) ? 0 : 1;
+    const sorted = [...RESEARCH].sort((a, b) => state(a.id) - state(b.id));
+    return [
+      h('p', { class: 'page-intro' }, h('span', { class: 'intro-amount' }, amount('research', p.research)), t('research.intro')),
+      h('div', { class: 'shop-list reveal' }, sorted.map((r) => {
         const done = p.researchNodes.includes(r.id);
         const reqOk = r.requires.every((x) => p.researchNodes.includes(x));
-        return h('div', { class: `card row ${done ? 'selected' : ''} ${reqOk ? '' : 'locked'}`, 'data-motion-key': `research:${r.id}` },
-          h('div', { class: 'icon' }, r.icon),
-          h('div', { style: 'flex:1' },
-            h('div', { class: 'name' }, r.name),
-            h('div', { class: 'desc' }, r.desc),
-            !reqOk ? h('div', { class: 'small muted' }, t('research.requires', { list: r.requires.map((x) => RESEARCH.find((y) => y.id === x)?.name).join(', ') })) : null),
-          done ? h('span', { class: 'chip', style: 'color:var(--green)' }, '✓') : h('button', {
-            disabled: !canResearch(p, r.id),
+        return h('div', { class: `shop-row research-row ${done ? 'done' : ''} ${reqOk ? '' : 'locked'} ${canResearch(p, r.id) ? 'affordable' : ''}`, 'data-motion-key': `research:${r.id}` },
+          h('span', { class: 'shop-icon' }, r.icon),
+          h('div', { class: 'shop-copy' },
+            h('div', { class: 'shop-name' }, h('b', {}, r.name)),
+            h('div', { class: 'shop-desc' }, richText(r.desc)),
+            !reqOk ? h('div', { class: 'shop-req' }, icon('lock'), t('research.requires', { list: r.requires.map((x) => RESEARCH.find((y) => y.id === x)?.name).join(', ') })) : null),
+          done ? h('span', { class: 'chip done-chip' }, icon('check')) : h('button', {
+            class: 'buy-btn research-btn', disabled: !canResearch(p, r.id), 'aria-label': t('research.buy', { name: r.name, n: r.cost }),
             onclick: () => {
               const got = doResearch(p, r.id);
               this.game.audio.play('synergy');
-              this.toast(got[0] ?? t('research.done', { name: r.name }));
+              this.toast(got[0] ?? t('research.done', { name: r.name }), 'research');
               this.game.save();
-              this.research();
+              this.renderTab('forge');
             },
-          }, `🔬 ${r.cost}`));
+          }, icon('flask'), h('b', {}, String(r.cost))));
       })),
-    ));
+    ];
+  }
+
+  private talentBody(): HTMLElement[] {
+    return [talentPanel(this.p, this.talentState, (sound) => {
+      this.game.audio.play(sound === 'learn' ? 'select' : 'click');
+      this.game.save();
+      this.renderTab('forge');
+    })];
   }
 
   // ------------------------------------------------------------------ codex
-  codex(): void {
-    this.navigation.view('codex', () => this.codex());
+  codex(): void { this.openTab('codex'); }
+
+  private codexEntries(): CodexEntry[] {
+    const p = this.p;
+    const d = p.discoveries;
+    const flag = this.game.flags().includes('codex');
+    switch (this.codexTab) {
+      case 'balls': return CORES.map(c => ({ id: c.id, known: p.unlockedCores.includes(c.id), name: c.name, glyph: orb(c.color, 'tiny'), color: c.color, lines: [c.desc, richText(c.passive)], hint: c.unlockReq?.text ?? t('codex.coresCost', { n: c.unlockCost }) }));
+      case 'upgrades': return UPGRADES.map(u => ({ id: u.id, known: d.upgrades.includes(u.id), name: u.name, glyph: u.icon, color: `var(--${u.rarity})`, lines: [richText(u.desc(1)), `${rarityLabel(u.rarity)} · ${u.tags.map(tagLabel).join(' · ')}`], hint: u.locked ? t('codex.lockedUpgrade') : t('codex.takeUpgrade') }));
+      case 'synergies': return SYNERGIES.map(s => ({ id: s.id, known: d.synergies.includes(s.id), name: s.name, glyph: s.icon, lines: [tierLabel(s.tier), richText(s.desc), s.hint], hint: s.tier === 'known' ? t('codex.hint', { hint: s.hint }) : s.hint }));
+      case 'evolutions': return EVOLUTIONS.map(e => {
+        const recipe = e.recipe.map((r) => r.level > 1 ? t('codex.recipeLevel', { name: UPGRADE_MAP[r.id].name, level: r.level }) : UPGRADE_MAP[r.id].name).join(' + ');
+        const known = d.evolutions.includes(e.id);
+        return { id: e.id, known, name: e.name, glyph: e.icon, color: e.color, lines: [richText(e.desc), recipe], hint: flag ? `${t('codex.notEvolved')} ${recipe}` : t('codex.evolutionHint') };
+      });
+      case 'reactions': return REACTIONS.map(r => ({ id: r.id, known: d.reactions.includes(r.id), name: r.name, glyph: r.icon, lines: [richText(r.desc)], hint: t('codex.reactionHint', { a: elementName(r.elements[0]), b: elementName(r.elements[1]) }) }));
+      case 'enemies': return CODEX_ENEMIES.map(e => ({ id: e.id, known: d.enemies.includes(e.id), name: e.name, glyph: orb(e.color, 'tiny enemy'), color: e.color, lines: [e.desc, t('codex.tip', { tip: e.tip })], hint: t('codex.notEncountered') }));
+      case 'bosses': return BOSSES.map(b => ({ id: b.id, known: d.bosses.includes(b.id), name: b.name, glyph: icon('skull'), color: '#ff5d73', lines: [b.title, b.desc, t('codex.defeated', { n: p.bossKills[b.id] ?? 0 })], hint: t('codex.bossUnknown') }));
+      default: return ARENAS.map(a => ({ id: a.id, known: d.arenas.includes(a.id), name: a.name, glyph: icon('flag'), color: a.theme.accent, lines: [a.desc, t('codex.events', { list: a.events.map((e) => EVENT_MAP[e].name).join(', ') })], hint: a.unlockReq?.text ?? '' }));
+    }
+  }
+
+  private codexPage(): HTMLElement {
     const p = this.p;
     const d = p.discoveries;
     const tabs: [string, string, number, number][] = [
@@ -523,107 +767,90 @@ export class UI {
       ['bosses', t('codex.bosses'), d.bosses.length, BOSSES.length],
       ['arenas', t('codex.arenas'), d.arenas.length, ARENAS.length],
     ];
-    const total = tabs.reduce((a, tab) => a + tab[2], 0);
+    const total = tabs.reduce((a, tab) => a + Math.min(tab[2], tab[3]), 0);
     const max = tabs.reduce((a, tab) => a + tab[3], 0);
-    const unknown = (hint: string) => h('div', { class: 'card locked' }, h('div', { class: 'name' }, t('codex.unknown')), h('div', { class: 'desc' }, hint));
-    // Discoveries lead each category so the first page shows what the player has found.
-    const knownFirst = <T extends { id: string }>(list: readonly T[], found: readonly string[]): T[] =>
-      [...list].sort((a, b) => Number(found.includes(b.id)) - Number(found.includes(a.id)));
-    let body: HTMLElement[] = [];
-    switch (this.codexTab) {
-      case 'balls':
-        body = CORES.map((c) => p.unlockedCores.includes(c.id)
-          ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${c.icon} ${c.name}`), h('div', { class: 'desc' }, c.passive))
-          : unknown(c.unlockReq?.text ?? t('codex.coresCost', { n: c.unlockCost })));
-        break;
-      case 'upgrades':
-        body = knownFirst(UPGRADES, d.upgrades).map((u) => d.upgrades.includes(u.id)
-          ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${u.icon} ${u.name} `, h('span', { class: 'tag' }, rarityLabel(u.rarity))), h('div', { class: 'desc' }, u.desc(1)), h('div', {}, u.tags.map((tag) => h('span', { class: 'tag' }, tagLabel(tag)))))
-          : unknown(u.locked ? t('codex.lockedUpgrade') : t('codex.takeUpgrade')));
-        break;
-      case 'synergies':
-        body = knownFirst(SYNERGIES, d.synergies).map((s) => d.synergies.includes(s.id)
-          ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${s.icon} ${s.name} `, h('span', { class: 'tag' }, tierLabel(s.tier))), h('div', { class: 'desc' }, s.desc), h('div', { class: 'small muted' }, s.hint))
-          : unknown(s.tier === 'known' ? t('codex.hint', { hint: s.hint }) : s.hint));
-        break;
-      case 'evolutions':
-        body = knownFirst(EVOLUTIONS, d.evolutions).map((e) => {
-          const known = d.evolutions.includes(e.id);
-          const showRecipe = known || this.game.flags().includes('codex');
-          const recipe = e.recipe.map((r) => r.level > 1 ? t('codex.recipeLevel', { name: UPGRADE_MAP[r.id].name, level: r.level }) : UPGRADE_MAP[r.id].name).join(' + ');
-          return known || showRecipe
-            ? h('div', { class: `card ${known ? '' : 'locked'}` }, h('div', { class: 'name' }, `${e.icon} ${known ? e.name : '???'}`), h('div', { class: 'desc' }, known ? e.desc : t('codex.notEvolved')), h('div', { class: 'small', style: 'color:var(--gold);margin-top:4px' }, recipe))
-            : unknown(t('codex.evolutionHint'));
-        });
-        break;
-      case 'reactions':
-        body = knownFirst(REACTIONS, d.reactions).map((r) => d.reactions.includes(r.id)
-          ? h('div', { class: 'card' }, h('div', { class: 'name' }, `${r.icon} ${r.name}`), h('div', { class: 'desc' }, r.desc))
-          : unknown(t('codex.reactionHint', { a: elementName(r.elements[0]), b: elementName(r.elements[1]) })));
-        break;
-      case 'enemies':
-        body = knownFirst(CODEX_ENEMIES, d.enemies).map((e) => d.enemies.includes(e.id)
-          ? h('div', { class: 'card', style: `border-inline-start:4px solid ${e.color}` }, h('div', { class: 'name' }, e.name), h('div', { class: 'desc' }, e.desc), h('div', { class: 'small', style: 'color:var(--green);margin-top:4px' }, t('codex.tip', { tip: e.tip })))
-          : unknown(t('codex.notEncountered')));
-        break;
-      case 'bosses':
-        body = BOSSES.map((b) => d.bosses.includes(b.id)
-          ? h('div', { class: 'card' }, h('div', { class: 'name' }, t('codex.bossTitle', { name: b.name, title: b.title })), h('div', { class: 'desc' }, b.desc), h('div', { class: 'small muted' }, t('codex.defeated', { n: p.bossKills[b.id] ?? 0 })))
-          : unknown(t('codex.bossUnknown')));
-        break;
-      case 'arenas':
-        body = ARENAS.map((a) => d.arenas.includes(a.id)
-          ? h('div', { class: 'card', style: `border-inline-start:4px solid ${a.theme.accent}` }, h('div', { class: 'name' }, a.name), h('div', { class: 'desc' }, a.desc), h('div', { class: 'small muted' }, t('codex.events', { list: a.events.map((e) => EVENT_MAP[e].name).join(', ') })))
-          : unknown(a.unlockReq?.text ?? ''));
-        break;
-    }
-    this.show(h('div', { class: 'screen' },
-      this.topbar(t('codex.title', { pct: Math.round((total / max) * 100) })),
-      h('div', { class: 'tabs codex-tabs', role: 'tablist', 'aria-label': t('codex.categories') }, tabs.map(([id, label, n, m]) => h('button', {
+    const pct = Math.round((total / max) * 100);
+    // Discoveries lead each category so the first rows show what the player has found.
+    const entries = this.codexEntries().sort((a, b) => Number(b.known) - Number(a.known));
+    return h('div', { class: 'codex' },
+      h('div', { class: 'codex-head' },
+        h('div', { class: 'ring', style: `--p:${pct}`, role: 'img', 'aria-label': t('codex.title', { pct }) }, h('b', {}, `${pct}%`)),
+        h('div', { class: 'codex-head-copy' }, h('b', {}, t('codex.completion')), h('small', {}, t('codex.found', { n: total, max })))),
+      h('div', { class: 'tabs codex-tabs chip-scroller', role: 'tablist', 'aria-label': t('codex.categories') }, tabs.map(([id, label, n, m]) => h('button', {
         role: 'tab', 'aria-selected': String(this.codexTab === id), class: this.codexTab === id ? 'on' : '',
         'data-motion-key': `codex:${id}`,
-        onclick: () => { this.codexTab = id; this.click(); this.codex(); },
-      }, h('span', {}, label), h('small', {}, `${n}/${m}`)))),
-      h('div', { class: 'scroll col' }, body),
-    ));
+        onclick: () => { if (this.codexTab === id) return; this.codexTab = id; this.click(); this.renderTab('codex'); },
+      }, h('span', {}, label), h('small', {}, `${Math.min(n, m)}/${m}`)))),
+      h('div', { class: 'scroll codex-body', 'data-segment-body': this.codexTab },
+        h('div', { class: 'codex-grid reveal' }, entries.map(e => h('button', {
+          class: `codex-tile ${e.known ? '' : 'unknown'}`, style: e.color ? `--c:${e.color}` : '', 'data-motion-key': `codex-entry:${e.id}`,
+          onclick: () => { this.click(); this.codexSheet(e); },
+        }, h('span', { class: 'codex-glyph' }, e.known ? e.glyph : '?'), h('span', { class: 'codex-name' }, e.known ? e.name : t('codex.unknownShort')))))));
+  }
+
+  private codexSheet(e: CodexEntry): void {
+    this.openSheet(`codex:${e.id}`, e.known ? e.name : t('codex.unknownShort'), () => [
+      h('div', { class: 'codex-detail', style: e.color ? `--c:${e.color}` : '' },
+        h('span', { class: 'codex-glyph big' }, e.known ? e.glyph instanceof Node ? e.glyph.cloneNode(true) : e.glyph : '?'),
+        e.known ? h('div', { class: 'codex-lines' }, e.lines.map(line => h('p', {}, line instanceof Node ? line.cloneNode(true) : line)))
+          : h('div', { class: 'codex-lines' }, h('p', { class: 'muted' }, e.hint))),
+    ]);
   }
 
   // ------------------------------------------------------------------ goals
-  goals(): void {
-    this.navigation.view('goals', () => this.goals());
+  goals(): void { this.openTab('goals'); }
+
+  private goalsPage(): HTMLElement {
     const p = this.p;
-    this.show(h('div', { class: 'screen' },
-      this.topbar(t('goals.title')),
-      h('div', { class: 'scroll' },
-        h('h3', {}, t('goals.next')), this.goalList(nextGoals(p, 3)),
-        h('h3', {}, t('goals.challenges', { n: p.challenges.length, max: CHALLENGES.length })),
-        h('div', { class: 'col' }, CHALLENGES.map((c) => {
+    const choose = (id: string) => { this.goalSegment = id as GoalSegment; this.click(); this.renderTab('goals'); };
+    let body: HTMLElement[];
+    switch (this.goalSegment) {
+      case 'challenges':
+        body = [h('div', { class: 'achievement-list reveal' }, CHALLENGES.map((c) => {
           const done = p.challenges.includes(c.id);
-          return h('div', { class: `card ${done ? 'selected' : ''}` },
-            h('div', { class: 'name' }, `${c.icon} ${c.name} ${done ? '✓' : ''}`),
-            h('div', { class: 'desc' }, c.desc),
-            h('div', { class: 'small', style: 'color:var(--gold);margin-top:3px' }, c.rewards.map(describeUnlock).join(', ')));
-        })),
-        h('h3', { 'data-tab-label': t('goals.badges') }, t('goals.achievements', { n: p.achievements.length, max: ACHIEVEMENTS.length })),
-        h('div', { class: 'col' }, ACHIEVEMENTS.map((a) => {
+          return h('div', { class: `achievement ${done ? 'done' : ''}` },
+            h('span', { class: 'achievement-icon' }, c.icon),
+            h('div', { class: 'achievement-copy' }, h('b', {}, c.name), h('small', {}, c.desc),
+              h('span', { class: 'achievement-reward' }, icon('star'), c.rewards.map(describeUnlock).join(', '))),
+            done ? h('span', { class: 'done-mark' }, icon('check')) : null);
+        }))];
+        break;
+      case 'badges':
+        body = [h('div', { class: 'achievement-list reveal' }, ACHIEVEMENTS.map((a) => {
           const done = p.achievements.includes(a.id);
           const [cur, max] = a.progress(p);
-          return h('div', { class: `card ${done ? 'selected' : ''}` },
-            h('div', { class: 'row' }, h('div', { class: 'name', style: 'flex:1' }, `${a.icon} ${a.name} ${done ? '✓' : ''}`), h('span', { class: 'small muted' }, `${Math.min(cur, max)}/${max}`)),
-            h('div', { class: 'desc' }, a.desc),
-            done ? null : bar(cur / max, 'gold'));
-        })),
-        h('h3', {}, t('goals.mastery')),
-        h('div', { class: 'col' }, CORES.filter((c) => p.unlockedCores.includes(c.id)).map((c) => {
+          return h('div', { class: `achievement ${done ? 'done' : ''}` },
+            h('span', { class: 'achievement-icon' }, a.icon),
+            h('div', { class: 'achievement-copy' }, h('b', {}, a.name), h('small', {}, a.desc),
+              done ? null : h('div', { class: 'achievement-progress' }, meter(cur / max, 'gold thin'), h('small', {}, `${formatNum(Math.min(cur, max))}/${formatNum(max)}`))),
+            done ? h('span', { class: 'done-mark' }, icon('check')) : null);
+        }))];
+        break;
+      case 'mastery':
+        body = [h('div', { class: 'achievement-list reveal' }, CORES.filter((c) => p.unlockedCores.includes(c.id)).map((c) => {
           const m = masteryLevel(p.mastery[c.id] ?? 0);
           const next = masteryRewards(c.id).find((r) => r.level === m.level + 1);
-          return h('div', { class: 'card' },
-            h('div', { class: 'name' }, t('goals.masteryLevel', { icon: c.icon, name: c.name, level: m.level })),
-            next ? h('div', { class: 'desc' }, t('goals.nextReward', { text: next.text })) : h('div', { class: 'desc' }, t('goals.mastered')),
-            bar(m.need ? m.into / m.need : 1, 'pink'));
-        })),
-      ),
-    ));
+          return h('div', { class: 'achievement mastery-row' },
+            orb(c.color, 'small'),
+            h('div', { class: 'achievement-copy' }, h('b', {}, t('goals.masteryLevel', { icon: '', name: c.name, level: m.level }).trim()),
+              h('small', {}, next ? t('goals.nextReward', { text: next.text }) : t('goals.mastered')),
+              meter(m.need ? m.into / m.need : 1, 'pink thin')));
+        }))];
+        break;
+      default:
+        body = [h('div', { class: 'goal-list reveal' }, nextGoals(p, 5).map(g => this.goalCard(g))),
+          h('div', { class: 'lifetime reveal' },
+            statTile(t('home.runs'), formatNum(p.stats.runs)), statTile(t('home.wins'), formatNum(p.stats.wins)),
+            statTile(t('home.bestCombo'), formatNum(p.stats.bestCombo)), statTile(t('goals.kills'), formatNum(p.stats.kills)))];
+    }
+    return h('div', { class: 'goals' },
+      segmented([
+        { id: 'next', label: t('goals.nextShort') },
+        { id: 'challenges', label: t('goals.challengesShort'), count: `${p.challenges.length}/${CHALLENGES.length}` },
+        { id: 'badges', label: t('goals.badges'), count: `${p.achievements.length}/${ACHIEVEMENTS.length}` },
+        { id: 'mastery', label: t('goals.mastery') },
+      ], this.goalSegment, choose, t('tab.goals')),
+      h('div', { class: 'scroll goals-body', 'data-segment-body': this.goalSegment }, body));
   }
 
   // ------------------------------------------------------------------ settings
@@ -633,7 +860,8 @@ export class UI {
     const s = this.p.settings;
     const apply = () => { this.game.applySettings(); this.game.save(); };
     const switchState = (on: boolean) => (on ? t('settings.on') : t('settings.off'));
-    const toggle = (label: string, desc: string, key: 'shake' | 'damageNumbers' | 'debug') =>
+    type ToggleKey = 'shake' | 'damageNumbers' | 'debug' | 'haptics' | 'leftHanded' | 'reduceFlashes';
+    const toggle = (glyph: IconName, label: string, desc: string, key: ToggleKey) =>
       h('button', {
         type: 'button', class: 'setting-switch', role: 'switch', 'aria-label': label, 'aria-checked': String(s[key]), 'data-setting': key,
         onclick: (e: MouseEvent) => {
@@ -641,9 +869,11 @@ export class UI {
           const button = e.currentTarget as HTMLButtonElement;
           button.setAttribute('aria-checked', String(s[key]));
           button.querySelector('.switch-state')!.textContent = switchState(s[key]);
+          if (key === 'haptics' && s.haptics) this.game.haptic('select');
           feedback(button);
         },
       },
+      h('span', { class: 'setting-icon' }, icon(glyph)),
       h('span', { class: 'setting-copy' }, h('span', { class: 'setting-name' }, label), h('small', { class: 'setting-desc' }, desc)),
       h('span', { class: 'switch-rail', 'aria-hidden': 'true' }, h('span', { class: 'switch-state' }, switchState(s[key])), h('span', { class: 'switch-knob' })));
     const slider = (label: string, key: 'sfx' | 'music') => {
@@ -658,11 +888,10 @@ export class UI {
             const input = e.target as HTMLInputElement, value = Number(input.value);
             s[key] = value / 100; readout.textContent = `${value}%`;
             input.style.setProperty('--volume', `${value}%`); input.setAttribute('aria-valuetext', `${value}%`); apply();
-            feedback(readout);
           },
         }));
     };
-    const section = (title: string, ...controls: HTMLElement[]) =>
+    const section = (title: string, ...controls: (HTMLElement | null)[]) =>
       h('section', { class: 'settings-section', 'aria-label': title }, h('h3', { class: 'settings-heading' }, title), ...controls);
     // Each option shows its native name (in its own script and direction) plus the name in the
     // current language, so a player can always find their way back.
@@ -675,22 +904,20 @@ export class UI {
           onclick: () => {
             if (s.language === lang.id) return;
             this.click(); s.language = lang.id; apply();
-            // Rebuild this screen in the new language; the pause menu or Home underneath re-renders on return.
+            // Rebuild this screen in the new language; the page underneath re-renders on return.
             this.settings();
           },
         },
-        h('span', { class: 'aim-check', 'aria-hidden': 'true' }, '✓'),
+        h('span', { class: 'aim-check', 'aria-hidden': 'true' }, icon('check')),
         h('span', { class: 'setting-name', lang: lang.id, dir: lang.dir }, lang.name),
         translated !== lang.name ? h('small', { class: 'setting-desc' }, translated) : null);
       }));
+    const canVibrate = typeof navigator !== 'undefined' && 'vibrate' in navigator;
     this.show(h('div', { class: 'screen solid settings-screen' },
-      this.topbar(t('settings.title')),
+      this.topbar(t('settings.title'), false),
       h('div', { class: 'scroll settings-content' },
         section(t('settings.language'), languages),
         section(t('settings.audio'), h('div', { class: 'settings-audio' }, slider(t('settings.sfx'), 'sfx'), slider(t('settings.music'), 'music'))),
-        section(t('settings.combat'),
-          toggle(t('settings.shake'), t('settings.shakeDesc'), 'shake'),
-          toggle(t('settings.damageNumbers'), t('settings.damageNumbersDesc'), 'damageNumbers')),
         section(t('settings.aim'), h('div', { class: 'aim-modes', role: 'group', 'aria-label': t('settings.aim') },
           (['direct', 'slingshot'] as const).map((m) => h('button', {
             type: 'button', class: 'aim-option', 'data-mode': m, 'aria-pressed': String(s.aimMode === m),
@@ -702,11 +929,17 @@ export class UI {
               feedback(e.currentTarget as HTMLElement);
             },
           },
-          h('span', { class: 'aim-icon', 'aria-hidden': 'true' }, m === 'direct' ? '↗' : '↶'),
-          h('span', { class: 'aim-check', 'aria-hidden': 'true' }, '✓'),
+          h('span', { class: 'aim-icon', 'aria-hidden': 'true' }, icon(m === 'direct' ? 'aim' : 'recall')),
+          h('span', { class: 'aim-check', 'aria-hidden': 'true' }, icon('check')),
           h('span', { class: 'setting-name' }, m === 'direct' ? t('settings.aimDirect') : t('settings.aimSlingshot')),
-          h('small', { class: 'setting-desc' }, m === 'direct' ? t('settings.aimDirectDesc') : t('settings.aimSlingshotDesc')))))),
-        section(t('settings.system'), toggle(t('settings.debug'), t('settings.debugDesc'), 'debug')),
+          h('small', { class: 'setting-desc' }, m === 'direct' ? t('settings.aimDirectDesc') : t('settings.aimSlingshotDesc'))))),
+          toggle('armory', t('settings.leftHanded'), t('settings.leftHandedDesc'), 'leftHanded')),
+        section(t('settings.combat'),
+          toggle('shake', t('settings.shake'), t('settings.shakeDesc'), 'shake'),
+          toggle('number', t('settings.damageNumbers'), t('settings.damageNumbersDesc'), 'damageNumbers'),
+          toggle('eye', t('settings.reduceFlashes'), t('settings.reduceFlashesDesc'), 'reduceFlashes'),
+          canVibrate ? toggle('vibrate', t('settings.haptics'), t('settings.hapticsDesc'), 'haptics') : null),
+        section(t('settings.system'), toggle('bug', t('settings.debug'), t('settings.debugDesc'), 'debug')),
         h('div', { class: 'settings-footer' },
           h('button', {
             class: 'danger',
@@ -714,7 +947,8 @@ export class UI {
               this.confirmAction(t('settings.resetTitle'), t('settings.resetMessage'), t('settings.erase'), () => {
                 const settings = { ...s };
                 Object.assign(this.p, defaultProfile(), { settings });
-                this.deckStates.clear();
+                this.talentState = newTalentState();
+                this.armoryIndex = -1;
                 this.game.save();
                 this.home();
               }, () => this.root.querySelector<HTMLButtonElement>('.settings-footer button')?.focus({ preventScroll: true }), t('common.cancel'));
@@ -741,7 +975,7 @@ export class UI {
         },
       },
     };
-    // Keep two guarded entries even for First Contact/Daily, which skip Setup.
+    // Keep two guarded entries even for First Contact/Daily, which start from Home.
     // Two queued browser Back presses must stay in this document until popstate runs.
     this.navigation.view('run-boundary', () => this.game.resume(), options);
     this.navigation.view('run', () => this.game.resume(), options);
@@ -752,10 +986,12 @@ export class UI {
     this.closeOverlay();
     this.clearScreen();
     cancelWithin(this.hudEl); this.hudEl?.remove();
-    const pause = h('button', { class: 'hudbtn', 'aria-label': t('hud.pause'), style: 'right:10px;top:10px', onclick: () => { this.click(); this.game.pause(); } }, '❚❚');
-    const surge = h('button', { class: 'surge', 'aria-label': t('hud.surge'), title: t('hud.surgeTitle'), style: 'right:12px;bottom:12px', onclick: () => this.game.world?.activateSurge() }, h('span', {}, t('hud.surgeLabel'))) as HTMLButtonElement;
+    this.root.toggleAttribute('data-left-handed', this.p.settings.leftHanded);
+    const pause = h('button', { class: 'hudbtn pause-btn', 'aria-label': t('hud.pause'), onclick: () => { this.click(); this.game.pause(); } }, icon('pause'));
+    const surge = h('button', { class: 'surge', 'aria-label': t('hud.surge'), title: t('hud.surgeTitle'), onclick: () => this.game.world?.activateSurge() },
+      h('span', { class: 'surge-face' }, icon('bolt'), h('b', { class: 'surge-text' }, t('hud.surgeLabel')))) as HTMLButtonElement;
     const recall = h('button', { class: 'recall', 'aria-label': t('hud.recall'), title: t('hud.recallTitle'), onclick: () => this.game.world?.activateRecall() },
-      h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, '↶'), h('span', { class: 'recall-label' }, t('hud.recallLabel')), h('small', {}, t('hud.ready'))) as HTMLButtonElement;
+      h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, icon('recall')), h('span', { class: 'recall-label' }, t('hud.recallLabel')), h('small', {}, t('hud.ready'))) as HTMLButtonElement;
     this.surgeBtn = surge;
     this.recallBtn = recall;
     const telemetry = h('div', { class: 'compact-telemetry' },
@@ -785,6 +1021,7 @@ export class UI {
     this.recallBtn = null;
     this.compactTelemetry = null;
     this.hint(null);
+    this.guideHand(false);
   }
 
   updateHud(w: World): void {
@@ -795,8 +1032,9 @@ export class UI {
     const wasReady = this.surgeBtn.classList.contains('ready');
     this.surgeBtn.disabled = !ready || !this.game.controlsEnabled;
     this.surgeBtn.classList.toggle('ready', ready);
-    if (ready !== wasReady && ready) feedback(this.surgeBtn);
-    const label = this.surgeBtn.firstElementChild as HTMLElement;
+    this.surgeBtn.classList.toggle('active', w.surge.active > 0);
+    if (ready !== wasReady && ready) { feedback(this.surgeBtn); this.game.haptic('ready'); }
+    const label = this.surgeBtn.querySelector('.surge-text')!;
     const text = w.surge.active > 0 ? t('hud.surgeActive') : ready ? t('hud.surgeReady') : `${Math.floor(frac * 100)}%`;
     if (label.textContent !== text) label.textContent = text;
     if (this.recallBtn) {
@@ -817,7 +1055,7 @@ export class UI {
         combo: `${formatNum(w.combo.count)}×`, signal,
         level: t('hud.level', { level: w.level, kills: formatNum(w.run.kills) }),
         event: w.event ? t('hud.eventTimer', { name: EVENT_MAP[w.event.id].name, n: Math.ceil(w.event.dur - w.event.t) }) : t('hud.clear'),
-        boss: w.director.bossActive ? t('hud.bossHp', { name: BOSS_MAP[w.director.bossId]?.name ?? t('hud.boss'), pct: Math.ceil(bossHp / (bossMax || 1) * 100) }) :
+        boss: w.director.bossActive ? t('hud.bossHp', { name: BOSSES.find(b => b.id === w.director.bossId)?.name ?? t('hud.boss'), pct: Math.ceil(bossHp / (bossMax || 1) * 100) }) :
           t('hud.bossIn', { time: formatTime(Math.max(0, w.director.bossTime - w.time)) }),
       };
       for (const [key, value] of Object.entries(labels)) {
@@ -841,49 +1079,52 @@ export class UI {
     retire(this.hintEl, 'notice', 0);
     cancelWithin(this.hintEl);
     this.hintEl?.remove();
-    this.hintEl = h('div', { class: 'hint', style: 'bottom:13%' }, text);
+    this.hintEl = h('div', { class: 'hint', role: 'status' }, icon('info'), h('span', {}, text));
     this.root.append(this.hintEl);
     enter(this.hintEl, 'notice', 0);
   }
 
-  private closeOverlay(): void {
-    retire(this.overlay, 'panel', 0);
-    cancelWithin(this.overlay);
-    this.overlayDeck?.dispose(); this.overlayDeck = null;
-    this.overlay?.remove();
-    this.overlay = null;
-  }
-
-  private confirmAction(title: string, message: string, label: string, proceed: () => void, cancel: () => void, cancelLabel = t('pause.keepPlaying'), relevant = () => true): void {
-    const world = this.game.world;
-    this.navigation.view(`confirm:${title}`, () => this.confirmAction(title, message, label, proceed, cancel, cancelLabel, relevant), {
-      cancel, valid: () => (!world || this.game.world === world) && relevant(),
-    });
-    const back = h('button', { onclick: () => this.navigation.dismiss() }, cancelLabel);
-    const confirm = h('button', { class: 'danger', onclick: () => { this.closeOverlay(); proceed(); } }, label);
-    const overlay = h('div', { class: 'levelup confirm-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-      h('div', { class: 'lvtitle' }, title), h('p', { class: 'center' }, message),
-      h('div', { class: 'row' }, back, confirm));
-    overlay.addEventListener('keydown', e => {
-      if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === back ? confirm : back).focus(); }
-    });
-    this.showOverlay(overlay, `confirm:${title}`); back.focus({ preventScroll: true });
+  /** First Contact shows a ghost hand dragging from the launcher until the first shot. */
+  guideHand(show: boolean, slingshot = false): void {
+    if (!show) { this.handEl?.remove(); this.handEl = null; return; }
+    if (this.handEl?.dataset.mode === (slingshot ? 'slingshot' : 'direct')) return;
+    this.handEl?.remove();
+    this.handEl = h('div', { class: `guide-hand ${slingshot ? 'slingshot' : ''}`, 'aria-hidden': 'true', 'data-mode': slingshot ? 'slingshot' : 'direct' },
+      h('span', { class: 'guide-trail' }), h('span', { class: 'guide-finger' }));
+    this.root.append(this.handEl);
   }
 
   // ------------------------------------------------------------------ level up
+  private buildStrip(w: World, cls = ''): HTMLElement {
+    const entries = [...w.build.upgrades.entries()];
+    return h('div', { class: `build-strip ${cls}`.trim(), 'aria-label': t('pause.upgrades') },
+      entries.length ? entries.map(([id, lv]) => h('span', { class: `build-chip ${UPGRADE_MAP[id].rarity}`, title: `${UPGRADE_MAP[id].name} ${lv}` },
+        h('span', { class: 'build-chip-icon' }, UPGRADE_MAP[id].icon), h('b', {}, String(lv))))
+        : h('span', { class: 'build-empty' }, t('levelup.emptyBuild')),
+      [...w.build.evolutions].map(id => h('span', { class: 'build-chip evolution', title: EVOLUTION_MAP[id].name }, h('span', { class: 'build-chip-icon' }, EVOLUTION_MAP[id].icon))));
+  }
+
   levelUp(w: World): void {
     const codex = w.flags.has('codex');
-    const card = (o: Offer) => {
+    const fresh = this.overlay?.dataset.view !== 'upgrade';
+    const card = (o: Offer, i: number) => {
+      const style = `--i:${i}`;
       if (o.kind === 'evolution') {
         const e = EVOLUTION_MAP[o.id];
-        return h('button', { class: 'offer evolution', disabled: this.banishMode, onclick: () => this.pick(w, o) },
-          h('div', { class: 'oicon' }, e.icon),
-          h('div', {}, h('div', { class: 'oname', style: `color:${e.color}` }, t('levelup.evolve', { name: e.name })), h('div', { class: 'odesc' }, e.desc)));
+        return h('button', { class: 'offer evolution legendary', style: `${style};--c:${e.color}`, disabled: this.banishMode, onclick: () => this.pick(w, o, overlay) },
+          h('span', { class: 'offer-gem', 'aria-hidden': 'true' }),
+          h('span', { class: 'oicon' }, e.icon),
+          h('span', { class: 'obody' },
+            h('span', { class: 'okicker' }, t('levelup.evolutionKicker')),
+            h('span', { class: 'oname', style: `color:${e.color}` }, t('levelup.evolve', { name: e.name })),
+            h('span', { class: 'odesc' }, richText(e.desc))));
       }
       if (o.kind !== 'upgrade') {
-        return h('button', { class: 'offer', disabled: this.banishMode, onclick: () => this.pick(w, o) },
-          h('div', { class: 'oicon' }, o.kind === 'heal' ? '💚' : '🪙'),
-          h('div', {}, h('div', { class: 'oname' }, o.kind === 'heal' ? t('levelup.repair') : t('levelup.salvage')), h('div', { class: 'odesc' }, o.kind === 'heal' ? t('levelup.repairDesc') : t('levelup.salvageDesc'))));
+        return h('button', { class: 'offer utility', style, disabled: this.banishMode, onclick: () => this.pick(w, o, overlay) },
+          h('span', { class: 'offer-gem', 'aria-hidden': 'true' }),
+          h('span', { class: 'oicon' }, o.kind === 'heal' ? icon('heart') : icon('coin')),
+          h('span', { class: 'obody' }, h('span', { class: 'oname' }, o.kind === 'heal' ? t('levelup.repair') : t('levelup.salvage')),
+            h('span', { class: 'odesc' }, richText(o.kind === 'heal' ? t('levelup.repairDesc') : t('levelup.salvageDesc')))));
       }
       const u = UPGRADE_MAP[o.id];
       const syn = previewSynergies(w.build, o.id);
@@ -892,48 +1133,83 @@ export class UI {
       for (const s of syn) {
         const sd = SYNERGY_MAP[s];
         const known = w.seen.synergies.has(s) || sd.tier === 'known';
-        hints.push(h('div', { class: 'ohint', style: 'color:#d59bff' }, known ? t('levelup.activates', { icon: sd.icon, name: sd.name }) : t('levelup.hidden')));
+        hints.push(h('span', { class: 'ohint synergy' }, known ? t('levelup.activates', { icon: sd.icon, name: sd.name }) : t('levelup.hidden')));
       }
       if (codex) for (const f of feeds) {
         const e = EVOLUTION_MAP[f];
         const r = e.recipe.find((x) => x.id === o.id)!;
-        hints.push(h('div', { class: 'ohint', style: 'color:var(--legendary)' }, `${t('levelup.ingredient', { name: e.name })}${r.level > 1 ? t('levelup.needsLevel', { n: r.level }) : ''}`));
+        hints.push(h('span', { class: 'ohint evolution-hint' }, `${t('levelup.ingredient', { name: e.name })}${r.level > 1 ? t('levelup.needsLevel', { n: r.level }) : ''}`));
       }
+      const max = w.build.maxLevel(o.id);
       return h('button', {
-        class: `offer ${u.rarity} ${this.banishMode ? 'banish-mode' : ''}`,
+        class: `offer ${u.rarity} ${this.banishMode ? 'banish-mode' : ''} ${hints.length ? 'has-hint' : ''}`, style,
         onclick: () => {
           if (this.banishMode) {
             this.banishMode = false;
             this.game.audio.play('shieldbreak');
             w.banish(o.id);
-          } else this.pick(w, o);
+          } else this.pick(w, o, overlay);
         },
       },
-      h('div', { class: 'oicon' }, u.icon),
-      h('div', { style: 'flex:1' },
-        h('div', {}, h('span', { class: 'oname' }, u.name), h('span', { class: 'olv', style: o.level === 1 ? 'background:var(--green);color:#0a0612' : '' }, o.level === 1 ? t('levelup.new') : t('levelup.level', { level: o.level, max: w.build.maxLevel(o.id) }))),
-        h('div', { class: 'odesc' }, u.desc(o.level)),
-        h('div', { class: 'otags' }, t('levelup.tags', { rarity: rarityLabel(u.rarity), tags: u.tags.map(tagLabel).join(' · ') })),
-        hints));
+      h('span', { class: 'offer-gem', 'aria-hidden': 'true' }),
+      h('span', { class: 'oicon' }, u.icon),
+      h('span', { class: 'obody' },
+        h('span', { class: 'ohead' }, h('span', { class: 'oname' }, u.name),
+          o.level === 1 ? h('span', { class: 'olv new' }, t('levelup.new')) : h('span', { class: 'olv', 'aria-label': t('levelup.level', { level: o.level, max }) }, pips(o.level - 1, max, true))),
+        h('span', { class: 'odesc' }, richText(u.desc(o.level))),
+        hints.length ? h('span', { class: 'ohints' }, hints) : null,
+        h('span', { class: 'otags' }, t('levelup.tags', { rarity: rarityLabel(u.rarity), tags: u.tags.map(tagLabel).join(' · ') }))));
     };
     const tutorial = w.cfg.tutorial && w.levelUps === 0;
-    const overlay = h('div', { class: 'levelup' },
-      h('div', { class: 'lvtitle' }, t('levelup.title', { n: w.level - w.pendingLevels + 1 })),
-      tutorial ? h('div', { class: 'center small', style: 'color:var(--gold)' }, t('levelup.tutorial')) : null,
+    const queued = Math.max(0, w.pendingLevels - 1);
+    const reroll = h('button', {
+      class: 'draft-action', disabled: w.rerolls <= 0,
+      onclick: () => {
+        if (performance.now() < this.rerollLockedUntil) return;
+        this.rerollLockedUntil = performance.now() + 350;
+        this.click(); if (w.reroll()) this.dealSound(w);
+      },
+    }, icon('reroll'), h('span', {}, t('levelup.rerollShort')), h('b', {}, String(w.rerolls)));
+    const banish = w.banishes > 0 || w.flags.has('banish') ? h('button', {
+      class: `draft-action ${this.banishMode ? 'danger' : ''}`, disabled: w.banishes <= 0,
+      onclick: () => { this.click(); this.banishMode = !this.banishMode; this.levelUp(w); },
+    }, icon('banish'), h('span', {}, this.banishMode ? t('levelup.tapCard') : t('levelup.banishShort')), this.banishMode ? null : h('b', {}, String(w.banishes))) : null;
+    const peek = h('button', { class: 'draft-action peek-btn', 'aria-label': t('levelup.peek'), title: t('levelup.peek') }, icon('eye'), h('span', {}, t('levelup.peekShort')));
+    const hold = (on: boolean) => overlay.classList.toggle('peeking', on);
+    peek.addEventListener('pointerdown', (e) => { e.preventDefault(); hold(true); });
+    for (const type of ['pointerup', 'pointercancel', 'pointerleave', 'blur']) peek.addEventListener(type, () => hold(false));
+    peek.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); hold(true); } });
+    peek.addEventListener('keyup', () => hold(false));
+    const skip = h('button', { class: 'draft-action ghost', 'aria-label': t('levelup.skipLabel'), title: t('levelup.skipLabel'), onclick: () => this.pick(w, { kind: 'coins' }, overlay) },
+      icon('skip'), h('span', {}, t('levelup.skip')));
+    const overlay: HTMLElement = h('div', { class: `levelup draft ${this.banishMode ? 'banishing' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': t('levelup.kicker') },
+      h('div', { class: 'draft-head' },
+        h('div', { class: 'draft-kicker' }, icon('arrowUp'), t('levelup.kicker'), queued ? h('span', { class: 'draft-queue' }, t('levelup.queue', { n: queued })) : null),
+        h('div', { class: 'lvtitle' }, t('levelup.title', { n: w.level - w.pendingLevels + 1 })),
+        this.buildStrip(w)),
+      tutorial ? h('div', { class: 'draft-tip' }, icon('info'), t('levelup.tutorial')) : null,
       h('div', { class: 'col offer-list' }, w.offers.map(card)),
-      h('div', { class: 'row offer-actions', style: 'justify-content:center;margin-top:6px' },
-        h('button', { disabled: w.rerolls <= 0, onclick: () => { this.click(); w.reroll(); } }, t('levelup.reroll', { n: w.rerolls })),
-        w.banishes > 0 || w.flags.has('banish') ? h('button', {
-          class: this.banishMode ? 'danger' : '', disabled: w.banishes <= 0,
-          onclick: () => { this.click(); this.banishMode = !this.banishMode; this.levelUp(w); },
-        }, this.banishMode ? t('levelup.tapCard') : t('levelup.banish', { n: w.banishes })) : null,
-        h('button', { class: 'ghost', 'aria-label': t('levelup.skipLabel'), title: t('levelup.skipLabel'), onclick: () => this.pick(w, { kind: 'coins' }) }, t('levelup.skip')),
-      ),
+      h('div', { class: 'offer-actions' }, reroll, banish, peek, skip),
     );
+    if (fresh) {
+      // A tap meant for the board must not pick a card the instant the draft opens.
+      overlay.setAttribute('data-arming', '');
+      setTimeout(() => overlay.removeAttribute('data-arming'), DRAFT_ARM_MS);
+      this.dealSound(w);
+      this.game.haptic('levelup');
+    }
     this.showOverlay(overlay, 'upgrade');
   }
 
-  private pick(w: World, o: Offer): void {
+  /** Cards land one after another with a rising pitch; a legendary or evolution adds a chime. */
+  private dealSound(w: World): void {
+    w.offers.forEach((o, i) => setTimeout(() => this.game.audio.play('pickup', 1 + i * 0.14, 0.7), 70 + i * 90));
+    if (w.offers.some(o => o.kind === 'evolution' || (o.kind === 'upgrade' && ['epic', 'legendary'].includes(UPGRADE_MAP[o.id].rarity))))
+      setTimeout(() => this.game.audio.play('synergy', 1.2, 0.5), 340);
+  }
+
+  private pick(w: World, o: Offer, overlay?: HTMLElement): void {
+    if (overlay?.hasAttribute('data-arming')) return;
     this.banishMode = false;
     this.game.audio.play('select');
     this.closeOverlay();
@@ -949,33 +1225,34 @@ export class UI {
     // Balls include milestone balls, which are not an upgrade stat.
     const st = { ...w.build.stats, maxBalls: w.maxBallsAllowed() };
     const keys: StatKey[] = ['damage', 'critChance', 'critMult', 'speed', 'maxBalls', 'pierce', 'burnChance', 'chillChance', 'chainChance', 'explosionChance', 'splitChance', 'bleedChance', 'lifesteal', 'maxHp', 'armor'];
-    const overlay = h('div', { class: 'levelup pause-overlay', style: 'justify-content:flex-start' },
-      h('div', { class: 'lvtitle' }, t('pause.title')),
-      h('div', { class: 'scroll col' },
-        h('h3', {}, t('pause.manual')),
-        h('div', { class: 'combat-guide' }, h('b', {}, t('pause.powerShot')), h('p', {}, t('pause.powerShotDesc'))),
-        h('div', { class: 'combat-guide' }, h('b', {}, t('pause.resonance')), h('p', {}, t('pause.resonanceDesc'))),
-        h('div', { class: 'combat-guide' }, h('b', {}, t('pause.recallSurge')), h('p', {}, t('pause.recallSurgeDesc'))),
-        h('h3', {}, t('pause.build')),
-        h('div', { class: 'buildcard' },
-          h('div', { class: 'small muted' }, t('pause.currentBuild')),
-          h('div', { class: 'buildname' }, this.game.buildName()),
-          h('div', { class: 'statgrid' }, keys.filter((k) => st[k] > 0 && STAT_FORMATS[k]).map((k) => h('div', {}, h('span', { class: 'muted' }, statLabel(k)), h('b', {}, STAT_FORMATS[k]!(st[k])))))),
-        h('h3', {}, t('pause.talents')),
-        h('div', { class: 'row wrap' }, talentSpent(w.talents) ? TALENTS.filter(tl => w.talents[tl.id]).map(tl =>
-          h('span', { class: 'chip', title: tl.desc(w.talents[tl.id]) }, t('pause.talentChip', { icon: tl.icon, name: tl.name, rank: w.talents[tl.id], max: tl.maxRank }))) : h('span', { class: 'small muted' }, t('pause.noTalents'))),
-        h('h3', {}, t('pause.upgrades')),
-        h('div', { class: 'row wrap' }, [...w.build.upgrades.entries()].map(([id, lv]) => h('span', { class: 'chip' }, `${UPGRADE_MAP[id].icon} ${UPGRADE_MAP[id].name} ${lv}`))),
-        w.build.synergies.size ? [h('h3', {}, t('pause.synergies')), h('div', { class: 'col' }, [...w.build.synergies].map((id) => h('div', { class: 'card' }, h('div', { class: 'name' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`), h('div', { class: 'desc' }, SYNERGY_MAP[id].desc))))] : null,
-        w.build.evolutions.size ? [h('h3', {}, t('pause.evolutions')), h('div', { class: 'col' }, [...w.build.evolutions].map((id) => h('div', { class: 'card' }, h('div', { class: 'name', style: `color:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`), h('div', { class: 'desc' }, EVOLUTION_MAP[id].desc))))] : null,
-      ),
+    const core = CORE_MAP[w.cfg.core];
+    const guide = (title: string, text: string) => h('div', { class: 'combat-guide' }, h('b', {}, title), h('p', {}, text));
+    const overlay = h('div', { class: 'levelup pause-overlay' },
+      h('div', { class: 'pause-head' },
+        h('div', { class: 'lvtitle' }, t('pause.title')),
+        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
+      h('div', { class: 'scroll pause-body' },
+        h('div', { class: 'buildcard', style: `--core:${core.color}` },
+          h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('pause.currentBuild')), h('div', { class: 'buildname' }, this.game.buildName()))),
+          this.buildStrip(w, 'wrap'),
+          [...w.build.synergies].length || w.build.evolutions.size ? h('div', { class: 'build-tags' },
+            [...w.build.evolutions].map(id => h('span', { class: 'tag evo', style: `--c:${EVOLUTION_MAP[id].color}`, title: EVOLUTION_MAP[id].desc }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`)),
+            [...w.build.synergies].map(id => h('span', { class: 'tag syn', title: SYNERGY_MAP[id].desc }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`))) : null),
+        h('div', { class: 'stat-grid' }, keys.filter((k) => st[k] > 0 && STAT_FORMATS[k]).map((k) => statTile(statLabel(k), STAT_FORMATS[k]!(st[k])))),
+        talentSpent(w.talents) ? h('div', { class: 'build-tags talents-line' }, TALENTS.filter(tl => w.talents[tl.id]).map(tl =>
+          h('span', { class: 'tag', title: tl.desc(w.talents[tl.id]) }, t('pause.talentChip', { icon: tl.icon, name: tl.name, rank: w.talents[tl.id], max: tl.maxRank })))) : null,
+        h('details', { class: 'manual' },
+          h('summary', {}, icon('info'), t('pause.manual')),
+          guide(t('pause.powerShot'), t('pause.powerShotDesc')),
+          guide(t('pause.resonance'), t('pause.resonanceDesc')),
+          guide(t('pause.recallSurge'), t('pause.recallSurgeDesc')))),
       h('div', { class: 'col overlay-actions' },
-        h('button', { class: 'primary big', onclick: () => { this.click(); this.navigation.dismiss(); } }, t('pause.resume')),
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.navigation.dismiss(); } }, icon('play'), t('pause.resume')),
         h('div', { class: 'row' },
-          h('button', { style: 'flex:1', onclick: () => { this.click(); this.settings(); } }, t('pause.settings')),
+          h('button', { style: 'flex:1', onclick: () => { this.click(); this.settings(); } }, icon('gear'), t('pause.settings')),
           // Returning to the Pause entry already re-renders the menu; cancelling only restores focus.
           h('button', { class: 'danger', style: 'flex:1', onclick: () => this.confirmAction(t('pause.endTitle'), t('pause.endMessage'), t('pause.endRun'), () => this.game.abandonRun(),
-            () => this.root.querySelector<HTMLButtonElement>('.pause-overlay .overlay-actions .danger')?.focus({ preventScroll: true })) }, t('pause.abandon')),
+            () => this.root.querySelector<HTMLButtonElement>('.pause-overlay .overlay-actions .danger')?.focus({ preventScroll: true })) }, icon('flag'), t('pause.abandon')),
         ),
       ),
     );
@@ -984,74 +1261,109 @@ export class UI {
 
   // ------------------------------------------------------------------ victory choice
   victoryChoice(w: World): void {
-    const overlay = h('div', { class: 'levelup' },
+    const overlay = h('div', { class: 'levelup victory-overlay' },
+      h('div', { class: 'victory-burst', 'aria-hidden': 'true' }, icon('trophy')),
       h('div', { class: 'result-title win' }, t('victory.title')),
-      h('div', { class: 'center muted' }, t('victory.cleared', { arena: ARENA_MAP[w.arena.id].name, difficulty: w.diff.name, time: formatTime(w.time) })),
-      h('button', { class: 'primary big', onclick: () => { this.click(); this.closeOverlay(); this.game.finishRun(); } }, t('victory.claim')),
-      h('button', { class: 'big', onclick: () => { this.click(); this.closeOverlay(); this.game.continueEndless(); } }, t('victory.endless')),
-      h('div', { class: 'center small muted' }, t('victory.endlessDesc')),
+      h('div', { class: 'results-sub' }, t('victory.cleared', { arena: ARENA_MAP[w.arena.id].name, difficulty: w.diff.name, time: formatTime(w.time) })),
+      h('div', { class: 'col victory-actions' },
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.closeOverlay(); this.game.finishRun(); } }, icon('trophy'), t('victory.claim')),
+        h('button', { class: 'big endless-btn', onclick: () => { this.click(); this.closeOverlay(); this.game.continueEndless(); } }, icon('fire'), t('victory.endless')),
+        h('div', { class: 'victory-note' }, t('victory.endlessDesc'))),
     );
     this.showOverlay(overlay, 'victory');
   }
 
   // ------------------------------------------------------------------ post run
-  postRun(s: RunSummary, r: RunReport, abandoned = false): void {
-    this.navigation.reset(() => this.home(), { key: 'results', restore: () => this.postRun(s, r, abandoned) });
+  postRun(s: RunSummary, r: RunReport, abandoned = false, best: { combo: number; chain: number } | null = null): void {
+    this.navigation.reset(() => this.home(), { key: 'results', restore: () => this.postRun(s, r, abandoned, best) });
     this.hideHud();
     this.closeOverlay();
     const bs = s.buildStats;
-    const stat = (k: string, v: string | number) => h('div', {}, h('span', { class: 'muted' }, k), h('b', {}, String(v)));
     const core = CORE_MAP[s.core];
-    const unlockLines = [
-      ...r.unlocks.map((u) => t('results.unlock', { text: u })),
-      ...r.achievements.map((a) => t('results.achievement', { name: a })),
-      ...r.challenges.map((c) => t('results.challenge', { name: c })),
-      ...(r.arenaUnlocked ? [t('results.newArena', { name: r.arenaUnlocked })] : []),
-      ...(r.difficultyUnlocked ? [t('results.newDifficulty', { name: r.difficultyUnlocked })] : []),
-      ...(r.daily?.bonus ? [t('results.dailyBonus')] : []),
-      ...(r.daily?.newBest ? [t('results.dailyBest', { n: formatNum(r.daily.best) })] : []),
+    const unlockLines: [IconName, string][] = [
+      ...r.unlocks.map((u): [IconName, string] => ['star', u]),
+      ...r.achievements.map((a): [IconName, string] => ['trophy', t('results.achievementShort', { name: a })]),
+      ...r.challenges.map((c): [IconName, string] => ['flag', t('results.challengeShort', { name: c })]),
+      ...(r.arenaUnlocked ? [['battle', t('results.newArenaShort', { name: r.arenaUnlocked })] as [IconName, string]] : []),
+      ...(r.difficultyUnlocked ? [['fire', t('results.newDifficultyShort', { name: r.difficultyUnlocked })] as [IconName, string]] : []),
+      ...(r.daily?.bonus ? [['daily', t('results.dailyBonusShort')] as [IconName, string]] : []),
+      ...(r.daily?.newBest ? [['daily', t('results.dailyBestShort', { n: formatNum(r.daily.best) })] as [IconName, string]] : []),
+      ...r.mastery.rewards.map((text): [IconName, string] => ['star', text]),
     ];
-    this.show(h('div', { class: 'screen solid' },
-      h('div', { class: `result-title ${s.victory ? 'win' : 'lose'}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),
-      h('div', { class: 'center small muted' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.daily ? t('results.daily') : ''}`),
-      h('div', { class: 'scroll', style: 'margin-top:10px' },
-        h('div', { class: 'buildcard' },
-          h('div', { class: 'small muted' }, t('results.yourBuild')),
-          h('div', { class: 'buildname' }, `${core.icon} ${s.buildName.toUpperCase()}`),
+    const outcome = s.victory ? 'win' : abandoned ? 'ended' : 'lose';
+    const reward = (currency: 'coins' | 'cores' | 'research', n: number) => h('div', { class: `reward-tile ${currency}` },
+      icon(currency === 'coins' ? 'coin' : currency === 'cores' ? 'gem' : 'flask'),
+      h('b', { 'data-count': String(n) }, `+${formatNum(n)}`), h('span', {}, t(`common.${currency}`)));
+    const leveled = r.mastery.after > r.mastery.before;
+    const masteryFrac = r.mastery.need ? r.mastery.into / r.mastery.need : 1;
+    const screen = h('div', { class: `screen solid results ${outcome}` },
+      h('div', { class: 'results-head' },
+        h('div', { class: 'results-emblem', 'aria-hidden': 'true' }, icon(s.victory ? 'trophy' : abandoned ? 'flag' : 'skull')),
+        h('div', { class: `result-title ${outcome}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),
+        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.daily ? t('results.daily') : ''}`)),
+      h('div', { class: 'scroll results-body' },
+        h('div', { class: 'reward-row reveal' },
+          reward('coins', r.rewards.coins),
+          r.rewards.cores ? reward('cores', r.rewards.cores) : null,
+          r.rewards.research ? reward('research', r.rewards.research) : null),
+        h('div', { class: `mastery-card ${leveled ? 'leveled' : ''}`, style: `--core:${core.color}` },
+          orb(core.color, 'small'),
+          h('div', { class: 'mastery-copy' },
+            h('div', { class: 'row' }, h('b', {}, t('results.masteryShort', { name: core.name, level: r.mastery.after })), leveled ? h('span', { class: 'level-up-tag' }, icon('arrowUp'), t('results.levelUp')) : null),
+            h('div', { class: 'meter pink', role: 'presentation' }, h('i', { style: 'width:0%', 'data-to': String(masteryFrac * 100) })))),
+        unlockLines.length ? h('div', { class: 'unlock-list reveal' }, unlockLines.map(([glyph, text]) => h('div', { class: 'unlock-card' }, h('span', { class: 'unlock-icon' }, icon(glyph)), h('span', {}, text)))) : null,
+        h('div', { class: 'stat-grid reveal' },
+          statTile(t('results.kills'), formatNum(s.kills)),
+          statTile(t('results.bestCombo'), formatNum(s.bestCombo), !!best && s.bestCombo > best.combo && best.combo > 0),
+          statTile(t('results.damageDealt'), formatNum(s.damageDealt)),
+          statTile(t('results.level'), s.level),
+          statTile(t('results.bounceChain'), s.maxBounceChain, !!best && s.maxWallChain > best.chain && best.chain > 0),
+          statTile(t('results.bosses'), s.bossesDefeated.length),
+          statTile(t('results.powerShots'), s.powerShots ?? 0),
+          statTile(t('results.starfalls'), s.starfalls ?? 0),
+          statTile(t('results.recalls'), s.recalls ?? 0)),
+        h('div', { class: 'buildcard', style: `--core:${core.color}` },
+          h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('results.yourBuild')), h('div', { class: 'buildname' }, s.buildName))),
+          h('div', { class: 'build-strip wrap' }, s.upgrades.map(u => UPGRADE_MAP[u.id] ? h('span', { class: `build-chip ${UPGRADE_MAP[u.id].rarity}`, title: UPGRADE_MAP[u.id].name }, h('span', { class: 'build-chip-icon' }, UPGRADE_MAP[u.id].icon), h('b', {}, String(u.level))) : null)),
           h('div', { class: 'statgrid' },
-            stat(t('results.damage'), bs.damage.toFixed(0)), stat(t('results.crit'), `${Math.round(bs.critChance * 100)}%`),
-            stat(t('results.speed'), Math.round(bs.speed)), stat(t('results.balls'), bs.balls),
-            bs.chain ? stat(t('results.chain'), bs.chain) : null, bs.lifesteal ? stat(t('results.lifesteal'), `${(bs.lifesteal * 100).toFixed(1)}%`) : null),
-        ),
-        h('div', { class: 'card', style: 'margin-top:8px' }, h('div', { class: 'statgrid' },
-          stat(t('results.kills'), formatNum(s.kills)), stat(t('results.bestCombo'), s.bestCombo),
-          stat(t('results.bounceChain'), s.maxBounceChain), stat(t('results.damageDealt'), formatNum(s.damageDealt)),
-          stat(t('results.bosses'), s.bossesDefeated.length), stat(t('results.level'), s.level),
-          stat(t('results.powerShots'), s.powerShots ?? 0), stat(t('results.starfalls'), s.starfalls ?? 0), stat(t('results.recalls'), s.recalls ?? 0),
-        )),
-        h('h3', {}, t('results.rewards')),
-        h('div', { class: 'row wrap', style: 'gap:14px' },
-          h('div', { class: 'reward', style: 'color:var(--gold)' }, `+${formatNum(r.rewards.coins)} 🪙`),
-          r.rewards.cores ? h('div', { class: 'reward', style: 'color:var(--pink)' }, `+${r.rewards.cores} 💠`) : null,
-          r.rewards.research ? h('div', { class: 'reward', style: 'color:#6de2ff' }, `+${r.rewards.research} 🔬`) : null,
-        ),
-        h('div', { class: 'card', style: 'margin-top:8px' },
-          h('div', { class: 'name' }, `${t('results.mastery', { icon: core.icon, name: core.name, level: r.mastery.after })}${r.mastery.after > r.mastery.before ? ' ⬆' : ''}`),
-          bar(r.mastery.need ? r.mastery.into / r.mastery.need : 1, 'pink'),
-          r.mastery.rewards.map((text) => h('div', { class: 'unlock' }, `⭐ ${text}`))),
-        s.synergies.length ? [h('h3', {}, t('results.synergies')), h('div', { class: 'col' }, s.synergies.map(id =>
-          h('div', { class: 'card' }, h('div', { class: 'name' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`), h('div', { class: 'desc' }, SYNERGY_MAP[id].desc))))] : null,
-        s.evolutions.length ? [h('h3', {}, t('results.evolutions')), h('div', { class: 'col' }, s.evolutions.map(id =>
-          h('div', { class: 'card' }, h('div', { class: 'name', style: `color:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`), h('div', { class: 'desc' }, EVOLUTION_MAP[id].desc))))] : null,
-        r.discoveries.some((d) => d.cat !== 'upgrades') ? [h('h3', {}, t('results.discoveries')), h('div', { class: 'col' }, r.discoveries.filter((d) => d.cat !== 'upgrades').slice(0, 10).map((d) => h('div', { class: 'unlock', style: 'color:#d59bff' }, t('results.discovery', { cat: discoveryLabel(d.cat), name: d.name }))))] : null,
-        unlockLines.length ? [h('h3', {}, t('results.unlocked')), h('div', { class: 'col' }, unlockLines.map(u => h('div', { class: 'unlock' }, u)))] : null,
-        h('h3', {}, t('results.nextGoals')),
-        this.goalList(r.goals),
+            ...[[t('results.damage'), bs.damage.toFixed(0)], [t('results.crit'), `${Math.round(bs.critChance * 100)}%`], [t('results.speed'), Math.round(bs.speed)], [t('results.balls'), bs.balls],
+              ...(bs.chain ? [[t('results.chain'), bs.chain]] : []), ...(bs.lifesteal ? [[t('results.lifesteal'), `${(bs.lifesteal * 100).toFixed(1)}%`]] : [])]
+              .map(([k, v]) => h('div', {}, h('span', {}, String(k)), h('b', {}, String(v))))),
+          s.synergies.length || s.evolutions.length ? h('div', { class: 'build-tags' },
+            s.evolutions.map(id => h('span', { class: 'tag evo', style: `--c:${EVOLUTION_MAP[id].color}` }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`)),
+            s.synergies.map(id => h('span', { class: 'tag syn' }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`))) : null),
+        r.discoveries.some((d) => d.cat !== 'upgrades') ? [sectionTitle(t('results.discoveries')), h('div', { class: 'build-tags discoveries' },
+          r.discoveries.filter((d) => d.cat !== 'upgrades').slice(0, 10).map((d) => h('span', { class: 'tag syn' }, t('results.discovery', { cat: discoveryLabel(d.cat), name: d.name }))))] : null,
+        r.goals.length ? [sectionTitle(t('results.nextGoals')), h('div', { class: 'goal-list' }, r.goals.slice(0, 2).map(g => this.goalCard(g)))] : null,
       ),
-      h('div', { class: 'row', style: 'margin-top:8px' },
-        h('button', { style: 'flex:1', onclick: () => { this.click(); this.home(); } }, t('results.home')),
-        h('button', { class: 'primary', style: 'flex:2', onclick: () => { this.click(); this.runSetup(); } }, t('results.oneMore')),
-      ),
-    ));
+      h('div', { class: 'results-actions' },
+        h('button', { class: 'home-btn', onclick: () => { this.click(); this.home(); } }, icon('home'), t('results.home')),
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.replay(); } }, icon('play'), t('results.playAgain'))),
+    );
+    this.show(screen);
+    this.celebrate(screen, s.victory);
+  }
+
+  /** Rewards roll up with rising ticks and the mastery bar fills: the payoff is felt, not just read. */
+  private celebrate(screen: HTMLElement, victory: boolean): void {
+    const counters = [...screen.querySelectorAll<HTMLElement>('.reward-tile b[data-count]')];
+    const start = performance.now() + 250, dur = 900;
+    let ticks = 0;
+    const step = (now: number) => {
+      if (!screen.isConnected) return;
+      const k = Math.max(0, Math.min(1, (now - start) / dur));
+      const e = 1 - Math.pow(1 - k, 3);
+      for (const c of counters) c.textContent = `+${formatNum(Math.round(Number(c.dataset.count) * e))}`;
+      const due = Math.floor(k * 8);
+      if (k > 0 && due > ticks && counters.length) { ticks = due; this.game.audio.play('coin', 1 + ticks * 0.06, 0.45); }
+      if (k < 1) requestAnimationFrame(step);
+      else for (const c of counters) feedback(c.closest<HTMLElement>('.reward-tile'));
+    };
+    requestAnimationFrame(step);
+    setTimeout(() => {
+      const bar = screen.querySelector<HTMLElement>('.mastery-card .meter > i');
+      if (bar) bar.style.width = `${bar.dataset.to}%`;
+    }, 450);
+    if (victory) this.game.haptic('victory');
   }
 }

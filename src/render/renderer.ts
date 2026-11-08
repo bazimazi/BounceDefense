@@ -4,6 +4,7 @@ import { EVENT_MAP } from '../data/arenas';
 import { CORE_MAP } from '../data/balls';
 import { BOSS_MAP, ELITE_MAP } from '../data/enemies';
 import { EVOLUTION_MAP } from '../data/synergies';
+import { UPGRADE_MAP } from '../data/upgrades';
 import { FORTRESS_HALF_ARC, FORTRESS_RING } from '../sim/bosses';
 import { traceAim } from '../sim/physics';
 import {
@@ -31,6 +32,8 @@ export interface RenderOptions {
   shake: boolean;
   damageNumbers: boolean;
   previewBounces: number;
+  /** Softens full-screen flashes and the low-hull pulse. */
+  reduceFlashes: boolean;
 }
 
 /** Resolved per frame so a language switch also changes the canvas typeface. */
@@ -58,7 +61,9 @@ export class Renderer {
   private bgArena = '';
   private dark: HTMLCanvasElement | null = null;
   private trace: number[] = [];
-  opts: RenderOptions = { shake: true, damageNumbers: true, previewBounces: 1 };
+  opts: RenderOptions = { shake: true, damageNumbers: true, previewBounces: 1, reduceFlashes: false };
+  /** Emoji upgrade icons are rasterised once; the HUD build strip then blits them. */
+  private iconSprites = new Map<string, HTMLCanvasElement>();
   private launcherRecoil = 0;
   private lastHand = 0;
   private emissionDt = 0;
@@ -300,15 +305,16 @@ export class Renderer {
       ctx.fillStyle = 'rgba(7,6,15,0.45)';
       ctx.fillRect(0, 0, W, H);
     }
+    if (hud) this.drawLowHull(w);
     if (this.flash.a > 0) {
-      ctx.globalAlpha = this.flash.a;
+      ctx.globalAlpha = this.flash.a * (this.opts.reduceFlashes ? 0.3 : 1);
       ctx.fillStyle = this.flash.color;
       ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
     }
     if (this.hurtFlash > 0) {
       const g = ctx.createLinearGradient(0, H, 0, H - 260);
-      g.addColorStop(0, `rgba(255,40,60,${0.45 * this.hurtFlash})`);
+      g.addColorStop(0, `rgba(255,40,60,${(this.opts.reduceFlashes ? 0.2 : 0.45) * this.hurtFlash})`);
       g.addColorStop(1, 'rgba(255,40,60,0)');
       ctx.fillStyle = g;
       ctx.fillRect(0, H - 260, W, 260);
@@ -341,9 +347,6 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.fillStyle = col + '80';
     for (let x = 18; x < W; x += 28) ctx.fillRect(x, DEFENSE_Y + 7, 12, 2);
-    ctx.font = `9px ${FONT}`; ctx.textAlign = 'left';
-    ctx.fillText(t('canvas.defenseLine'), 24, DEFENSE_Y + 29);
-    ctx.textAlign = 'right'; ctx.fillText(t('canvas.integrity', { pct: Math.ceil(hpFrac * 100) }), W - 24, DEFENSE_Y + 29);
     if (w.barrier.charges > 0) {
       ctx.strokeStyle = '#5ad7ff';
       ctx.lineWidth = 2;
@@ -1102,6 +1105,32 @@ export class Renderer {
   }
 
   // ------------------------------------------------------------------ HUD
+  private iconSprite(glyph: string): HTMLCanvasElement {
+    let c = this.iconSprites.get(glyph);
+    if (c) return c;
+    c = document.createElement('canvas');
+    c.width = c.height = 40;
+    const g = c.getContext('2d')!;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `30px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", ${FONT}`;
+    g.fillText(glyph, 20, 22);
+    this.iconSprites.set(glyph, c);
+    return c;
+  }
+
+  /** Below 30% hull the screen edge breathes red: danger reads without looking at the bar. */
+  private drawLowHull(w: World): void {
+    const frac = w.hp / w.maxHp;
+    if (frac > 0.3 || w.state !== 'playing') return;
+    const ctx = this.ctx;
+    const k = (1 - frac / 0.3) * (0.55 + 0.45 * Math.sin(this.time * 6.5)) * (this.opts.reduceFlashes ? 0.35 : 1);
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.62);
+    g.addColorStop(0, 'rgba(255,40,70,0)');
+    g.addColorStop(1, `rgba(255,40,70,${0.32 * k})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   private drawHud(w: World): void {
     const ctx = this.ctx;
     const compact = W * this.scale < 300 && innerWidth > innerHeight;
@@ -1110,40 +1139,40 @@ export class Renderer {
     const right = Math.min(W - 88, W - 64 / this.scale);
     ctx.textBaseline = 'middle';
     if (!compact) {
-      // HP
+      // Hull: a heart, the number that matters, and a segmented bar.
       const hpFrac = clamp(w.hp / w.maxHp, 0, 1);
-      const hpColor = hpFrac > .5 ? '#9aeadb' : hpFrac > .25 ? '#ffd166' : '#ff5d73';
-      ctx.textAlign = 'left';
-      ctx.font = `700 ${smallText(9)}px ${FONT}`; ctx.fillStyle = '#9bb3bf';
-      ctx.fillText(t('canvas.hull'), 16, 18);
-      ctx.textAlign = 'right'; ctx.fillStyle = hpColor; ctx.font = `800 ${smallText(11)}px ${FONT}`;
-      ctx.fillText(`${formatNum(Math.ceil(w.hp))} / ${formatNum(w.maxHp)}`, 202, 18, 92);
-      ctx.fillStyle = '#20333f'; roundRect(ctx, 16, 29, 186, 7, 2); ctx.fill();
+      const hpColor = hpFrac > .5 ? '#7ef0d2' : hpFrac > .25 ? '#ffd166' : '#ff5d73';
+      const beat = hpFrac <= .3 ? 1 + Math.max(0, Math.sin(this.time * 6.5)) * .18 : 1;
+      heart(ctx, 25, 17, 8.5 * beat, hpColor);
+      ctx.textAlign = 'left'; ctx.fillStyle = '#f2fbff';
+      ctx.font = `900 ${smallText(17)}px ${FONT}`;
+      const hpText = formatNum(Math.ceil(w.hp));
+      ctx.fillText(hpText, 40, 18, 70);
+      const hpWidth = Math.min(70, ctx.measureText(hpText).width);
+      ctx.fillStyle = '#8fa6b8'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
+      ctx.fillText(`/ ${formatNum(w.maxHp)}`, 44 + hpWidth, 19, 80);
+      ctx.fillStyle = '#1a2a3a'; roundRect(ctx, 16, 31, 186, 8, 3); ctx.fill();
       const health = ctx.createLinearGradient(16, 0, 202, 0);
-      health.addColorStop(0, hpColor + '88'); health.addColorStop(1, hpColor);
-      ctx.fillStyle = health; roundRect(ctx, 16, 29, 186 * hpFrac, 7, 2); ctx.fill();
+      health.addColorStop(0, hpColor + '99'); health.addColorStop(1, hpColor);
+      ctx.fillStyle = health; roundRect(ctx, 16, 31, 186 * hpFrac, 8, 3); ctx.fill();
       ctx.fillStyle = '#07111d';
-      for (let i = 1; i < 10; i++) ctx.fillRect(16 + i * 18.6, 29, 2, 7);
-      // level + timer
-      ctx.textAlign = 'left'; ctx.fillStyle = '#d9f8ef';
-      ctx.font = `800 ${smallText(12)}px ${FONT}`;
+      for (let i = 1; i < 10; i++) ctx.fillRect(16 + i * 18.6, 31, 2, 8);
+      // Level badge and kills.
+      ctx.font = `900 ${smallText(11)}px ${FONT}`;
       const levelText = t('canvas.level', { n: String(w.level).padStart(2, '0') });
-      ctx.fillText(levelText, 16, 53, 60);
-      // The kill count follows the measured level label, so longer translations never collide with it.
-      const levelWidth = Math.min(60, ctx.measureText(levelText).width);
-      ctx.fillStyle = '#92aebb'; ctx.font = `600 ${smallText(10)}px ${FONT}`;
-      ctx.fillText(t('canvas.eliminated', { n: formatNum(w.run.kills) }), 16 + levelWidth + 10, 53, 176 - levelWidth);
+      const badgeW = Math.min(64, ctx.measureText(levelText).width + 16);
+      ctx.fillStyle = '#ffd45126'; ctx.strokeStyle = '#ffd451aa'; ctx.lineWidth = 1;
+      roundRect(ctx, 16, 46, badgeW, 19, 6); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#ffe38a'; ctx.textAlign = 'center';
+      ctx.fillText(levelText, 16 + badgeW / 2, 56, badgeW - 8);
+      ctx.textAlign = 'left'; ctx.fillStyle = '#9db3c4'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
+      ctx.fillText(t('canvas.eliminated', { n: formatNum(w.run.kills) }), 24 + badgeW, 56, 190 - badgeW);
+      // Clock and the road to the boss.
       ctx.textAlign = 'center';
       ctx.fillStyle = '#fff';
       ctx.font = '700 23px Consolas, monospace';
-      ctx.fillText(formatTime(w.time), W / 2, 24, 116);
-      const dLeft = w.director.bossTime - w.time;
-      if (!w.director.bossActive && dLeft > 0 && dLeft < 400) {
-        ctx.font = `700 ${smallText(11)}px ${FONT}`;
-        ctx.fillStyle = '#e7a88c';
-        const anomaly = w.director.eventTime - w.time;
-        ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? t('canvas.anomalyIn', { time: formatTime(anomaly) }) : t('canvas.bossIn', { time: formatTime(dLeft) }), W / 2, 44, 116);
-      }
+      ctx.fillText(formatTime(w.time), W / 2, 21, 116);
+      this.drawBossTrack(w, smallText);
       // combo
       if (w.combo.count >= 3) {
         const c = Math.floor(w.combo.count);
@@ -1157,65 +1186,73 @@ export class Renderer {
         ctx.fillText(t('canvas.comboCount', { n: formatNum(c) }), right, 35, Math.min(110, right - W / 2 - 64));
         ctx.textBaseline = 'middle';
         ctx.font = `700 ${smallText(10)}px ${FONT}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
         ctx.fillText(t('canvas.comboBonus', { n: Math.round((w.comboMult() - 1) * 100) }), right, 48, 110);
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.fillRect(right - 86, 58, 86, 3);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        roundRect(ctx, right - 86, 57, 86, 4, 2); ctx.fill();
         ctx.fillStyle = '#ffe066';
-        ctx.fillRect(right - 86, 58, 86 * clamp(w.combo.timer / w.build.stats.comboWindow, 0, 1), 3);
+        roundRect(ctx, right - 86, 57, 86 * clamp(w.combo.timer / w.build.stats.comboWindow, 0, 1), 4, 2); ctx.fill();
       }
+      // Build strip: every upgrade owned, at a glance, like a loadout bar.
+      this.drawBuildStrip(w, 16, 77, Math.min(260, right - 170));
       // XP bar
-      ctx.fillStyle = 'rgba(255,255,255,0.1)';
-      ctx.fillRect(0, FIELD_TOP - 8, W, 5);
+      const xpFrac = clamp(w.xp / w.xpNext, 0, 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(0, FIELD_TOP - 7, W, 6);
       const xp = ctx.createLinearGradient(0, 0, W, 0);
-      xp.addColorStop(0, '#499cb4'); xp.addColorStop(1, '#b7ffdb');
+      xp.addColorStop(0, '#3f8fd8'); xp.addColorStop(.6, '#6fe0d0'); xp.addColorStop(1, '#d4ffe9');
       ctx.fillStyle = xp;
-      ctx.fillRect(0, FIELD_TOP - 8, W * clamp(w.xp / w.xpNext, 0, 1), 5);
-      if (!w.event && w.director.endless) {
-        // Endless shows how far its pressure has climbed in place of the arena name.
-        ctx.textAlign = 'left'; ctx.font = `800 ${smallText(10)}px ${FONT}`; ctx.fillStyle = '#c77dff';
-        ctx.fillText(t('canvas.endless', { n: w.director.endlessPressure().toFixed(1) }), 16, 75, 245);
-      } else if (!w.event) {
-        ctx.textAlign = 'left'; ctx.font = `600 ${smallText(9)}px ${FONT}`; ctx.fillStyle = '#6e929f';
-        ctx.fillText(w.arena.name.toUpperCase(), 16, 75, 245);
-      }
+      ctx.fillRect(0, FIELD_TOP - 7, W * xpFrac, 6);
+      if (xpFrac > 0.02) this.drawGlow(W * xpFrac, FIELD_TOP - 4, 10, '#c8fff0', 0.7);
       ctx.textAlign = 'right'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
-      ctx.fillStyle = w.resonance.overdrive > 0 ? '#ffe3a3' : '#bca7ff';
+      ctx.fillStyle = w.resonance.overdrive > 0 ? '#ffe3a3' : '#c3b1ff';
       const circuit = w.resonance;
       ctx.fillText(circuit.overdrive > 0 ? t('canvas.overdrive', { n: Math.ceil(circuit.overdrive) }) :
-        circuit.nodes.length ? t('canvas.circuit', { lit: circuit.lit, n: Math.ceil(circuit.remaining) }) : t('canvas.signalIn', { n: Math.max(0, Math.ceil(circuit.cooldown)) }), right, 75, 155);
-      // event
-      if (w.event) {
-        const ev = EVENT_MAP[w.event.id];
-        ctx.textAlign = 'left';
-        ctx.font = `800 ${smallText(12)}px ${FONT}`;
-        ctx.fillStyle = ev.color;
-        ctx.fillText(t('canvas.eventTimer', { icon: ev.icon, name: ev.name, n: Math.ceil(w.event.dur - w.event.t) }), 14, 75, 245);
-      }
+        circuit.nodes.length ? t('canvas.circuit', { lit: circuit.lit, n: Math.ceil(circuit.remaining) }) : t('canvas.signalIn', { n: Math.max(0, Math.ceil(circuit.cooldown)) }), right, 77, 150);
     }
+    // An active anomaly is a pill at the top of the field, where the eye already is.
+    if (w.event && !w.director.bossActive) {
+      const ev = EVENT_MAP[w.event.id];
+      const text = t('canvas.eventTimer', { icon: ev.icon, name: ev.name, n: Math.ceil(w.event.dur - w.event.t) });
+      ctx.font = `800 ${smallText(12)}px ${FONT}`;
+      const tw = Math.min(W - 80, ctx.measureText(text).width + 28);
+      const y = FIELD_TOP + 18;
+      ctx.fillStyle = 'rgba(6,10,20,0.78)'; ctx.strokeStyle = ev.color; ctx.lineWidth = 1.5;
+      roundRect(ctx, W / 2 - tw / 2, y - 12, tw, 24, 12); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = ev.color; ctx.textAlign = 'center';
+      ctx.fillText(text, W / 2, y + 1, tw - 16);
+    }
+    // Shot coaching only while it is actionable: aiming, or with overdrive to spend.
     const circuit = w.resonance;
-    ctx.textAlign = 'center'; ctx.font = `700 ${smallText(10)}px ${FONT}`;
-    ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#8ca8bf';
-    ctx.fillText(w.isPowerWindow() ? t('canvas.releasePower') : w.aim.active && w.hand > 0 ?
-      w.aim.holdTime < POWER_START ? t('canvas.holdGold') : w.aim.streamed ? t('canvas.stream') : t('canvas.releaseNormal') :
-      circuit.overdrive > 0 ? t('canvas.overdriveBonus') : t('canvas.linkSignals'), W / 2, H - 33, W - 40);
+    const aiming = w.aim.active && w.hand > 0;
+    if (aiming || circuit.overdrive > 0) {
+      ctx.textAlign = 'center'; ctx.font = `800 ${smallText(11)}px ${FONT}`;
+      ctx.fillStyle = w.isPowerWindow() || (circuit.overdrive > 0 && !aiming) ? '#ffe3a3' : '#a9c0d3';
+      ctx.fillText(w.isPowerWindow() ? t('canvas.releasePower') : aiming ?
+        w.aim.holdTime < POWER_START ? t('canvas.holdGold') : w.aim.streamed ? t('canvas.stream') : t('canvas.releaseNormal') :
+        t('canvas.overdriveBonus'), W / 2, H - 33, W - 180);
+    }
     // boss bar
     if (w.director.bossActive) {
       const bosses = w.enemies.filter((e) => e.alive && e.boss);
       const hp = bosses.reduce((a, e) => a + e.hp, 0);
       const max = bosses.reduce((a, e) => a + e.maxHp, 0) || 1;
       const y = FIELD_TOP + 8;
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      roundRect(ctx, 40, y, W - 80, 14, 7);
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      roundRect(ctx, 40, y, W - 80, 16, 8);
       ctx.fill();
-      ctx.fillStyle = '#ff3b5c';
-      roundRect(ctx, 40, y, (W - 80) * clamp(hp / max, 0, 1), 14, 7);
+      const bg = ctx.createLinearGradient(40, 0, W - 40, 0);
+      bg.addColorStop(0, '#ff2d55'); bg.addColorStop(1, '#ff7a59');
+      ctx.fillStyle = bg;
+      roundRect(ctx, 40, y, (W - 80) * clamp(hp / max, 0, 1), 16, 8);
       ctx.fill();
+      ctx.strokeStyle = '#ffb3c066'; ctx.lineWidth = 1;
+      roundRect(ctx, 40, y, W - 80, 16, 8); ctx.stroke();
       ctx.textAlign = 'center';
-      ctx.font = `800 ${smallText(11)}px ${FONT}`;
+      ctx.font = `900 ${smallText(11)}px ${FONT}`;
       ctx.fillStyle = '#fff';
       const name = BOSS_MAP[w.director.bossId]?.name ?? '';
-      ctx.fillText(bosses.length > 1 ? t('canvas.bossCount', { name: name.toUpperCase(), n: bosses.length }) : name.toUpperCase(), W / 2, y + 7.5, W - 80);
+      ctx.fillText(bosses.length > 1 ? t('canvas.bossCount', { name: name.toUpperCase(), n: bosses.length }) : name.toUpperCase(), W / 2, y + 8.5, W - 100);
     }
     // momentum readout of the lead ball
     const lead = w.balls.find((b) => b.kind === 'main' && b.state === 'flight');
@@ -1228,6 +1265,68 @@ export class Renderer {
         ctx.fillStyle = MOMENTUM_COLORS[tier];
         ctx.fillText(momentumName(tier).toUpperCase(), W / 2, H - 59);
       }
+    }
+  }
+
+  /** Progress toward the boss, with the next anomaly marked on the same road. */
+  private drawBossTrack(w: World, smallText: (n: number) => number): void {
+    const ctx = this.ctx;
+    const x0 = W / 2 - 58, width = 116, y = 42;
+    ctx.textAlign = 'center';
+    if (w.director.bossActive) {
+      ctx.font = `900 ${smallText(10)}px ${FONT}`;
+      ctx.fillStyle = '#ff6b81';
+      ctx.fillText(t('canvas.bossFight'), W / 2, y + 4, width + 20);
+      return;
+    }
+    if (w.director.endless) {
+      ctx.font = `800 ${smallText(10)}px ${FONT}`; ctx.fillStyle = '#c77dff';
+      ctx.fillText(t('canvas.endless', { n: w.director.endlessPressure().toFixed(1) }), W / 2, y + 4, width + 60);
+      return;
+    }
+    const bossTime = Math.max(1, w.director.bossTime);
+    const frac = clamp(w.time / bossTime, 0, 1);
+    ctx.fillStyle = '#ffffff1a'; roundRect(ctx, x0, y - 2.5, width, 5, 2.5); ctx.fill();
+    const g = ctx.createLinearGradient(x0, 0, x0 + width, 0);
+    g.addColorStop(0, '#ffb38a66'); g.addColorStop(1, '#ff6b81');
+    ctx.fillStyle = g; roundRect(ctx, x0, y - 2.5, width * frac, 5, 2.5); ctx.fill();
+    const anomaly = w.director.eventTime - w.time;
+    if (anomaly > 0 && w.director.eventTime < bossTime && !w.event) {
+      const ax = x0 + width * clamp(w.director.eventTime / bossTime, 0, 1);
+      ctx.fillStyle = '#e8c3ff';
+      ctx.beginPath(); ctx.moveTo(ax, y - 5); ctx.lineTo(ax + 4, y); ctx.lineTo(ax, y + 5); ctx.lineTo(ax - 4, y); ctx.closePath(); ctx.fill();
+    }
+    skull(ctx, x0 + width + 9, y, 6.5, frac > .85 ? '#ff6b81' : '#e7a88c');
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x0 + width * frac, y, 3, 0, TAU); ctx.fill();
+    ctx.font = `700 ${smallText(9)}px ${FONT}`;
+    ctx.fillStyle = '#e7a88c';
+    const dLeft = bossTime - w.time;
+    ctx.fillText(anomaly > 0 && anomaly <= 30 && !w.event ? t('canvas.anomalyIn', { time: formatTime(anomaly) }) : t('canvas.bossIn', { time: formatTime(Math.max(0, dLeft)) }), W / 2, y + 14, width + 30);
+  }
+
+  private drawBuildStrip(w: World, x: number, y: number, maxWidth: number): void {
+    const ctx = this.ctx;
+    const entries = [...w.build.upgrades.entries()];
+    const evo = [...w.build.evolutions];
+    const step = 21;
+    const fit = Math.max(0, Math.floor(maxWidth / step));
+    const items: [string, number][] = [...evo.map((id): [string, number] => [EVOLUTION_MAP[id].icon, 0]), ...entries.map(([id, lv]): [string, number] => [UPGRADE_MAP[id]?.icon ?? '•', lv])];
+    const shown = items.length > fit ? items.slice(0, Math.max(0, fit - 1)) : items;
+    ctx.textAlign = 'center';
+    shown.forEach(([glyph, lv], i) => {
+      const cx = x + 8 + i * step;
+      ctx.fillStyle = lv === 0 ? '#ffb21e33' : '#ffffff10';
+      roundRect(ctx, cx - 9, y - 9, 18, 18, 5); ctx.fill();
+      ctx.drawImage(this.iconSprite(glyph), cx - 8, y - 8, 16, 16);
+      if (lv > 1) {
+        ctx.font = `900 8px ${FONT}`;
+        ctx.fillStyle = '#05101a'; ctx.fillRect(cx + 2, y + 3, 8, 8);
+        ctx.fillStyle = '#ffe38a'; ctx.fillText(String(lv), cx + 6, y + 7.5);
+      }
+    });
+    if (items.length > shown.length) {
+      ctx.font = `800 9px ${FONT}`; ctx.fillStyle = '#9db3c4';
+      ctx.fillText(`+${items.length - shown.length}`, x + 8 + shown.length * step, y + 1);
     }
   }
 
@@ -1277,6 +1376,23 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+function heart(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y + r);
+  ctx.bezierCurveTo(x - r * 1.6, y - r * .1, x - r * .9, y - r * 1.25, x, y - r * .45);
+  ctx.bezierCurveTo(x + r * .9, y - r * 1.25, x + r * 1.6, y - r * .1, x, y + r);
+  ctx.fill();
+}
+
+function skull(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y - r * .15, r, 0, TAU); ctx.fill();
+  ctx.fillRect(x - r * .55, y + r * .4, r * 1.1, r * .6);
+  ctx.fillStyle = '#0a0f1c';
+  ctx.beginPath(); ctx.arc(x - r * .38, y - r * .1, r * .26, 0, TAU); ctx.arc(x + r * .38, y - r * .1, r * .26, 0, TAU); ctx.fill();
 }
 
 /** Turns a lightning polyline into a jagged bolt. */

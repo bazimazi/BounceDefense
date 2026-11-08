@@ -45,6 +45,7 @@ export class Game {
   private tut = { launched: false, t: 0, eliteHint: 0, surgeHinted: false, holdHinted: false, idle: 0 };
   private debugEl: HTMLElement | null = null;
   private runOpts: RunOptions | null = null;
+  private lastHaptic = 0;
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.playSurface = canvas.parentElement ?? canvas;
@@ -86,6 +87,7 @@ export class Game {
     this.audio.setVolumes(s.sfx, s.music);
     this.renderer.opts.shake = s.shake;
     this.renderer.opts.damageNumbers = s.damageNumbers;
+    this.renderer.opts.reduceFlashes = s.reduceFlashes;
     this.renderer.opts.previewBounces = this.flags().includes('scope') ? 2 : 1;
     const wantDebug = s.debug || new URLSearchParams(location.search).has('debug');
     if (wantDebug && !this.debugEl) {
@@ -96,6 +98,33 @@ export class Game {
       this.timeScale = 1;
       this.debugEl = null;
     }
+  }
+
+  /**
+   * Short vibrations on Android and other devices with the Vibration API. Rate-limited so a
+   * busy fight never turns into a constant buzz; only meaningful moments reach the hand.
+   */
+  haptic(kind: 'select' | 'ready' | 'hurt' | 'heavy' | 'levelup' | 'starfall' | 'victory' | 'defeat'): void {
+    if (!this.profile.settings.haptics || typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+    const now = performance.now();
+    const major = kind === 'victory' || kind === 'defeat' || kind === 'starfall';
+    if (!major && now - this.lastHaptic < 120) return;
+    this.lastHaptic = now;
+    const pattern: Record<typeof kind, number | number[]> = {
+      select: 10, ready: 18, hurt: 40, heavy: 24, levelup: [14, 40, 22], starfall: [18, 40, 26, 40, 60], victory: [30, 60, 30, 60, 90], defeat: [70, 50, 110],
+    };
+    try { navigator.vibrate(pattern[kind]); } catch { /* Vibration is best-effort. */ }
+  }
+
+  /** Results' Play Again: the same arena, difficulty and pacts, straight into a new run. */
+  replay(): void {
+    const opts = this.runOpts;
+    if (!opts || opts.daily) {
+      if (opts?.daily) this.ui.home();
+      else this.startRun({ arena: 'proving', difficulty: 0, pacts: [] });
+      return;
+    }
+    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts] });
   }
 
   buildName(): string {
@@ -198,6 +227,8 @@ export class Game {
     const w = this.world;
     if (!w) return;
     const s = w.summary();
+    // Records before this run, so Results can flag a new personal best.
+    const best = { combo: this.profile.stats.bestCombo, chain: this.profile.stats.maxWallChain };
     const report = applyRun(this.profile, s, w.newDiscoveries);
     const build = s.upgrades.map((u) => u.id);
     analytics.emit(s.victory ? 'RunCompleted' : 'RunFailed', { arena: s.arena, difficulty: s.difficulty, time: s.time, level: s.level, kills: s.kills, build });
@@ -206,7 +237,8 @@ export class Game {
     this.mode = 'menu';
     this.paused = false;
     this.newDemo();
-    this.ui.postRun(s, report, abandoned);
+    this.haptic(s.victory ? 'victory' : abandoned ? 'select' : 'defeat');
+    this.ui.postRun(s, report, abandoned, best);
   }
 
   // ------------------------------------------------------------------ input
@@ -341,12 +373,17 @@ export class Game {
       if (f.t === 'sfx') {
         if (isRun) this.audio.play(f.name, f.pitch, f.vol);
       } else if (f.t === 'slowmo') {
-        if (isRun) this.slow = { t: f.dur, scale: f.scale };
+        if (isRun) { this.slow = { t: f.dur, scale: f.scale }; this.haptic('heavy'); }
       } else if (f.t === 'text' && isRun && w.cfg.tutorial && f.elite) {
         this.tut.eliteHint = 4;
         this.renderer.handleFx(f);
       } else if (isRun || (f.t !== 'banner' && f.t !== 'shake' && f.t !== 'flash')) {
         this.renderer.handleFx(f);
+        if (isRun) {
+          if (f.t === 'hurt') this.haptic('hurt');
+          else if (f.t === 'starfall') this.haptic('starfall');
+          else if (f.t === 'kill' && f.big) this.haptic('heavy');
+        }
       }
     }
     w.fx.length = 0;
@@ -368,6 +405,7 @@ export class Game {
     // Surge disables canSurge() the moment it fires, so record its first use here.
     if (w.surge.active > 0) t.surgeHinted = true;
     let hint: string | null = null;
+    this.ui.guideHand(!t.launched && w.state === 'playing' && !this.paused && !w.aim.active, this.profile.settings.aimMode === 'slingshot');
     if (w.state !== 'playing' || this.paused) hint = null;
     else if (!t.launched) hint = this.profile.settings.aimMode === 'slingshot' ? i18n('hint.slingshot') : i18n('hint.drag');
     else if (t.t < 9 && w.run.kills < 3) hint = i18n('hint.power');

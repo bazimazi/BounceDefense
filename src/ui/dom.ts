@@ -36,8 +36,3 @@ function append(el: HTMLElement, children: Child[]): void {
     else el.append(c instanceof Node ? c : String(c));
   }
 }
-
-export function bar(frac: number, cls = ''): HTMLElement {
-  const inner = h('div', { style: `width:${Math.max(0, Math.min(1, frac)) * 100}%` });
-  return h('div', { class: `bar ${cls}` }, inner);
-}

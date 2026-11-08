@@ -63,21 +63,21 @@ await shot('08-pause');
 await page.evaluate(() => window.game.abandonRun());
 await wait(800);
 await shot('09-postrun');
-const screens = ['Loadout', 'Workshop', 'Research', 'Codex', 'Goals'];
+const screens = ['armory', 'forge', 'codex', 'goals'];
 await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Home')).click());
 await wait(500);
 await shot('10-home2');
 for (const [i, s] of screens.entries()) {
-  await page.evaluate((s) => [...document.querySelectorAll('button')].find((b) => b.textContent.includes(s))?.click(), s);
+  await page.evaluate((s) => document.querySelector(`.tabbar .tab-${s}`)?.click(), s);
   await wait(400);
-  await shot(`${11 + i}-${s.toLowerCase()}`);
-  await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '←')?.click());
-  await wait(300);
+  await shot(`${11 + i}-${s}`);
 }
+await page.evaluate(() => document.querySelector('.tabbar .tab-battle')?.click());
+await wait(400);
 const perf = await page.evaluate(async () => {
   // stress: many balls & enemies, measure frame time
-  window.game.ui.runSetup();
-  [...document.querySelectorAll('button')].find((b) => b.textContent.includes('LAUNCH')).click();
+  window.game.ui.home();
+  document.querySelector('.play-btn').click();
   const w = window.game.world;
   for (const id of ['extra_ball','extra_ball','extra_ball','extra_ball','splitter','splitter','splitter','splitter','volatile','volatile','chain_lightning','chain_lightning']) w.onBuildChanged(w.build.addUpgrade(id));
   w.hand = w.maxBallsAllowed();

@@ -106,8 +106,6 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
   ctx.lineTo(170, FLOOR_Y + 27); ctx.lineTo(190, FLOOR_Y + 47);
   ctx.lineTo(350, FLOOR_Y + 47); ctx.lineTo(370, FLOOR_Y + 27);
   ctx.lineTo(W - 25, FLOOR_Y + 27); ctx.lineTo(W - 25, H - 26); ctx.stroke();
-  ctx.font = '9px Consolas, monospace'; ctx.fillStyle = accent + '70';
-  ctx.textAlign = 'center'; ctx.fillText('BD / ' + arena.id.toUpperCase(), W / 2, FLOOR_Y + 65);
   return canvas;
 }
 

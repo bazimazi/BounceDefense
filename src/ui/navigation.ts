@@ -74,6 +74,25 @@ export class Navigation {
     history.pushState(this.state(entry), '');
   }
 
+  /**
+   * Swap the current page for a sibling at the same depth (bottom-bar tabs): no new history
+   * entry, so Back from any tab returns to Battle instead of retracing every tab visited.
+   */
+  replace(key: string, restore: () => void, options: Omit<View, 'key' | 'restore'> = {}): void {
+    if (this.restoring) return;
+    const from = this.current;
+    if (!from || from.depth === 0 || from.key === key || this.operation || this.pending || this.bounce) {
+      this.view(key, restore, options);
+      return;
+    }
+    const entry: Entry = { key, restore, ...options, id: ++this.serial, depth: from.depth };
+    for (const [id, old] of this.entries) if (old.depth >= entry.depth) this.entries.delete(id);
+    this.entries.set(entry.id, entry);
+    this.current = entry;
+    this.direction = 'replace';
+    history.replaceState(this.state(entry), '');
+  }
+
   /** Retire a finished run (and its dialogs), preserving a single Home entry beneath Results. */
   reset(restoreHome: () => void, child?: View): void {
     if (this.restoring) return;

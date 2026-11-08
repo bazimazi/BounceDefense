@@ -111,18 +111,15 @@ export function revealItems(parent: HTMLElement, selector?: string): void {
 
 /** Staged entrances share the same timing on Home, menus, results and run overlays. */
 export function revealView(el: HTMLElement): void {
-  for (const header of el.querySelectorAll<HTMLElement>(':scope > .topbar, :scope > .home-topline, :scope > .lvtitle, :scope > .result-title')) enter(header, 'item', 0, 30);
-  if (el.matches('.home')) {
-    enter(el.querySelector<HTMLElement>('.hero')!, 'content', 0, 30);
-    revealItems(el, '.launch-button, .core-readout, .home-nav-tile, .first-run-guide, .home-stats');
-  }
-  for (const tabs of el.querySelectorAll<HTMLElement>('.tabs, .deck-tabs, .talent-tabs')) {
-    revealItems(tabs, 'button'); tabFeedback(tabs);
-  }
+  for (const header of el.querySelectorAll<HTMLElement>(':scope > .topbar, :scope > .hub-top, :scope > .lvtitle, :scope > .result-title, :scope > .results-head, :scope > .pause-head, :scope > .draft-head')) enter(header, 'item', 0, 30);
+  const stage = el.querySelector<HTMLElement>('.battle-stage');
+  if (stage) enter(stage, 'content', 0, 30);
+  for (const list of el.querySelectorAll<HTMLElement>('.reveal')) revealItems(list);
+  for (const tabs of el.querySelectorAll<HTMLElement>('.tabs, .talent-tabs, .tabbar')) tabFeedback(tabs);
   const tree = el.querySelector<HTMLElement>('.talent-tree.active');
   if (tree) revealItems(tree, '.talent-slot');
   revealItems(el, ':scope > button');
-  for (const footer of el.querySelectorAll<HTMLElement>(':scope > .row, .setup-footer, .overlay-actions, .offer-actions, .talent-footer')) enter(footer, 'item', 0, 90);
+  for (const footer of el.querySelectorAll<HTMLElement>(':scope > .row, .overlay-actions, .offer-actions, .results-actions, .victory-actions')) enter(footer, 'item', 0, 90);
 }
 
 /** A moving highlight makes category changes visible even when the controls stay in place. */

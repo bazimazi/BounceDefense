@@ -30,10 +30,10 @@ try {
     await page.evaluate(() => window.game.ui.home());
     await page.locator('.launch-button').wait();
     const layout = await page.evaluate(() => {
-      const scroll = document.querySelector('.home-content');
+      const page = document.querySelector('.hub-page');
       const button = document.querySelector('.launch-button');
-      const br = button.getBoundingClientRect(), sr = scroll.getBoundingClientRect();
-      return { overflow: scroll.scrollWidth > scroll.clientWidth + 1, visible: br.top >= sr.top && br.bottom <= sr.bottom };
+      const br = button.getBoundingClientRect(), sr = page.getBoundingClientRect();
+      return { overflow: page.scrollWidth > page.clientWidth + 1, visible: br.top >= sr.top && br.bottom <= sr.bottom };
     });
     assert.equal(layout.overflow, false, `Horizontal overflow at ${width}x${height}`);
     assert.equal(layout.visible, true, `Launch button outside initial viewport at ${width}x${height}`);

@@ -27,11 +27,10 @@ npm run build && npx vite preview --port 4173 &
 node scripts/smoke.mjs          # writes screenshots to smoke-shots/
 node scripts/visual-check.mjs   # responsive layouts, all arenas, draw benchmark
 node scripts/resonance-check.mjs # power-shot input, recall controls, circuit and starfall screenshots
-node scripts/talent-check.mjs   # talent allocation, saves, refunds, mobile/desktop layouts
 npx playwright-core install chromium firefox webkit # install the three test engines once
-npm run test:ui                # all three engines: every menu/category/page plus gameplay flows
-npm run test:ui:back           # Back/forward, dialogs, drafts, paused run and reload (ENGINE selects browser)
-npm run test:ui:motion         # live transitions, selections and overlays
+npm run test:ui                # all three engines: every tab, segment, sheet and overlay plus gameplay flows
+npm run test:ui:back           # Back/forward across tabs, sheets, dialogs, paused runs and reload (ENGINE selects browser)
+npm run test:ui:motion         # tab/segment transitions, sheets, purchase feedback and the draft deal
 npm run test:ui:aim            # board-wide mouse/touch aiming, HUD layers and pointer capture
 npm run test:ui:i18n           # Persian: device detection, language picker, every screen, RTL paging, run flow
 UI_LANG=fa npm run test:ui:layout # the full layout audit in Persian (right-to-left)
@@ -42,32 +41,35 @@ The visual check accepts `URL`, `SHOTS`, and `CHROME_PATH` environment variables
 and checks that paused drawing does not accumulate ambient particles.
 
 The Playwright suite runs in Chromium, Firefox and WebKit against dev or production preview (`URL`
-defaults to `http://localhost:4173`). It saves every card page, manageable contact sheets, a layout
-report and functional results under `smoke-shots/ui-audit/<engine>/`. Seven viewport sizes cover
+defaults to `http://localhost:4173`). It saves the top and end of every page, manageable contact sheets,
+a layout report and functional results under `smoke-shots/ui-audit/<engine>/`. Seven viewport sizes cover
 small phones, tablet, desktop and phone landscape. Both locked and fully discovered profiles are
-reviewed for overflow, scrolling menus, clipped actions, currencies, stats and combat HUD collisions.
-Real touch, mouse and keyboard checks cover purchases, presets, research prerequisites, talent
-drafts, saved settings, launch/recall/surge, pause/resume, consecutive upgrade choices, reroll/banish,
-Daily Seed, victory/Endless, rewards, and reset/abandon dialogs. Swipe handlers are additionally
-checked with Pointer Events. Set `ENGINE=chromium|firefox|webkit` to run one engine or `SIZES=320x568;568x320`
-to narrow the layout audit. `SHOTS` changes the output root; `AUDIT_ONLY=1` records layout findings
-without failing; `OVERLAYS_ONLY=1` reviews the run overlays and HUD. The menus use category tabs, short pages and fixed actions instead of long lists;
-talent details open in a dismissible sheet.
+reviewed for overflow, actions pushed off screen, undersized touch targets, text under 9.5px, the tab
+bar's position, split currency strips, stats and combat HUD collisions. Real touch, mouse and keyboard
+checks cover the core carousel, part sheets and purchases, presets, research prerequisites, talents,
+saved settings, the arena carousel, pacts, launch/recall/surge, pause/resume, the draft's tap guard,
+consecutive upgrade choices, reroll/banish/peek, Play Again, Daily Seed, victory/Endless, rewards, and
+reset/abandon dialogs. Swipe handlers are additionally checked with Pointer Events. Set
+`ENGINE=chromium|firefox|webkit` to run one engine or `SIZES=320x568;568x320` to narrow the layout audit.
+`SHOTS` changes the output root; `AUDIT_ONLY=1` records layout findings without failing;
+`OVERLAYS_ONLY=1` reviews the run overlays and HUD. `scripts/ui-helpers.mjs` holds the shared waits and
+navigation helpers.
 
 Aiming works across the board and its surrounding play area. Drag anywhere to steer the gun,
 then release to launch. Passive HUD layers do not block gestures; buttons and menus retain
 their own controls. The aiming check covers mouse, touch, Direct and Slingshot aiming,
 portrait/landscape/desktop layouts, and canceling a gesture when pausing or losing capture.
 
-Navigation uses directional page slides, staggered card entrances, moving tab highlights and
-selection pulses. Purchases animate the changed item and wallet; talent sheets and run overlays
-slide in and out. Input and game state update immediately during transitions, and departing views
-cannot intercept clicks or focus. The motion check covers the live effects, rapid navigation,
-and card pagination while animated in portrait and landscape. Animations are always enabled.
+Tab changes slide only the page body while the wallet and tab bar stay put; segments slide their
+content, sheets rise from the bottom, and a moving highlight follows the selected tab. Purchases pulse
+the changed row and the wallet in place, keeping the scroll position. Input and game state update
+immediately during transitions, and departing views cannot intercept clicks or focus. Decorative loops
+stop under `prefers-reduced-motion`; instructional motion (the First Contact ghost hand) stays.
 
 Back uses one navigation path for the on-screen arrow, browser/Android browser Back, Escape (P during a run),
-and a webview's `backbutton` event. It dismisses the top dialog or talent sheet first, confirms
-discarding an unapplied talent draft, and returns to the page that opened it. During a run,
+and a webview's `backbutton` event. It dismisses the top dialog or sheet first and returns to the page
+that opened it. Hub tabs replace one another rather than stacking, so Back from any tab returns to
+Battle in one step, and Settings returns to whichever tab or pause menu opened it. During a run,
 Back pauses; Back from Pause resumes, preserving pending upgrades and victory choices. Home
 keeps the browser/host's normal exit behavior. Finished runs and reloads retire their old history,
 so Forward cannot resurrect a run or claim its rewards again. `test:ui:back` exercises these paths
@@ -178,6 +180,44 @@ Store submission is manual:
   notarization (see Tauri's [distribution guides](https://v2.tauri.app/distribute/)).
   Unsigned macOS builds open only after the user allows them in System Settings.
 
+## Interface
+
+The menus are a hub with a five-tab bar, thumb-reachable on a phone: **Armory**, **Forge**, **Battle**
+(the raised center tab and Home), **Codex** and **Goals**, with Settings behind the gear. The tab bar
+appears after First Contact, whose home is just a start button and three one-line steps; red dots
+mark only actions that can be taken now (an affordable unlock, a talent point, a Research node).
+
+- **Battle** keeps every launch choice on one screen over the live attract-mode game: the next goal
+  (one tap to Goals), an arena carousel drawn from each arena's real floor, the unlocked difficulties
+  plus the next one as a teaser, Daily Seed, Risk Pacts in a sheet, and the equipped core.
+- **Armory** shows the core as a large orb in a carousel (unlock in place), parts and trails as
+  slots that open a bottom sheet to compare, buy and equip, and three build presets.
+- **Forge** holds every permanent upgrade: Workshop (coins), Research (sorted available first) and
+  Talents. Talents apply the moment they are learned; respecs are free between runs, so there is
+  no draft to apply or discard.
+- **Codex** is a collection grid with a completion ring; each entry opens a detail sheet.
+- **Goals** splits next goals, challenges, badges and mastery into segments.
+- **Settings** is a single scrolling page and adds Vibration, Left-handed controls (mirrors Recall
+  and Surge) and Reduce flashes (softer full-screen flashes and low-hull pulse).
+
+In a run, the canvas HUD reads hull as a heart and number, shows the level as a badge, maps the time
+to the boss on a track with the next anomaly marked, lists the build as an icon strip, and shows an
+active anomaly as a pill at the top of the field. Shot coaching appears only while aiming or with
+overdrive to spend, and the screen edge breathes red below 30% hull. First Contact demonstrates the
+drag with a ghost finger until the first launch.
+
+The level-up draft keeps the arena dimly visible, deals cards from the bottom with a rising chime,
+and ignores taps for 0.42 seconds so a shot meant for the board cannot pick a card. Cards carry a
+rarity band, level pips, bold numbers, synergy and evolution chips, and a "+n more" counter when
+several levels are queued. **Peek** (hold) hides the draft to look at the board; reroll locks for
+0.35 seconds after use. Results lead with rewards counting up, the mastery bar filling, unlocks as
+cards, personal bests flagged, and **Play again** repeating the same arena, difficulty and pacts.
+Haptics (Android and other devices with the Vibration API) mark hits taken, level-ups, Starfall, big
+kills and the end of a run, rate-limited so a busy fight never buzzes constantly.
+
+Icons are inline SVG (`src/ui/icons.ts`), including the coin, core gem and research flask, so they
+look the same on every platform. Signed numbers stay left-to-right islands inside Persian text.
+
 ## Visual direction
 
 The resonance update adds a celestial pinball layer: three holographic diamond signals, animated
@@ -185,8 +225,8 @@ star charts and aurora ribbons, traveling rail lights, gold power-shot trails, m
 fracturing enemy shells, breach projections, and a sweeping starfall attack with its own synth chord.
 The interface explains shot timing beside the launcher and shows circuit progress and overdrive.
 
-The interface uses a mint-lit kinetic reactor motif, with an animated core on the launch screen,
-layered upgrade cards, segmented hull telemetry, and responsive touch controls. The arenas have
+The interface uses deep navy surfaces with a mint brand accent, gold for currency and progress,
+tactile buttons with a pressed edge, and nothing smaller than 10px of type. The arenas have
 cached hexagonal floors and armored rails: calibration rings in Proving Grounds, furnace channels
 in The Foundry, and orbital contours in Void Rift.
 
@@ -203,8 +243,9 @@ All artwork remains procedural, with no downloaded assets or new dependencies.
 | Launch | Release | Release |
 | Power shot | Release while the charge dial is gold | Hold 0.55–0.95 seconds, then release |
 | Stream fire | Keep holding while balls return | Same |
-| Recall | Tap ↶ | `R` |
+| Recall | Tap ↶ (bottom left, or right with Left-handed controls) | `R` |
 | Surge | Tap the Surge button when it is charged | `Space` |
+| View the arena during a level-up | Hold **Peek** | Hold **Peek** or press Space/Enter on it |
 | Pause | ❚❚ button | `Esc` / `P` |
 | Debug panel | Settings → Debug tools | `` ` `` or `?debug` in the URL |
 
@@ -271,7 +312,7 @@ and layered, voice-limited SFX with adaptive music.
 
 ## Talent specializations
 
-Open **Talents** from Home or **Edit talents** during run setup. Spend a shared budget
+Open **Forge → Talents**. Spend a shared budget
 across three trees: **Kinetics** rewards bank shots and combos, **Conduit** amplifies
 elements acquired during the run, and **Warden** improves defense and recovery.
 Each tree has five ranked nodes, prerequisite connections, and a distinct capstone.
@@ -280,7 +321,7 @@ up to 15. Existing saves receive credit for their accumulated XP.
 
 Higher tiers require 3 / 8 points in earlier tiers of that tree and a maxed prerequisite.
 The 15-point budget allows a focused specialization with supporting talents, but not
-two capstones. Changes are a draft until **Apply talents**; Back discards the draft.
+two capstones. Learning or refunding a rank applies and saves immediately.
 Refunds and resets are free between runs. Refunding a prerequisite also refunds
 dependent nodes. Each run snapshots the allocation, shown in its pause menu.
 
@@ -311,7 +352,7 @@ src/
   meta/      profile, save/migration, rewards, unlocks, goals
   render/    canvas renderer + particle pool
   audio/     WebAudio synth SFX and generative music
-  ui/        DOM screens (menus, level-up, pause, post-run)
+  ui/        DOM hub (tabs, sheets), level-up draft, pause, results, SVG icons, motion, Back navigation
   debug/     in-game debug panel
 ```
 
@@ -389,6 +430,8 @@ each tier's `growth`), `DifficultyDef`/`ArenaDef` multipliers, `xpForLevel`, and
 
 ## Roadmap ideas
 
+- Opt-in fast-forward while every ball is in flight (players praise it in ball launchers; never forced)
+- A "best shot" replay on Results: the path of the run's highest-hit shot as a ghost trail
 - Ball roles for multi-ball builds (Bomber, Collector, Healer balls)
 - Boss Rush, Challenge Gauntlet and Build Trials modes (the director and seeded RNG already support fixed scenarios)
 - More arenas and bosses (the Architect, the Chronarch), and more elements (poison, void)

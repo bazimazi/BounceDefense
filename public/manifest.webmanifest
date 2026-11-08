@@ -3,8 +3,8 @@
   "short_name": "Bounce",
   "display": "fullscreen",
   "orientation": "portrait",
-  "background_color": "#060d16",
-  "theme_color": "#060d16",
+  "background_color": "#070b16",
+  "theme_color": "#070b16",
   "start_url": "./",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },

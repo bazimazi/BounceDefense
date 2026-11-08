@@ -16,6 +16,12 @@ export interface Settings {
   damageNumbers: boolean;
   aimMode: 'direct' | 'slingshot';
   debug: boolean;
+  /** Short vibrations for hits taken, level-ups and big moments (devices with the Vibration API). */
+  haptics: boolean;
+  /** Mirrors Recall and Surge so the main action sits under the left thumb. */
+  leftHanded: boolean;
+  /** Softens full-screen flashes and the low-hull pulse. */
+  reduceFlashes: boolean;
 }
 
 export interface LifetimeStats {
