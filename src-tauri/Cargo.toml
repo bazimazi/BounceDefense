@@ -1,6 +1,6 @@
 [package]
 name = "bounce-defense"
-version = "0.1.0"
+version = "0.2.0"
 description = "Physics-driven roguelite build-crafting game: your ball is the character."
 authors = ["bazimazi"]
 license = "MIT"

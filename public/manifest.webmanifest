@@ -1,6 +1,8 @@
 {
-  "name": "Bounce Defense",
-  "short_name": "Bounce",
+  "name": "توپاد",
+  "short_name": "توپاد",
+  "lang": "fa",
+  "dir": "rtl",
   "display": "fullscreen",
   "orientation": "portrait",
   "background_color": "#070b16",
