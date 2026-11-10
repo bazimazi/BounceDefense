@@ -263,7 +263,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'venom', name: 'Venom Tip', icon: '🧪', category: 'element', rarity: 'common', maxLevel: 5, locked: true,
     tags: ['poison', 'element'],
-    desc: () => `+18% chance to Poison. Poison stacks, ticks through armor and never stops building.`,
+    desc: () => `+18% chance to Poison. Poison stacks (12 by default) and ticks straight through armor.`,
     mods: (l) => [{ stat: 'poisonChance', add: 0.18 * l }],
   },
   {

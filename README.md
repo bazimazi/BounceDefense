@@ -448,6 +448,21 @@ Normal, 82% on Veteran and 55% on Nightmare; mid progression about 87% / 64% on 
 a complete meta about 91% / 72% on Inferno / Abyss. The tutorial stays forgiving: a slow, sloppy
 player still wins about 90% of first runs.
 
+The later arenas step up on purpose. With mid progression, Nightmare wins drop from about 90% in the
+Void Rift to roughly 70% in The Blight, 78% in the Chrono Spire and 45–55% in The Citadel.
+
+`--meta end` is an Ascension-ready profile (every Workshop item, 20 talent points, the Research
+flags that shape a run, every relic), and `--asc` runs Abyss at chosen Ascension levels:
+
+```bash
+npm run balance -- --runs 8 --core striker,pyro,tesla,cryo,venom,gemini --diff 4 --asc 0,5,10,15,20 --meta end --full
+```
+
+The bot's Abyss win rate falls steadily up the ladder: about 63% at Ascension 0, 59% at 5, 50% at 10,
+40% at 15 and 21% at 20, where a third boss joins the fight. New upgrades start locked behind
+Research or Goals: every card added to the opening pool dilutes the draft, and 13 unlocked additions
+once dropped Nightmare wins from about 42% to 19%.
+
 Ball count used to decide runs on its own: a player who took Extra Ball whenever it appeared won
 every Nightmare run on a fresh profile, while one who skipped it won almost none. Balls now arrive
 through level milestones, Extra Ball is capped at two levels, and the gap between upgrade strategies

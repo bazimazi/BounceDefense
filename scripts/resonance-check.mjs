@@ -99,5 +99,5 @@ try {
 
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ powerInput: 'passed', keyboardRecall: 'passed', touchRecall: 'passed', starfall,
-    arenas: 3, responsiveControls: 'passed', pausedInput: 'passed', errors }, null, 2));
+    arenas: 6, responsiveControls: 'passed', pausedInput: 'passed', errors }, null, 2));
 } finally { await browser.close(); }

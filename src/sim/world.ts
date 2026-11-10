@@ -16,7 +16,7 @@ import type { ArenaDef, DifficultyDef, EnemyDef } from '../data/types';
 import type { DiscoveryCat, RunSummary } from '../meta/types';
 import { BEHAVIORS, type Behavior } from './behaviors';
 import { Build, buildName } from './build';
-import { applyChill, applyPoison, chainLightning, densest, explode, meteor, nearestEnemy, sparkNearest } from './combat';
+import { applyChill, applyPoison, chainLightning, damageEnemy, densest, explode, meteor, nearestEnemy, sparkNearest } from './combat';
 import { Director } from './director';
 import { updateEnemy } from './enemies';
 import { makeOffers, type Offer } from './offers';
@@ -560,8 +560,11 @@ export class World {
     const st = this.build.stats;
     const first = nearestEnemy(this, o.x, o.y, 200, undefined, undefined, 'lightning');
     if (!first) return;
+    const dmg = st.damage * 0.8 * st.elementPower;
     this.emit({ t: 'lightning', pts: [o.x, o.y, first.x, first.y], color: '#ffe38a' });
-    chainLightning(this, first, st.damage * 0.8 * st.elementPower, 2, 1);
+    damageEnemy(this, first, dmg, { src: 'chain', crit: false, depth: 1 });
+    // The arc carries on to two more enemies from wherever the first one stood.
+    if (first.alive) chainLightning(this, first, dmg, 2, 1);
   }
 
   // ------------------------------------------------------------------ player

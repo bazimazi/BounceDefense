@@ -73,7 +73,8 @@ try {
     const top = await scroll.evaluate(el => el.scrollTop);
     const pillBefore = await pill();
     // Buy from the last row, which is in view at the end of the list.
-    await scroll.evaluate(el => [...el.querySelectorAll('.buy-btn')].at(-1).click());
+    // The last plain item: Relic Cache would open every later run with a relic choice.
+    await scroll.evaluate(el => [...el.querySelectorAll('.shop-row:not([data-motion-key="workshop:relic_cache"]) .buy-btn')].at(-1).click());
     await page.waitForFunction(() => document.getAnimations().some(a => a.id === 'ui:feedback'));
     assert.equal(await page.evaluate(() => document.getAnimations().some(a => a.id === 'ui:tab-travel' && a.playState === 'running')), false, 'a purchase does not move the pill');
     assert.deepEqual(await pill(), pillBefore);

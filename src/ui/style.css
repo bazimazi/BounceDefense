@@ -949,3 +949,7 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .contract-copy b { font-size: 13px; line-height: 1.3; }
 .contract-count { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mastery-card.rank-line { margin-top: 8px; }
+/* Four talent trees share one row: let long tree names fit a 320px phone. */
+.talent-tabs button { min-width: 0; }
+.talent-tabs button > span:not(.talent-tab-icon) { max-width: 100%; overflow-wrap: anywhere; line-height: 1.15; }
+[data-small-controls] .talent-tabs button { padding: 6px 2px; font-size: 11px; }
