@@ -40,27 +40,32 @@ try {
     await page.screenshot({ path: `${out}/home-${width}.png` });
   }
   await page.setViewport({ width: 540, height: 960, deviceScaleFactor: 2 });
-  for (const arena of ['proving', 'foundry', 'rift']) {
-    await page.evaluate((arena) => {
+  const ARENA_BOSS = { proving: 'fortress', foundry: 'magnetar', rift: 'hydra', blight: 'broodmother', spire: 'chronarch', citadel: 'architect' };
+  for (const arena of Object.keys(ARENA_BOSS)) {
+    await page.evaluate(([arena, bossId]) => {
       const g = window.game;
       g.profile.tutorialDone = true;
       g.startRun({ arena, difficulty: 0, pacts: [], seed: 27 });
       g.paused = true; // Freeze this visual fixture, without a pause overlay.
       const w = g.world;
-      const ids = ['grunt', 'runner', 'brute', 'shielder', 'splitter', 'healer', 'spawner', 'magnet', 'bomber', 'reflector', 'teleporter', 'warden'];
+      const classic = ['grunt', 'runner', 'brute', 'shielder', 'splitter', 'healer', 'spawner', 'magnet', 'bomber', 'reflector', 'teleporter', 'warden'];
+      const expansion = ['spitter', 'phantom', 'juggernaut', 'necromancer', 'aegis', 'mite', 'frost_golem', 'magma_golem', 'insulator', 'pulsar', 'brood_egg', 'revenant'];
+      const ids = ['blight', 'spire', 'citadel'].includes(arena) ? expansion : classic;
       ids.forEach((id, i) => {
         const e = w.spawnEnemy(id, 100 + i % 4 * 112, 205 + Math.floor(i / 4) * 95);
         e.spawnT = 1;
       });
       w.enemies[4].st.frozenT = 2;
       w.enemies[7].st.burnT = 2;
-      const boss = w.spawnEnemy(`boss_${{ proving: 'fortress', foundry: 'magnetar', rift: 'hydra' }[arena]}`, 270, 580);
+      w.enemies[5].st.poison = 8; w.enemies[5].st.poisonT = 3;
+      const boss = w.spawnEnemy(`boss_${bossId}`, 270, 580);
       boss.spawnT = 1;
+      w.addZone('toxic', 120, 640, 60, 3, 1); w.addZone('vortex', 420, 640, 80, 2, 1); w.addZone('mine', 270, 700, 22, 9, 1);
       const b = w.spawnBall('main', 390, 675, .3, -1); b.momentum = 20;
       b.trail = Array.from({ length: 28 }, (_, i) => i % 2 ? 760 - Math.floor(i / 2) * 6.54 : 315 + Math.floor(i / 2) * 5.77);
       g.renderer.time = 2;
       g.renderer.draw(w);
-    }, arena);
+    }, [arena, ARENA_BOSS[arena]]);
     await page.screenshot({ path: `${out}/arena-${arena}.png` });
   }
   // Repeated draws while paused must not grow the ambient particle pool.
@@ -87,7 +92,7 @@ try {
     return { enemies: w.enemies.length, medianDrawMs: times[60], p95DrawMs: times[114] };
   });
   assert.deepEqual(errors, [], 'Browser errors');
-  console.log(JSON.stringify({ layouts: 'passed', arenas: 3, pausedParticles: 'passed', benchmark, errors }, null, 2));
+  console.log(JSON.stringify({ layouts: 'passed', arenas: Object.keys(ARENA_BOSS).length, pausedParticles: 'passed', benchmark, errors }, null, 2));
 } finally {
   await browser.close();
 }

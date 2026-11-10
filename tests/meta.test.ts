@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { masteryLevel, masteryXpFor } from '../src/data/meta';
+import { MASTERY_MAX, masteryLevel, masteryXpFor } from '../src/data/meta';
 import {
   applyRun, buyWorkshop, canUnlockCore, computeRewards, doResearch, isArenaUnlocked, maxDifficulty, nextGoals,
   runConfig, unlockCore, upgradePool,
@@ -34,7 +34,7 @@ describe('run progression', () => {
   it('mastery levels are derived from xp', () => {
     expect(masteryLevel(0).level).toBe(1);
     expect(masteryLevel(masteryXpFor(1)).level).toBe(2);
-    expect(masteryLevel(1e9).level).toBe(20);
+    expect(masteryLevel(1e9).level).toBe(MASTERY_MAX);
   });
 });
 

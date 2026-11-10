@@ -79,7 +79,7 @@ export class ResonanceCircuit {
 
   private blocked(x: number, y: number): boolean {
     const obstacle = this.w.obstacles.some(o => {
-      if (o.kind === 'bumper' || o.kind === 'barrel') return Math.hypot(x - o.x, y - o.y) < o.r + 44;
+      if (o.kind === 'bumper' || o.kind === 'barrel' || o.kind === 'spore' || o.kind === 'pylon') return Math.hypot(x - o.x, y - o.y) < o.r + 44;
       if (o.kind === 'crate') return x > o.x - 44 && x < o.x + o.w + 44 && y > o.y - 44 && y < o.y + o.h + 44;
       if (o.kind === 'portal') return Math.hypot(x - o.ax, y - o.ay) < o.r + 44 || Math.hypot(x - o.bx, y - o.by) < o.r + 44;
       return false;
@@ -111,7 +111,7 @@ export class ResonanceCircuit {
       n.pulse = 1;
       ball.momentum += 3 * this.w.build.stats.momentumGain;
       ball.pulse = 1;
-      this.w.surge.charge = Math.min(this.w.surge.max, this.w.surge.charge + 10);
+      this.w.chargeSurge(this.w.build.has('relic_star_compass') ? 20 : 10);
       this.w.addCombo(2);
       this.w.emit({ t: 'ring', x: n.x, y: n.y, r: 55, color: RESONANCE_COLOR });
       this.w.emit({ t: 'burst', x: n.x, y: n.y, n: 10, speed: 130, color: RESONANCE_COLOR });
@@ -127,12 +127,12 @@ export class ResonanceCircuit {
     this.remaining = 0;
     this.cooldown = CIRCUIT_COOLDOWN;
     this.overdrive = 7;
-    const damage = w.build.stats.damage * 4 * w.comboMult();
+    const damage = w.build.stats.damage * 4 * w.comboMult() * w.build.stats.starfallPower * (w.asc.has('starfall') ? 0.7 : 1);
     // Snapshot before dealing damage: deaths can add enemies and end a boss fight.
     // The five threats closest to the line are struck, and every boss takes a heavy blow,
     // so linking signals is a real plan during boss fights.
     const bosses = w.enemies.filter(e => e.alive && e.boss);
-    const targets = w.enemies.filter(e => e.alive && !e.boss && e.y > 96)
+    const targets = w.enemies.filter(e => e.alive && !e.boss && !e.phased && e.y > 96)
       .sort((a, b) => b.y - a.y || a.id - b.id).slice(0, 5);
     const pts = [...bosses, ...targets].flatMap(e => [e.x, e.y]);
     w.emit({ t: 'starfall', pts });

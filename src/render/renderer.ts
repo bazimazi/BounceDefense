@@ -5,7 +5,8 @@ import { CORE_MAP } from '../data/balls';
 import { BOSS_MAP, ELITE_MAP } from '../data/enemies';
 import { EVOLUTION_MAP } from '../data/synergies';
 import { UPGRADE_MAP } from '../data/upgrades';
-import { FORTRESS_HALF_ARC, FORTRESS_RING } from '../sim/bosses';
+import { ARCHITECT_WALL, FORTRESS_HALF_ARC, FORTRESS_RING } from '../sim/bosses';
+import { RELIC_MAP } from '../data/relics';
 import { traceAim } from '../sim/physics';
 import {
   DEFENSE_Y, FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, W,
@@ -308,6 +309,11 @@ export class Renderer {
     this.drawLauncher(w);
     for (const b of w.balls) this.drawBall(w, b);
     if (w.event?.id === 'blackout') this.drawBlackout(w);
+    if (w.timeStop > 0 || w.event?.id === 'time_warp') {
+      const a = w.timeStop > 0 ? Math.min(0.22, w.timeStop * 0.3) : 0.05;
+      ctx.fillStyle = `rgba(255,214,122,${a})`;
+      ctx.fillRect(0, FIELD_TOP, W, DEFENSE_Y - FIELD_TOP);
+    }
     this.drawTexts();
 
     ctx.setTransform(k, 0, 0, k, 0, 0);
@@ -493,6 +499,66 @@ export class Renderer {
             ctx.stroke();
           }
           break;
+        case 'spore': {
+          if (!o.alive) {
+            ctx.globalAlpha = 0.3;
+            ctx.strokeStyle = '#9cff5e';
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.6, 0, TAU); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+            break;
+          }
+          const pulse = 1 + Math.sin(this.time * 3 + o.x) * 0.06;
+          this.drawGlow(o.x, o.y, o.r * 2.4, '#9cff5e', 0.35);
+          ctx.fillStyle = '#2f5a14';
+          ctx.beginPath(); ctx.arc(o.x, o.y, o.r * pulse, 0, TAU); ctx.fill();
+          ctx.strokeStyle = '#c4ff7a'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.fillStyle = '#c4ff7a';
+          for (let i = 0; i < 5; i++) {
+            const a = i * TAU / 5 + this.time * 0.4;
+            ctx.beginPath(); ctx.arc(o.x + Math.cos(a) * o.r * 0.5, o.y + Math.sin(a) * o.r * 0.5, 2.4, 0, TAU); ctx.fill();
+          }
+          if (this.emits(3)) this.particles.spawn(o.x + (Math.random() - 0.5) * o.r, o.y - o.r * 0.6, 0, -24, 0.8, 2.5, '#9cff5e', 1);
+          break;
+        }
+        case 'pylon': {
+          this.drawGlow(o.x, o.y, o.r * 2.6, '#ffe38a', 0.25 + o.flash * 0.6);
+          ctx.fillStyle = '#2b2410';
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = i * TAU / 6 + Math.PI / 6;
+            const px = o.x + Math.cos(a) * o.r;
+            const py = o.y + Math.sin(a) * o.r;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = o.flash > 0 ? '#ffffff' : '#ffd27a'; ctx.lineWidth = 3; ctx.stroke();
+          ctx.fillStyle = '#fff4c4';
+          ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.35, 0, TAU); ctx.fill();
+          if (this.emits(1.5)) {
+            const a = Math.random() * TAU;
+            this.bolts.push({ pts: jaggedify([o.x, o.y, o.x + Math.cos(a) * o.r * 1.8, o.y + Math.sin(a) * o.r * 1.8]), life: 0.08, color: '#ffe38a' });
+          }
+          break;
+        }
+        case 'booster': {
+          const a = 0.18 + o.flash * 0.4;
+          ctx.fillStyle = `rgba(255,210,122,${a * 0.5})`;
+          ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, TAU); ctx.fill();
+          ctx.strokeStyle = `rgba(255,226,150,${0.45 + o.flash * 0.5})`; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, TAU); ctx.stroke();
+          // Chevrons drift upward: the plate throws balls on.
+          ctx.strokeStyle = '#ffe9b0'; ctx.lineWidth = 2.5;
+          for (let i = 0; i < 3; i++) {
+            const k = ((this.time * 0.9 + i / 3) % 1);
+            const y = o.y + o.r * 0.55 - k * o.r * 1.1;
+            ctx.globalAlpha = Math.sin(k * Math.PI) * 0.9;
+            ctx.beginPath(); ctx.moveTo(o.x - 9, y + 6); ctx.lineTo(o.x, y - 2); ctx.lineTo(o.x + 9, y + 6); ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
         case 'well': {
           ctx.strokeStyle = 'rgba(199,125,255,0.35)';
           ctx.lineWidth = 1.5;
@@ -513,11 +579,49 @@ export class Renderer {
   }
 
   private drawZones(w: World): void {
+    const ctx = this.ctx;
     for (const z of w.zones) {
+      const life = 1 - z.t / z.dur;
       if (z.kind === 'fire') {
-        const a = (1 - z.t / z.dur) * 0.45;
-        this.drawGlow(z.x, z.y, z.r * 1.6, '#ff6a2a', a);
+        this.drawGlow(z.x, z.y, z.r * 1.6, '#ff6a2a', life * 0.45);
         if (this.emits(9)) this.particles.spawn(z.x + (Math.random() - 0.5) * z.r, z.y, 0, -50, 0.4, 3, '#ffb13b', 1);
+      } else if (z.kind === 'toxic') {
+        const fade = Math.min(1, z.t * 4) * Math.min(1, life * 3);
+        this.drawGlow(z.x, z.y, z.r * 1.5, '#7dff3a', fade * 0.38);
+        ctx.strokeStyle = `rgba(166,255,77,${fade * 0.35})`; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.stroke();
+        if (this.emits(10)) {
+          const a = Math.random() * TAU, r = Math.random() * z.r;
+          this.particles.spawn(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, 0, -18, 0.7, 3.5, Math.random() < 0.5 ? '#a6ff4d' : '#6ad13a', 1);
+        }
+      } else if (z.kind === 'vortex') {
+        ctx.save();
+        ctx.translate(z.x, z.y);
+        ctx.strokeStyle = `rgba(180,140,255,${0.55 * life + 0.15})`; ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          const a = -this.time * 6 + i * TAU / 3;
+          ctx.beginPath(); ctx.arc(0, 0, z.r * (0.35 + i * 0.22) * (0.6 + life * 0.4), a, a + 2.2); ctx.stroke();
+        }
+        ctx.restore();
+        this.drawGlow(z.x, z.y, 24, '#b48cff', 0.7);
+      } else if (z.kind === 'mine') {
+        const armed = z.t > 0.25;
+        const blink = armed && Math.sin(this.time * 10 + z.x) > 0;
+        this.drawGlow(z.x, z.y, 16, '#ffb13b', blink ? 0.9 : 0.35);
+        ctx.fillStyle = '#3a2410';
+        ctx.beginPath(); ctx.arc(z.x, z.y, 7, 0, TAU); ctx.fill();
+        ctx.strokeStyle = blink ? '#ffe066' : '#ffb13b'; ctx.lineWidth = 2; ctx.stroke();
+      } else if (z.kind === 'stasis') {
+        const fade = Math.min(1, z.t * 3) * Math.min(1, life * 4);
+        ctx.fillStyle = `rgba(255,214,122,${fade * 0.12})`;
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
+        ctx.strokeStyle = `rgba(255,226,150,${fade * 0.6})`; ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, this.time * 0.6, this.time * 0.6 + TAU); ctx.stroke();
+        ctx.setLineDash([]);
+        // a slow clock hand
+        const a = this.time * 1.2;
+        ctx.beginPath(); ctx.moveTo(z.x, z.y); ctx.lineTo(z.x + Math.cos(a) * z.r * 0.6, z.y + Math.sin(a) * z.r * 0.6); ctx.stroke();
       }
     }
   }
@@ -552,6 +656,13 @@ export class Renderer {
           ctx.fillStyle = '#6dff9c';
           ctx.fillRect(p.x - 6, p.y - 2, 12, 4);
           ctx.fillRect(p.x - 2, p.y - 6, 4, 12);
+          break;
+        case 'relic':
+          this.drawGlow(p.x, p.y, 26, '#ffb300', 0.7 + 0.3 * Math.sin(this.time * 6));
+          ctx.fillStyle = '#ffd451';
+          ctx.fillRect(p.x - 6, p.y - 4, 12, 9);
+          ctx.fillStyle = '#7a4a05';
+          ctx.fillRect(p.x - 6, p.y - 1, 12, 2);
           break;
         case 'mystery':
           this.drawGlow(p.x, p.y, 22, '#ffffff', 0.6 + 0.3 * Math.sin(this.time * 8));
@@ -613,6 +724,44 @@ export class Renderer {
         break;
       }
       case 'mirror': poly(8, Math.PI / 8); break;
+      case 'pentagon': poly(5, -Math.PI / 2, r * 1.08); break;
+      case 'gear': {
+        const teeth = 8;
+        for (let i = 0; i < teeth * 2; i++) {
+          const a = rot + (i / (teeth * 2)) * TAU;
+          const rr = i % 2 === 0 ? r * 1.1 : r * 0.82;
+          const a2 = a + TAU / (teeth * 2);
+          if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          ctx.lineTo(x + Math.cos(a2) * rr, y + Math.sin(a2) * rr);
+        }
+        ctx.closePath();
+        break;
+      }
+      case 'spike': {
+        for (let i = 0; i < 16; i++) {
+          const a = rot + (i / 16) * TAU;
+          const rr = i % 2 === 0 ? r * 1.25 : r * 0.7;
+          if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        ctx.closePath();
+        break;
+      }
+      case 'egg':
+        ctx.ellipse(x, y, r * 0.86, r * 1.08, 0, 0, TAU);
+        break;
+      case 'crescent':
+        ctx.arc(x, y, r, Math.PI * 0.25, Math.PI * 1.75);
+        ctx.arc(x + r * 0.45, y, r * 0.72, Math.PI * 1.62, Math.PI * 0.38, true);
+        ctx.closePath();
+        break;
+      case 'skull':
+        ctx.arc(x, y - r * 0.12, r, Math.PI * 0.82, Math.PI * 2.18);
+        ctx.lineTo(x + r * 0.55, y + r * 0.95);
+        ctx.lineTo(x - r * 0.55, y + r * 0.95);
+        ctx.closePath();
+        break;
       case 'hourglass':
         ctx.moveTo(x - r, y - r);
         ctx.lineTo(x + r, y - r);
@@ -647,6 +796,24 @@ export class Renderer {
       this.drawGlow(x, y, r * 2.6, col, 0.45 + 0.2 * Math.sin(this.time * 5));
     }
     if (d.ai === 'golden') this.drawGlow(x, y, r * 3, '#ffd84a', 0.8);
+    if (e.phased) ctx.globalAlpha = 0.28;
+    if (d.ai === 'pulsar') {
+      const k = e.t1 > 0 ? 1 - e.t1 / 0.45 : 0;
+      ctx.strokeStyle = e.t1 > 0 ? `rgba(255,138,240,${0.7 * (1 - k)})` : 'rgba(255,138,240,0.18)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, e.t1 > 0 ? 20 + k * 110 : 130, 0, TAU); ctx.stroke();
+    }
+    if (d.ai === 'aegis') {
+      ctx.strokeStyle = 'rgba(122,240,255,0.16)'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 7]);
+      ctx.beginPath(); ctx.arc(x, y, 150, this.time * 0.5, this.time * 0.5 + TAU); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (d.ai === 'necro') this.drawGlow(x, y, r * 2.4, '#b48cff', 0.35 + 0.15 * Math.sin(this.time * 3));
+    if (d.ai === 'charger' && (e.t0 % 7) > 6.1) this.drawGlow(x, y, r * 2.6, '#ff8a6b', 0.6);
+    if (e.elite.includes('commander')) {
+      ctx.strokeStyle = 'rgba(255,177,59,0.2)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 140, 0, TAU); ctx.stroke();
+    }
     if (d.ai === 'warden') {
       ctx.strokeStyle = 'rgba(255,224,102,0.25)';
       ctx.setLineDash([4, 6]);
@@ -664,7 +831,7 @@ export class Renderer {
       ctx.arc(x, y, Math.max(r, rr), 0, TAU);
       ctx.stroke();
     }
-    const rot = d.shape === 'star' ? this.time * 1.5 : 0;
+    const rot = d.shape === 'star' ? this.time * 1.5 : d.shape === 'gear' ? this.time * 0.8 : d.shape === 'spike' ? -this.time : 0;
     this.shapePath(d.shape, x + 1, y + 6, r, rot);
     ctx.fillStyle = '#00000065'; ctx.fill();
     this.shapePath(d.shape, x, y, r, rot);
@@ -712,8 +879,38 @@ export class Renderer {
       if (this.emits(18)) this.particles.spawn(x + (Math.random() - 0.5) * r, y - r * 0.5, 0, -70, 0.35, 3, Math.random() < 0.5 ? '#ff8a3d' : '#ffd166', 1);
     }
     if (e.st.bleed > 0 && this.emits(4.8 * e.st.bleed)) this.particles.spawn(x, y + r * 0.5, 0, 40, 0.4, 2.5, '#ff2a55', 1, 200);
+    if (e.st.poison > 0) {
+      this.shapePath(d.shape, x, y, r, rot);
+      ctx.globalAlpha = Math.min(0.45, 0.12 + e.st.poison * 0.025);
+      ctx.fillStyle = '#7dff3a';
+      ctx.fill();
+      ctx.globalAlpha = e.phased ? 0.28 : 1;
+      ctx.strokeStyle = '#a6ff4d'; ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
+      if (this.emits(1.4 * Math.min(e.st.poison, 8))) this.particles.spawn(x + (Math.random() - 0.5) * r, y - r * 0.2, 0, -30, 0.6, 2.5, '#a6ff4d', 1);
+    }
+    if (e.st.stunT > 0) {
+      ctx.fillStyle = '#fff6a0';
+      for (let i = 0; i < 3; i++) {
+        const a = this.time * 5 + i * TAU / 3;
+        ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.8, y - r - 6 + Math.sin(a) * 3, 2, 0, TAU); ctx.fill();
+      }
+    }
+    if (d.immune?.length && !e.boss) {
+      // A thin ring in the colour of the element it ignores.
+      const col = { fire: '#ff7a2f', ice: '#9fdcff', lightning: '#ffe14a', poison: '#8dff5a' }[d.immune[0]];
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = e.phased ? 0.28 : 1;
+    }
+    if (d.ai === 'egg') {
+      ctx.strokeStyle = '#1d2a0c'; ctx.lineWidth = 1.5;
+      const k = Math.min(1, e.t0 / 4);
+      ctx.beginPath(); ctx.moveTo(x - r * 0.5, y - r * 0.2);
+      ctx.lineTo(x - r * 0.1, y + r * 0.1 * k); ctx.lineTo(x + r * 0.2 * k, y - r * 0.3 * k); ctx.lineTo(x + r * 0.5 * k, y); ctx.stroke();
+    }
     // eyes give silhouettes some life and show "facing"
-    if (!e.boss && r > 9) {
+    if (!e.boss && r > 9 && d.ai !== 'egg' && d.ai !== 'pylon') {
       ctx.fillStyle = '#08121f';
       roundRect(ctx, x - r * .55, y - r * .08, r * 1.1, r * .42, r * .14); ctx.fill();
       const blink = (this.time + e.id * .73) % 4.7 > 4.55;
@@ -750,6 +947,7 @@ export class Renderer {
       ctx.fill();
     }
     if (e.boss) this.drawBossBody(w, e);
+    ctx.globalAlpha = 1;
     // hp bar
     if (!e.boss && (e.hp < e.maxHp || e.elite.length)) {
       const bw = Math.max(20, e.r * 2);
@@ -778,6 +976,22 @@ export class Renderer {
     ctx.arc(e.x - e.r * 0.3, e.y - e.r * 0.05, e.r * 0.06, 0, TAU);
     ctx.arc(e.x + e.r * 0.3, e.y - e.r * 0.05, e.r * 0.06, 0, TAU);
     ctx.fill();
+    if (e.def.id === 'boss_chronarch') {
+      // Clock hands: the long hand sweeps toward the next time stop.
+      const k = 1 - Math.max(0, Math.min(1, e.t0 / (e.phase ? 7.5 : 10)));
+      ctx.strokeStyle = '#3a2a08'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(-Math.PI / 2 + k * TAU) * e.r * 0.8, e.y + Math.sin(-Math.PI / 2 + k * TAU) * e.r * 0.8); ctx.stroke();
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(this.time * 0.3) * e.r * 0.45, e.y + Math.sin(this.time * 0.3) * e.r * 0.45); ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+    if (e.def.id === 'boss_broodmother') {
+      ctx.fillStyle = '#c4ff7a55';
+      for (let i = 0; i < 6; i++) {
+        const a = i * TAU / 6 + this.time * 0.3;
+        ctx.beginPath(); ctx.arc(e.x + Math.cos(a) * e.r * 0.62, e.y + Math.sin(a) * e.r * 0.62 + 6, e.r * 0.13, 0, TAU); ctx.fill();
+      }
+    }
     if (e.def.id === 'boss_magnetar') {
       ctx.strokeStyle = e.t1 > 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,153,80,0.3)';
       ctx.lineWidth = 2;
@@ -793,6 +1007,31 @@ export class Renderer {
 
   private drawBossExtras(w: World): void {
     const ctx = this.ctx;
+    for (const e of w.enemies) {
+      if (!e.alive || e.def.id !== 'boss_architect') continue;
+      // Tethers to the ward pylons that shield it.
+      for (const p of w.enemies) {
+        if (!p.alive || p.def.ai !== 'pylon') continue;
+        ctx.strokeStyle = 'rgba(154,216,255,0.45)'; ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (e.t3 > 0) {
+        ctx.strokeStyle = 'rgba(154,216,255,0.6)'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 8, 0, TAU); ctx.stroke();
+      }
+      if (e.t1 > 0) {
+        const y = e.y + ARCHITECT_WALL.below;
+        const half = ARCHITECT_WALL.half * (e.phase ? 1.35 : 1);
+        const tilt = e.phase ? Math.sin(w.time * 1.4) * 22 : 0;
+        ctx.strokeStyle = '#e8eef8'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+        ctx.globalAlpha = Math.min(1, e.t1 * 2);
+        ctx.beginPath(); ctx.moveTo(e.x - half, y - tilt); ctx.lineTo(e.x + half, y + tilt); ctx.stroke();
+        ctx.strokeStyle = '#7aa8ff'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+      }
+    }
     for (const e of w.enemies) {
       if (!e.alive || e.def.id !== 'boss_fortress') continue;
       const n = e.phase ? 4 : 3;
@@ -1326,12 +1565,16 @@ export class Renderer {
     const evo = [...w.build.evolutions];
     const step = 21;
     const fit = Math.max(0, Math.floor(maxWidth / step));
-    const items: [string, number][] = [...evo.map((id): [string, number] => [EVOLUTION_MAP[id].icon, 0]), ...entries.map(([id, lv]): [string, number] => [UPGRADE_MAP[id]?.icon ?? '•', lv])];
+    const items: [string, number][] = [
+      ...evo.map((id): [string, number] => [EVOLUTION_MAP[id].icon, 0]),
+      ...w.build.relics.map((id): [string, number] => [RELIC_MAP[id]?.icon ?? '•', -1]),
+      ...entries.map(([id, lv]): [string, number] => [UPGRADE_MAP[id]?.icon ?? '•', lv]),
+    ];
     const shown = items.length > fit ? items.slice(0, Math.max(0, fit - 1)) : items;
     ctx.textAlign = 'center';
     shown.forEach(([glyph, lv], i) => {
       const cx = x + 8 + i * step;
-      ctx.fillStyle = lv === 0 ? '#ffb21e33' : '#ffffff10';
+      ctx.fillStyle = lv === 0 ? '#ffb21e33' : lv < 0 ? '#ffd45130' : '#ffffff10';
       roundRect(ctx, cx - 9, y - 9, 18, 18, 5); ctx.fill();
       ctx.drawImage(this.iconSprite(glyph), cx - 8, y - 8, 16, 16);
       if (lv > 1) {

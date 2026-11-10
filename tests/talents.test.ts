@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TALENTS, normalizeTalents, talentSpent } from '../src/data/talents';
 import { applyTalents, changeTalent, talentProgress } from '../src/meta/talents';
-import { defaultProfile, loadProfile, migrate, saveProfile } from '../src/meta/profile';
+import { defaultProfile, loadProfile, migrate, saveProfile, SAVE_VERSION } from '../src/meta/profile';
 import { applyRun, runConfig } from '../src/meta/progress';
 import { BEHAVIORS } from '../src/sim/behaviors';
 import { ballHitEnemy } from '../src/sim/combat';
@@ -12,10 +12,11 @@ import { emptyWorld, steps } from './helpers';
 const kinetics = { bankcraft: 3, flow: 3, precision: 2, inertia: 2, banked_power: 1 };
 const conduit = { embers: 3, voltage: 3, catalyst: 2, brittle: 2, convergence: 1 };
 const warden = { hull: 3, plating: 3, recovery: 2, repulsion: 2, last_bastion: 1 };
+const havoc = { blasting: 3, keen: 3, shrapnel: 2, swarmcraft: 2, cascade: 1 };
 const opts = { seed: 1, arena: 'proving', difficulty: 0, pacts: [] };
 
 describe('talent progression and save safety', () => {
-  it('grants 3 starter points and counts mastery across cores, capped at 15', () => {
+  it('grants 3 starter points and counts mastery across cores, capped at 20', () => {
     const p = defaultProfile();
     expect(talentProgress(p)).toEqual({ total: 3, xp: 0, next: 500 });
     p.mastery = { striker: 250, pyro: 249, unknown: 9999 };
@@ -23,13 +24,13 @@ describe('talent progression and save safety', () => {
     p.mastery.pyro++;
     expect(talentProgress(p).total).toBe(4);
     p.mastery.striker = 99999;
-    expect(talentProgress(p).total).toBe(15);
+    expect(talentProgress(p).total).toBe(20);
     expect(talentProgress(p).next).toBe(0);
   });
 
   it('migrates old profiles without spending currencies or choosing talents', () => {
     const p = migrate({ version: 2, coins: 300, research: 5, mastery: { striker: 2000 } });
-    expect(p.version).toBe(3);
+    expect(p.version).toBe(SAVE_VERSION);
     expect(p.talents).toEqual({});
     expect(talentProgress(p).total).toBe(7);
     expect(p.coins).toBe(300);
@@ -41,7 +42,9 @@ describe('talent progression and save safety', () => {
     expect(normalizeTalents({ bankcraft: 99, flow: 3 }, 4)).toEqual({ bankcraft: 3, flow: 1 });
     expect(normalizeTalents({ precision: 2, banked_power: 1 })).toEqual({});
     expect(normalizeTalents({ bankcraft: 3, precision: 2, banked_power: 1 }).banked_power).toBeUndefined();
-    expect(talentSpent(normalizeTalents({ ...kinetics, ...conduit, ...warden }))).toBe(15);
+    // 20 points buy one full tree and most of a second, never two capstones.
+    expect(talentSpent(normalizeTalents({ ...kinetics, ...conduit, ...warden }))).toBe(20);
+    expect(normalizeTalents({ ...kinetics, ...conduit }).convergence).toBeUndefined();
     expect(migrate({ talents: { ...kinetics, ...warden } }).talents).toEqual({ bankcraft: 3 });
   });
 
@@ -122,7 +125,7 @@ describe('talents compose with existing power systems', () => {
   });
 
   it('all talent modifier ranks produce finite stats with upgrades and evolutions', () => {
-    for (const talents of [kinetics, conduit, warden]) {
+    for (const talents of [kinetics, conduit, warden, havoc]) {
       const w = emptyWorld({ talents });
       w.build.addUpgrade('fortify');
       w.build.addUpgrade('ignite');
@@ -130,7 +133,7 @@ describe('talents compose with existing power systems', () => {
       expect(Object.values(w.build.stats).every(Number.isFinite)).toBe(true);
       expect(talentSpent(w.talents)).toBe(11);
     }
-    expect(TALENTS).toHaveLength(15);
+    expect(TALENTS).toHaveLength(20);
   });
 
   it('preserves Glass Heart, Bloodless, Lone Ball and Fate Sealed', () => {

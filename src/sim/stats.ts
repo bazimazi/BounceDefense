@@ -39,6 +39,14 @@ export const STAT_DEFAULTS = {
   bleedChance: 0,
   elementPower: 1,
   burnSpread: 0, // chance a burning enemy spreads burn on death
+  burnShred: 0, // armor ignored by hits on burning enemies
+  poisonChance: 0,
+  poisonPower: 0.07, // poison dps per stack as a fraction of hit damage
+  poisonCap: 12, // maximum poison stacks on one enemy
+  poisonSpread: 0, // chance a poisoned enemy passes its stacks on at death
+  freezeDuration: 1, // multiplier on freeze time
+  bleedCap: 10,
+  bleedVuln: 0, // bonus hit damage against bleeding enemies
   // ---- explosion
   explosionChance: 0,
   explosionDamage: 0.7,
@@ -50,11 +58,22 @@ export const STAT_DEFAULTS = {
   armor: 0,
   lifesteal: 0,
   barrier: 0, // hits absorbed by the defense barrier per recharge
+  damageTaken: 1, // multiplier on damage reaching the line
+  healMult: 1, // multiplier on all healing
+  comboGuard: 0, // damage reduction while combo is 30+
   // ---- combo / momentum
   comboWindow: 1.8,
   comboPower: 1,
   momentumGain: 1,
   momentumStart: 0,
+  surgeGain: 1, // multiplier on Surge charge gained
+  surgeDuration: 5,
+  recallCooldown: 10,
+  starfallPower: 1,
+  // ---- targeting
+  farDamage: 0, // bonus vs enemies in the upper half of the arena
+  nearDamage: 0, // bonus vs enemies close to the defense line
+  eliteDamage: 0, // bonus vs elites and bosses
   // ---- utility
   xpGain: 1,
   coinGain: 1,
@@ -96,6 +115,11 @@ export function computeStats(mods: readonly Modifier[], base: Partial<Stats> = {
   out.speed = Math.max(260, Math.min(out.speed, 1500));
   out.lifesteal = Math.min(out.lifesteal, 0.5);
   out.execute = Math.min(out.execute, 0.35);
+  out.poisonCap = Math.max(1, Math.floor(out.poisonCap));
+  out.bleedCap = Math.max(1, Math.floor(out.bleedCap));
+  out.recallCooldown = Math.max(3, out.recallCooldown);
+  out.surgeDuration = Math.max(1, out.surgeDuration);
+  out.healMult = Math.max(0, out.healMult);
   return out;
 }
 
@@ -113,6 +137,7 @@ export const STAT_FORMATS: Partial<Record<StatKey, (v: number) => string>> = {
   explosionChance: (v) => `${Math.round(v * 100)}%`,
   splitChance: (v) => `${Math.round(v * 100)}%`,
   bleedChance: (v) => `${Math.round(v * 100)}%`,
+  poisonChance: (v) => `${Math.round(v * 100)}%`,
   lifesteal: (v) => `${(v * 100).toFixed(1)}%`,
   maxHp: (v) => `${Math.round(v)}`,
   armor: (v) => `${Math.round(v)}`,

@@ -37,7 +37,7 @@ try {
   await page.waitForFunction(() => window.game.world.hand === 1);
   assert.ok(await page.evaluate(() => window.game.world.recallCooldown > 9));
 
-  for (const arena of ['proving', 'foundry', 'rift']) {
+  for (const arena of ['proving', 'foundry', 'rift', 'blight', 'spire', 'citadel']) {
     await page.evaluate(arena => {
       const g = window.game; g.startRun({ arena, difficulty: 0, pacts: [], seed: 51 });
       g.paused = true;

@@ -3,10 +3,10 @@ import type { DiscoveryCat, Profile } from './types';
 import { normalizeTalents } from '../data/talents';
 import { talentProgress } from './talents';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'bounce-defense-save';
 
-export const DISCOVERY_CATS: DiscoveryCat[] = ['enemies', 'bosses', 'synergies', 'evolutions', 'reactions', 'upgrades', 'arenas', 'events'];
+export const DISCOVERY_CATS: DiscoveryCat[] = ['enemies', 'bosses', 'synergies', 'evolutions', 'reactions', 'upgrades', 'arenas', 'events', 'relics'];
 
 export function defaultProfile(): Profile {
   return {
@@ -23,14 +23,15 @@ export function defaultProfile(): Profile {
     presets: [],
     mastery: {},
     talents: {},
-    discoveries: { enemies: [], bosses: [], synergies: [], evolutions: [], reactions: [], upgrades: [], arenas: [], events: [] },
+    discoveries: { enemies: [], bosses: [], synergies: [], evolutions: [], reactions: [], upgrades: [], arenas: [], events: [], relics: [] },
     achievements: [],
     challenges: [],
     cosmetics: ['classic'],
     stats: {
       runs: 0, wins: 0, kills: 0, damage: 0, bestCombo: 0, maxWallChain: 0, explosionKills: 0, fireKills: 0,
       lightningKills: 0, frozen: 0, bleedKills: 0, healed: 0, coinsEarned: 0, evolutions: 0, maxBallsInFlight: 0,
-      maxMomentumTier: 0, elitesKilled: 0, playTime: 0,
+      maxMomentumTier: 0, elitesKilled: 0, playTime: 0, poisonKills: 0, starfalls: 0, goldenCaught: 0, relicsFound: 0,
+      maxAscension: 0, contractsDone: 0,
     },
     cleared: {},
     bossKills: {},
@@ -38,6 +39,10 @@ export function defaultProfile(): Profile {
     tutorialDone: false,
     runsSinceUnlock: 0,
     daily: { day: '', claimed: false, best: 0, runs: 0 },
+    unlockedRelics: [],
+    ascension: 0,
+    rankXp: 0,
+    contracts: { day: '', daily: [], week: '', weekly: null },
   };
 }
 
@@ -76,6 +81,12 @@ export function migrate(raw: unknown): Profile {
     // v1 had no trail in the loadout
     if (isObj(data.loadout) && !data.loadout.trail) data.loadout = { ...data.loadout, trail: 'classic' };
   }
+  if (v < 4) {
+    // v3 had no Pilot Rank: credit every Mastery XP already earned.
+    if (typeof data.rankXp !== 'number' && isObj(data.mastery)) {
+      data.rankXp = Object.values(data.mastery).reduce<number>((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+    }
+  }
   const p = mergeDefaults(base, data);
   // Keep only supported settings when loading an older profile.
   for (const key of Object.keys(p.settings)) {
@@ -86,6 +97,8 @@ export function migrate(raw: unknown): Profile {
   p.talents = normalizeTalents(p.talents, talentProgress(p).total);
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');
   if (!p.cosmetics.includes('classic')) p.cosmetics.unshift('classic');
+  p.ascension = Math.max(0, Math.min(20, Math.floor(p.ascension) || 0));
+  if (!Array.isArray(p.contracts.daily)) p.contracts.daily = [];
   return p;
 }
 

@@ -1,6 +1,7 @@
 import { t, type UiKey } from '../i18n';
 import { EVOLUTIONS, EVOLUTION_MAP, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADE_MAP } from '../data/upgrades';
+import { RELIC_MAP } from '../data/relics';
 import type { BuildView, Tag } from '../data/types';
 import { computeStats, type Modifier, type Stats } from './stats';
 
@@ -12,6 +13,8 @@ export class Build implements BuildView {
   readonly upgrades = new Map<string, number>();
   readonly synergies = new Set<string>();
   readonly evolutions = new Set<string>();
+  /** Relics found this run, in pick order. */
+  readonly relics: string[] = [];
   /** behavior id -> power level */
   readonly behaviors = new Map<string, number>();
   private tags = new Map<Tag, number>();
@@ -81,6 +84,17 @@ export class Build implements BuildView {
     return this.recompute();
   }
 
+  addRelic(id: string): string[] {
+    if (!RELIC_MAP[id]) throw new Error(`Unknown relic ${id}`);
+    if (this.relics.includes(id)) return [];
+    this.relics.push(id);
+    return this.recompute();
+  }
+
+  hasRelic(id: string): boolean {
+    return this.relics.includes(id);
+  }
+
   eligibleEvolutions(): string[] {
     return EVOLUTIONS.filter((e) => !this.evolutions.has(e.id) && e.recipe.every((r) => this.level(r.id) >= r.level)).map((e) => e.id);
   }
@@ -125,6 +139,11 @@ export class Build implements BuildView {
       if (e.mods) mods.push(...e.mods);
       this.behaviors.set(e.behavior, 1);
     }
+    for (const id of this.relics) {
+      const r = RELIC_MAP[id];
+      if (r.mods) mods.push(...r.mods);
+      if (r.behavior) this.behaviors.set(r.behavior, Math.max(1, this.behaviors.get(r.behavior) ?? 0));
+    }
     mods.push(...this.tempMods);
     this.stats = computeStats(mods);
     return fresh;
@@ -142,18 +161,19 @@ export class Build implements BuildView {
 }
 
 const PREFIX: Partial<Record<Tag, string>> = {
-  fire: 'Inferno', ice: 'Glacial', lightning: 'Tesla', vampire: 'Vampiric', bleed: 'Serrated', explosion: 'Demolition',
+  poison: 'Toxic', fire: 'Inferno', ice: 'Glacial', lightning: 'Tesla', vampire: 'Vampiric', bleed: 'Serrated', explosion: 'Demolition',
   swarm: 'Swarm', crit: 'Assassin', ricochet: 'Ricochet', kinetic: 'Kinetic', combo: 'Combo', tank: 'Bulwark',
   impact: 'Heavy', momentum: 'Perpetual', control: 'Gravity', chain: 'Chain',
 };
 const NOUN: Partial<Record<Tag, string>> = {
   vampire: 'Devourer', explosion: 'Barrage', swarm: 'Hive', crit: 'Executioner', lightning: 'Storm', fire: 'Furnace',
   ice: 'Glacier', ricochet: 'Pinball', kinetic: 'Railgun', combo: 'Reactor', tank: 'Bastion', impact: 'Hammer',
-  chain: 'Conduit', bleed: 'Reaper', momentum: 'Engine', control: 'Singularity',
+  chain: 'Conduit', bleed: 'Reaper', momentum: 'Engine', control: 'Singularity', poison: 'Plague',
 };
 
 const EVO_TAG: Record<string, Tag> = {
   inferno: 'fire', tesla_storm: 'lightning', glacier: 'ice', blood_moon: 'vampire', hydra: 'swarm', railgun: 'kinetic',
+  plague: 'poison', singularity: 'control', thunderhead: 'ricochet', minefield: 'explosion', reaper: 'crit', aegis: 'tank', prism: 'crit',
 };
 
 /** English evolution names (for the archetype check), captured before any language switch. */

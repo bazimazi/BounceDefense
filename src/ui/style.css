@@ -409,7 +409,7 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .talent-summary-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .talent-points { color: var(--gold); font-size: 15px; font-weight: 900; }
 .talent-summary-copy small { color: var(--text-2); font-size: 11.5px; line-height: 1.3; }
-.talent-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.talent-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 .talent-tabs button { position: relative; z-index: 2; flex-direction: column; gap: 1px; min-height: 56px; padding: 6px 4px; font-size: 12.5px; color: var(--tree-color); background: var(--surface); }
 .talent-tabs button.on { background: color-mix(in srgb, var(--tree-color) 16%, var(--surface-2)); border-color: var(--tree-color); }
 .talent-tab-icon { font-size: 17px; line-height: 1; }
@@ -909,3 +909,43 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
   .battle { display: flex; }
   .battle-stage { display: none; }
 }
+
+/* ---- expansion: relics, ascension, contracts, pilot rank */
+.offer.relic-offer { --rc: var(--c, var(--common)); background: linear-gradient(120deg, color-mix(in srgb, var(--rc) 22%, #16223a), #0e1628 70%); }
+.offer.relic-offer.legendary { animation: deal .44s cubic-bezier(.2, .9, .3, 1.15) backwards, glow 1.6s ease-in-out .5s infinite; }
+.offer.relic-offer.cursed { border-style: dashed; }
+.offer.relic-offer .okicker { color: var(--rc); }
+.build-chip.relic { --rc: #ffd45199; background: #ffd4511a; border-radius: 50%; }
+.build-chip.relic.legendary { --rc: #ffb21ecc; box-shadow: 0 0 8px #ffb21e55; }
+.tag.relic { color: var(--c, var(--gold)); border-color: color-mix(in srgb, var(--c, var(--gold)) 50%, transparent); }
+.tag.relic.cursed { color: var(--red); border-color: #ff547066; }
+.relics-line { margin-top: 6px; }
+.ascension-hint { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.ascension-hint .icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--violet); }
+.ascension-stepper { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; align-items: center; }
+.ascension-stepper .carousel-btn { height: 52px; }
+.ascension-value { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 14px; background: linear-gradient(120deg, #c77dff2a, #111a2d 70%); border: 1px solid #c77dff55; }
+.ascension-value b { font-size: 16px; font-weight: 900; color: #ecd8ff; }
+.ascension-value small { font-size: 11.5px; color: var(--gold); font-weight: 800; }
+.ascension-rules { margin-top: 8px; padding: 8px 12px; border-radius: 13px; background: var(--surface); border: 1px solid var(--stroke); font-size: 12.5px; color: var(--text-2); }
+.ascension-rules summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-weight: 800; color: var(--text); }
+.ascension-rules summary b { padding: 0 7px; border-radius: 99px; background: #c77dff33; color: #ecd8ff; font-size: 11px; }
+.ascension-rules ol { margin: 8px 0 2px; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; line-height: 1.35; }
+.rank-card { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; padding: 12px; border-radius: 16px; background: linear-gradient(115deg, #ffcf4a1c, var(--surface) 60%); border: 1px solid #ffcf4a44; }
+.rank-badge { display: grid; place-items: center; width: 46px; height: 46px; flex-shrink: 0; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); background: linear-gradient(160deg, #ffe38a, #c98012); color: #2a1700; }
+.rank-badge b { font-size: 17px; font-weight: 900; }
+.rank-badge.small { width: 36px; height: 36px; }
+.rank-badge.small b { font-size: 14px; }
+.rank-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.rank-copy .row { display: flex; align-items: center; gap: 8px; }
+.rank-copy small { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rank-next { color: var(--gold) !important; font-weight: 700; line-height: 1.35; }
+.contract-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.contract-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--stroke); }
+.contract-row.done { border-color: #5ef59a3d; background: linear-gradient(115deg, #5ef59a12, var(--surface) 55%); }
+.contract-list.weekly .contract-row { border-color: #c77dff55; background: linear-gradient(115deg, #c77dff1a, var(--surface) 60%); }
+.contract-icon { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px; font-size: 18px; background: #ffffff0a; }
+.contract-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.contract-copy b { font-size: 13px; line-height: 1.3; }
+.contract-count { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mastery-card.rank-line { margin-top: 8px; }

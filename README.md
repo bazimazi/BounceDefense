@@ -287,25 +287,45 @@ All artwork remains procedural, with no downloaded assets or new dependencies.
 
 The pause screen includes a flight manual. Run results count power shots, starfalls and recalls.
 
-## What's in the vertical slice
+## What's in the game
 
 | System | Content |
 | --- | --- |
-| Ball cores | 6: Striker, Pyro, Tesla, Cryo, Blood, Void. Each has a passive, starting upgrade and mastery track |
-| Ball parts | 14 across Shell, Impact and Momentum slots |
-| Run upgrades | 45 across offense, physics, multiplication, elemental, defense, utility and core signatures |
-| Synergies | 13 (known, hidden and legendary), discovered automatically |
-| Evolutions | 6 (Inferno, Tesla Storm, Glacier, Blood Moon, Hydra Swarm, Railgun) |
-| Talents | 3 persistent trees, 15 ranked nodes, 3 capstones; shared point budget and free respecs |
-| Elemental reactions | 3 (Steam Burst, Overload, Supercharge) |
-| Enemies | 12 behaviours plus fragments and a golden wisp; composition squads |
-| Elite modifiers | 6, stackable |
-| Bosses | 3 scripted mechanical fights: Fortress (rotating shields), Magnetar (gravity and pulses), Hydra (splits) |
-| Arenas | 3 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells |
-| Arena events | 7 (Double Bounce, Ball Frenzy, Jackpot, Overcharge, Blood Moon, Gravity Storm, Blackout) |
-| Difficulty | 5 tiers that add rules and steeper health growth and line damage, plus 6 Risk Pacts that trade challenge for rewards |
-| Meta | Coins, Cores and Research; Workshop (capped), Research tree, Mastery 1–20, 17 achievements, 14 challenges, Codex, trails, build presets |
+| Ball cores | 10: Striker, Pyro, Tesla, Cryo, Blood, Void, Venom, Titan, Gemini, Chrono. Each has a passive, starting upgrade, signature upgrade and a 30-level mastery track |
+| Ball parts | 26 across Shell, Impact and Momentum slots |
+| Run upgrades | 69 across offense, physics, multiplication, elemental (fire, ice, lightning, poison), defense, utility and core signatures |
+| Synergies | 25 (known, hidden and legendary), discovered automatically |
+| Evolutions | 13 (Inferno, Tesla Storm, Glacier, Blood Moon, Hydra Swarm, Railgun, Plague Ball, Singularity, Thunderhead, Minefield, Grim Reaper, Aegis, Prism Ball) |
+| Relics | 32 run-long artifacts (common, rare, legendary and cursed) found in relic caches; most are earned through Goals and Pilot Rank |
+| Talents | 4 persistent trees (Kinetics, Conduit, Warden, Havoc), 20 ranked nodes, 4 capstones; 20-point shared budget and free respecs |
+| Elemental reactions | 6 (Steam Burst, Overload, Supercharge, Combustion, Necrosis, Neurotoxin) |
+| Enemies | 22 behaviours (spitters, phantoms, juggernauts, necromancers, aegis drones, pulsars, element-immune golems…) plus fragments, eggs and a golden wisp; composition squads |
+| Elite modifiers | 10, stackable (including Undying, Phasing, Fission and Commander) |
+| Bosses | 6 scripted fights: Fortress, Magnetar, Hydra, Broodmother (eggs and acid), Chronarch (time stop and stasis), Architect (walls and ward pylons) |
+| Arenas | 6 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells, spore pods, tesla pylons, booster pads |
+| Arena events | 12, five of them hostile (the only kind Abyss allows) |
+| Difficulty | 5 tiers, then a 20-step Ascension ladder above Abyss with stacking rules and growing rewards; 10 Risk Pacts |
+| Meta | Coins, Cores and Research; Workshop (capped), 37-node Research tree, Mastery 1–30, Pilot Rank 1–100, 41 achievements, 34 challenges, daily and weekly contracts, Codex, 18 trails, build presets |
 | Modes | Standard run, Endless continuation after a victory, Daily Seed (the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; the day's best is shown on Home) |
+
+### Long-term progression
+
+- **Relics.** The mini-boss and every boss leave a relic cache: pick one of three relics (four with
+  Relic Lore research) or take coins. Relics are strong, distinct twists (Phoenix Feather, War Drum,
+  Meteor Core, Cursed Crown…) and are never offered twice in a run. Twenty-one start in the pool; the
+  rest unlock through achievements, challenges and Pilot Rank. The Codex records each one found.
+- **Poison.** A fourth element that stacks (12 by default), ticks through armor, spreads with
+  Contagion and reacts with the other three: fire ignites it (Combustion), freezing rots armor
+  (Necrosis), lightning stuns and carries it down the chain (Neurotoxin). Golems and Insulators are
+  immune to one element, so a single-element build has to adapt.
+- **Ascension.** Winning on Abyss opens Ascension 1; each win at the highest open level opens the
+  next, up to 20. Rules stack (tougher enemies, fewer rerolls, faster projectiles, earlier enrages,
+  a third boss…) and each level adds 12% to rewards and extra Cores on victory.
+- **Pilot Rank.** Every run's Mastery XP also fills an account-wide rank from 1 to 100. Each rank pays
+  coins; every third adds Research, every fourth Cores, and milestones unlock relics and trails.
+- **Contracts.** Three daily contracts and one weekly contract, drawn from a date seed so every
+  player shares the board. Progress accumulates over every run and pays automatically.
+- **Mastery** now runs to level 30, and the Workshop, Research tree and talent budget grew to match.
 
 Core feel systems: constant-speed readable physics with an aim preview that runs the ball's own
 reflection, steering (gravity wells, magnets, storms), portal and floor rules, combo meter with diversity rules, momentum tiers (Charged → Overcharged → Hyper → Unstable),
@@ -319,20 +339,25 @@ across three trees: **Kinetics** rewards bank shots and combos, **Conduit** ampl
 elements acquired during the run, and **Warden** improves defense and recovery.
 Each tree has five ranked nodes, prerequisite connections, and a distinct capstone.
 You start with 3 points and earn another per 500 total Mastery XP across all cores,
-up to 15. Existing saves receive credit for their accumulated XP.
+up to 20. Existing saves receive credit for their accumulated XP.
 
 Higher tiers require 3 / 8 points in earlier tiers of that tree and a maxed prerequisite.
-The 15-point budget allows a focused specialization with supporting talents, but not
+The 20-point budget allows a focused specialization with supporting talents, but not
 two capstones. Learning or refunding a rank applies and saves immediately.
 Refunds and resets are free between runs. Refunding a prerequisite also refunds
 dependent nodes. Each run snapshots the allocation, shown in its pause menu.
+
+The fourth tree, **Havoc**, amplifies explosions, crits and shards, and its capstone sends a
+shockwave from every 25th kill. With 20 points a pilot can complete one tree and most of a second,
+but never two capstones.
 
 Talents spend no Coins, Cores or Research. Their modifiers compose through the existing
 stat pipeline, while capstones use isolated effects: wall bounces charge Surge on a
 shared cooldown, existing statuses increase direct-hit damage, or low HP reduces
 incoming damage. Talents never supply upgrade levels, elemental proc chances, synergy
 tags or evolution ingredients. Risk Pacts remain authoritative, including Bloodless
-disabling talent regeneration. Saves migrate automatically to version 3.
+disabling talent regeneration. Saves migrate automatically to version 4, which credits
+existing Mastery XP to Pilot Rank.
 
 ## Architecture
 
@@ -384,7 +409,10 @@ src/
 | Boss | Add an enemy with `boss: true`, a `BossScript` in `sim/bosses.ts`, and an entry in `BOSSES` |
 | Arena | `data/arenas.ts`: theme, layout variants, squads, events, boss and unlock requirement |
 | Core / part | `data/balls.ts` |
-| Achievement / challenge / research / workshop | `data/meta.ts` |
+| Achievement / challenge / research / workshop / rank rewards | `data/meta.ts` |
+| Relic | `data/relics.ts`: mods and/or a behavior; `locked: true` plus an unlock (achievement, challenge or `RANK_UNLOCKS`) |
+| Contract | `data/contracts.ts`: a metric over `RunSummary`, `sum` or `max`, daily and weekly targets |
+| Ascension rule | `data/ascension.ts`, then read it with `w.asc.has(id)` where it applies |
 
 ## Save data
 
@@ -436,6 +464,6 @@ each tier's `growth`), `DifficultyDef`/`ArenaDef` multipliers, `xpForLevel`, and
 - A "best shot" replay on Results: the path of the run's highest-hit shot as a ghost trail
 - Ball roles for multi-ball builds (Bomber, Collector, Healer balls)
 - Boss Rush, Challenge Gauntlet and Build Trials modes (the director and seeded RNG already support fixed scenarios)
-- More arenas and bosses (the Architect, the Chronarch), and more elements (poison, void)
+- A void element and more arenas and bosses
 - Cosmetic impact effects and arena themes
 - Code signing for Windows and macOS installers, and Tauri's updater for desktop builds

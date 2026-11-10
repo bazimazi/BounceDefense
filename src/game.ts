@@ -21,6 +21,8 @@ export interface RunOptions {
   pacts: string[];
   seed?: number;
   daily?: boolean;
+  /** Ascension level for an Abyss run. */
+  ascension?: number;
 }
 
 /** Owns the app lifecycle: menus, runs, input, the frame loop, saving. */
@@ -126,7 +128,7 @@ export class Game {
       else this.startRun({ arena: 'proving', difficulty: 0, pacts: [] });
       return;
     }
-    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts] });
+    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension });
   }
 
   buildName(): string {
@@ -157,9 +159,9 @@ export class Game {
 
   private newDemo(): void {
     this.renderer.reset();
-    const arenas = ['proving', 'foundry', 'rift'];
+    const arenas = ['proving', 'foundry', 'rift', 'blight', 'spire', 'citadel'];
     this.demo = new World(defaultConfig({
-      seed: this.demoRng.int(1, 1e9), arena: this.demoArena ?? this.demoRng.pick(arenas), core: this.demoRng.pick(['striker', 'pyro', 'tesla', 'cryo']),
+      seed: this.demoRng.int(1, 1e9), arena: this.demoArena ?? this.demoRng.pick(arenas), core: this.demoRng.pick(['striker', 'pyro', 'tesla', 'cryo', 'venom', 'titan', 'gemini']),
       pool: FULL_POOL,
     }));
     this.demo.hp = this.demo.maxHp = 400;
@@ -182,7 +184,8 @@ export class Game {
     const w = this.world;
     this.ui.beginRun(w);
     // Name the battlefield as the run opens; the tutorial keeps the screen clear for its hints.
-    if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : w.diff.name);
+    const diffName = w.asc.size ? i18n('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name;
+    if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : diffName);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
       if (victory && !w.director.endless) this.ui.victoryChoice(w);
@@ -196,9 +199,9 @@ export class Game {
     const w = this.world;
     if (!w) return;
     analytics.emit('UpgradeSelected', {
-      id: o.kind === 'upgrade' || o.kind === 'evolution' ? o.id : o.kind,
+      id: o.kind === 'upgrade' || o.kind === 'evolution' || o.kind === 'relic' ? o.id : o.kind,
       level: o.kind === 'upgrade' ? o.level : 1,
-      offered: w.offers.map((x) => (x.kind === 'upgrade' || x.kind === 'evolution' ? x.id : x.kind)),
+      offered: w.offers.map((x) => (x.kind === 'upgrade' || x.kind === 'evolution' || x.kind === 'relic' ? x.id : x.kind)),
       runTime: w.time,
     });
     w.choose(o);

@@ -7,6 +7,7 @@ import type { Build } from './build';
 export type Offer =
   | { kind: 'upgrade'; id: string; level: number }
   | { kind: 'evolution'; id: string }
+  | { kind: 'relic'; id: string }
   | { kind: 'heal' }
   | { kind: 'coins' };
 

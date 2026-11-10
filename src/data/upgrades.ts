@@ -259,7 +259,158 @@ export const UPGRADES: UpgradeDef[] = [
     mods: (l) => [{ stat: 'luck', add: l }],
   },
 
+  // ---------------------------------------------------------------- poison
+  {
+    id: 'venom', name: 'Venom Tip', icon: '🧪', category: 'element', rarity: 'common', maxLevel: 5, locked: true,
+    tags: ['poison', 'element'],
+    desc: () => `+18% chance to Poison. Poison stacks, ticks through armor and never stops building.`,
+    mods: (l) => [{ stat: 'poisonChance', add: 0.18 * l }],
+  },
+  {
+    id: 'virulence', name: 'Virulence', icon: '🦠', category: 'element', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['poison'],
+    desc: () => `Poison deals +25% damage and stacks 4 higher.`,
+    mods: (l) => [{ stat: 'poisonPower', mult: 0.25 * l }, { stat: 'poisonCap', add: 4 * l }],
+  },
+  {
+    id: 'contagion', name: 'Contagion', icon: '☣️', category: 'element', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['poison', 'chain'],
+    desc: () => `Poisoned enemies pass their stacks to neighbours when they die (+30% chance).`,
+    mods: (l) => [{ stat: 'poisonSpread', add: 0.3 * l }],
+  },
+  {
+    id: 'miasma', name: 'Miasma', icon: '🌫️', category: 'element', rarity: 'epic', maxLevel: 2, locked: true,
+    tags: ['poison', 'explosion'],
+    desc: (l) => `Poisoned kills leave a toxic cloud that poisons everything inside${l > 1 ? ' (wider and longer).' : '.'}`,
+    behavior: 'miasma',
+  },
+
+  // ---------------------------------------------------------------- tactics
+  {
+    id: 'vortex', name: 'Vortex Core', icon: '🌪️', category: 'physics', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['control'],
+    desc: (l) => `Every ${[0, 6, 5, 4][l]}th hit opens a vortex that drags nearby enemies together.`,
+    behavior: 'vortex',
+  },
+  {
+    id: 'thunderclap', name: 'Thunderclap', icon: '🔊', category: 'physics', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['ricochet', 'impact'],
+    desc: (l) => `Wall bounces send out a shockwave that hits nearby enemies for ${[0, 50, 70, 90][l]}% damage.`,
+    behavior: 'thunderclap',
+  },
+  {
+    id: 'bounty_hunter', name: 'Bounty Hunter', icon: '🎯', category: 'offense', rarity: 'common', maxLevel: 3, locked: true,
+    tags: ['crit'],
+    desc: () => `+20% damage to elites and bosses.`,
+    mods: (l) => [{ stat: 'eliteDamage', add: 0.2 * l }],
+  },
+  {
+    id: 'long_shot', name: 'Long Shot', icon: '🔭', category: 'offense', rarity: 'common', maxLevel: 3,
+    tags: ['ricochet', 'crit'],
+    desc: () => `+25% damage to enemies in the upper half of the arena.`,
+    mods: (l) => [{ stat: 'farDamage', add: 0.25 * l }],
+  },
+  {
+    id: 'point_blank', name: 'Point Blank', icon: '🧱', category: 'defense', rarity: 'common', maxLevel: 3,
+    tags: ['defense', 'impact'],
+    desc: () => `+30% damage to enemies close to your defense line.`,
+    mods: (l) => [{ stat: 'nearDamage', add: 0.3 * l }],
+  },
+  {
+    id: 'capacitor', name: 'Capacitor', icon: '🔋', category: 'utility', rarity: 'common', maxLevel: 3, locked: true,
+    tags: ['combo'],
+    desc: () => `Surge charges 25% faster and lasts 1 second longer.`,
+    mods: (l) => [{ stat: 'surgeGain', mult: 0.25 * l }, { stat: 'surgeDuration', add: l }],
+  },
+  {
+    id: 'quick_recall', name: 'Quick Recall', icon: '↩️', category: 'utility', rarity: 'common', maxLevel: 2, locked: true,
+    tags: ['utility'],
+    desc: () => `Recall cooldown −3s. Recalled balls fire a spark at the nearest enemy.`,
+    mods: (l) => [{ stat: 'recallCooldown', add: -3 * l }],
+    behavior: 'quick_recall',
+  },
+  {
+    id: 'mine_layer', name: 'Mine Layer', icon: '🧷', category: 'offense', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['explosion', 'ricochet'],
+    desc: (l) => `Every 3rd wall bounce drops a proximity mine (up to ${2 + 2 * l} at once).`,
+    behavior: 'mine_layer',
+  },
+  {
+    id: 'refraction', name: 'Refraction', icon: '🔆', category: 'multiply', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['swarm', 'crit'],
+    desc: () => `+25% chance that a critical hit fires a shard at another enemy.`,
+    behavior: 'refraction',
+  },
+  {
+    id: 'cold_snap', name: 'Cold Snap', icon: '🥶', category: 'element', rarity: 'rare', maxLevel: 2, locked: true,
+    tags: ['ice', 'control'],
+    desc: () => `Freezing an enemy hurls it back up the arena. Freezes last 30% longer.`,
+    mods: (l) => [{ stat: 'freezeDuration', mult: 0.3 * l }],
+    behavior: 'cold_snap',
+  },
+  {
+    id: 'melt', name: 'Melt', icon: '🫠', category: 'element', rarity: 'common', maxLevel: 3, locked: true,
+    tags: ['fire'],
+    desc: () => `Hits ignore 3 armor on burning enemies. Burns deal +10% damage.`,
+    mods: (l) => [{ stat: 'burnShred', add: 3 * l }, { stat: 'burnPower', mult: 0.1 * l }],
+  },
+  {
+    id: 'storm_surge', name: 'Storm Surge', icon: '🌀', category: 'element', rarity: 'rare', maxLevel: 2, locked: true,
+    tags: ['lightning', 'combo'],
+    desc: (l) => `Chain lightning jumps +1 time per ${[0, 25, 15][l]} combo (up to +4).`,
+    behavior: 'storm_surge',
+  },
+  {
+    id: 'bloodletting', name: 'Bloodletting', icon: '🩹', category: 'offense', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['bleed'],
+    desc: () => `Bleed stacks 5 higher. Bleeding enemies take +10% hit damage.`,
+    mods: (l) => [{ stat: 'bleedCap', add: 5 * l }, { stat: 'bleedVuln', add: 0.1 * l }],
+  },
+  {
+    id: 'chrono_shot', name: 'Time Shot', icon: '⏱️', category: 'physics', rarity: 'epic', maxLevel: 2, locked: true,
+    tags: ['control'],
+    desc: (l) => `Power shots chill every enemy in the arena${l > 1 ? ' twice.' : '.'}`,
+    behavior: 'chrono_shot',
+  },
+  {
+    id: 'pinball_wizard', name: 'Pinball Wizard', icon: '🕹️', category: 'physics', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['ricochet', 'momentum'],
+    desc: () => `Bumpers, pylons, crates and boss shields add +2 momentum and fire a spark.`,
+    behavior: 'pinball',
+  },
+  {
+    id: 'flow_guard', name: 'Flow Guard', icon: '🌊', category: 'defense', rarity: 'rare', maxLevel: 3, locked: true,
+    tags: ['combo', 'defense'],
+    desc: () => `While your combo is 30+, damage to your line is reduced by 15%.`,
+    mods: (l) => [{ stat: 'comboGuard', add: 0.15 * l }],
+  },
+
   // ---------------------------------------------------------------- core signatures (mastery unlocks)
+  {
+    id: 'pandemic', name: 'Pandemic', icon: '🧫', category: 'element', rarity: 'epic', maxLevel: 2, locked: true, core: 'venom',
+    tags: ['poison', 'chain'],
+    desc: () => `Poison stacks 8 higher, and every tick may jump a stack to a neighbour.`,
+    mods: (l) => [{ stat: 'poisonCap', add: 8 * l }],
+    behavior: 'pandemic',
+  },
+  {
+    id: 'earthshaker', name: 'Earthshaker', icon: '🌋', category: 'offense', rarity: 'epic', maxLevel: 2, locked: true, core: 'titan',
+    tags: ['impact', 'explosion'],
+    desc: () => `Hits on armored enemies and bosses send a quake through the crowd (50% damage).`,
+    behavior: 'earthshaker',
+  },
+  {
+    id: 'mirror_image', name: 'Mirror Image', icon: '🪞', category: 'multiply', rarity: 'epic', maxLevel: 2, locked: true, core: 'gemini',
+    tags: ['swarm'],
+    desc: () => `Twin balls strike at 80% power and pierce one more enemy.`,
+    behavior: 'mirror_image',
+  },
+  {
+    id: 'stasis_field', name: 'Stasis Field', icon: '🧊', category: 'physics', rarity: 'epic', maxLevel: 2, locked: true, core: 'chrono',
+    tags: ['control'],
+    desc: () => `Power shots stop time: every enemy freezes for a moment.`,
+    behavior: 'stasis_field',
+  },
   {
     id: 'thermal_core', name: 'Thermal Core', icon: '♨️', category: 'element', rarity: 'epic', maxLevel: 2, locked: true, core: 'pyro',
     tags: ['fire'],

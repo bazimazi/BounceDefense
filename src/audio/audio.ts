@@ -289,6 +289,22 @@ export class AudioEngine {
       case 'select':
         this.tone('triangle', 660, 990, 0.1, 0.15);
         break;
+      case 'poison':
+        this.hiss(0.35, 0.22 * v, 'bandpass', 900, 300);
+        this.tone('sine', 220, 140, 0.25, 0.1 * v);
+        break;
+      case 'mine':
+        this.tone('square', 1400 * p, 1400 * p, 0.04, 0.06 * v);
+        break;
+      case 'timestop':
+        this.tone('sine', 880, 110, 0.9, 0.22);
+        this.tone('triangle', 1320, 165, 0.9, 0.1, 0.05);
+        this.hiss(0.8, 0.12, 'lowpass', 2000, 200);
+        break;
+      case 'relic':
+        [392, 494, 587, 784, 988].forEach((f, i) => this.tone('triangle', f, f * 1.005, 0.32, 0.14, i * 0.07));
+        this.hiss(0.6, 0.08, 'bandpass', 2000, 5000);
+        break;
       default:
         break;
     }

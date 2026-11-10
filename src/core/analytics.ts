@@ -20,6 +20,10 @@ export interface AnalyticsEvents {
   ArenaCompleted: { arena: string; difficulty: number };
   ResearchPurchased: { id: string };
   WorkshopPurchased: { id: string; level: number };
+  RelicFound: { id: string; runTime: number };
+  ContractCompleted: { id: string; weekly: boolean };
+  AscensionUnlocked: { level: number };
+  RankUp: { rank: number };
 }
 
 export const analytics = new EventBus<AnalyticsEvents>();
@@ -30,7 +34,8 @@ export const analyticsLog: { name: string; t: number; payload: unknown }[] = [];
 const names: (keyof AnalyticsEvents)[] = [
   'RunStarted', 'RunCompleted', 'RunFailed', 'UpgradeSelected', 'BallUnlocked', 'PartUnlocked',
   'EvolutionUnlocked', 'BossDefeated', 'ChallengeCompleted', 'AchievementUnlocked', 'MasteryLevelUp',
-  'SynergyDiscovered', 'ArenaCompleted', 'ResearchPurchased', 'WorkshopPurchased',
+  'SynergyDiscovered', 'ArenaCompleted', 'ResearchPurchased', 'WorkshopPurchased', 'RelicFound', 'ContractCompleted',
+  'AscensionUnlocked', 'RankUp',
 ];
 for (const n of names) {
   analytics.on(n, (payload) => {

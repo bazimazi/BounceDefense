@@ -43,9 +43,16 @@ export interface LifetimeStats {
   maxMomentumTier: number;
   elitesKilled: number;
   playTime: number;
+  poisonKills: number;
+  starfalls: number;
+  goldenCaught: number;
+  relicsFound: number;
+  /** Highest Ascension level won. */
+  maxAscension: number;
+  contractsDone: number;
 }
 
-export type DiscoveryCat = 'enemies' | 'bosses' | 'synergies' | 'evolutions' | 'reactions' | 'upgrades' | 'arenas' | 'events';
+export type DiscoveryCat = 'enemies' | 'bosses' | 'synergies' | 'evolutions' | 'reactions' | 'upgrades' | 'arenas' | 'events' | 'relics';
 
 export interface Profile {
   version: number;
@@ -75,6 +82,29 @@ export interface Profile {
   runsSinceUnlock: number;
   /** Daily Seed record for one UTC day: the first finished run claims a bonus. */
   daily: DailyRecord;
+  /** Relics that can be found in runs, beyond the default set. */
+  unlockedRelics: string[];
+  /** Highest Ascension level open for play (0 until Abyss is won). */
+  ascension: number;
+  /** Pilot Rank experience: every run's Mastery XP also feeds it. */
+  rankXp: number;
+  contracts: ContractBoard;
+}
+
+export interface ContractBoard {
+  /** `dailyKey()` the daily board was drawn for. */
+  day: string;
+  daily: ContractSlot[];
+  /** ISO-like week key the weekly contract belongs to. */
+  week: string;
+  weekly: ContractSlot | null;
+}
+
+export interface ContractSlot {
+  id: string;
+  target: number;
+  progress: number;
+  done: boolean;
 }
 
 export interface DailyRecord {
@@ -130,6 +160,11 @@ export interface RunSummary {
   eventsSeen: string[];
   buildName: string;
   buildStats: Record<string, number>;
+  poisonKills?: number;
+  relics?: string[];
+  /** Seconds survived after continuing into Endless. */
+  endlessTime?: number;
+  ascension?: number;
 }
 
 export type Unlock =
@@ -140,4 +175,5 @@ export type Unlock =
   | { type: 'flag'; id: string }
   | { type: 'coins'; amount: number }
   | { type: 'cores'; amount: number }
-  | { type: 'research'; amount: number };
+  | { type: 'research'; amount: number }
+  | { type: 'relic'; id: string };

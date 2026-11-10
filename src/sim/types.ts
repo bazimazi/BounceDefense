@@ -57,6 +57,10 @@ export interface Ball {
   stuckT: number;
   /** Seconds of flight since this ball last touched an enemy. */
   idleT: number;
+  /** Prism shard: each hit carries a random element. */
+  prism: boolean;
+  /** Meteor Core already erupted for this power shot. */
+  meteorDone: boolean;
 }
 
 export interface Status {
@@ -70,6 +74,12 @@ export interface Status {
   bleedT: number;
   bleedDps: number;
   bleedTick: number;
+  poison: number;
+  poisonT: number;
+  poisonDps: number;
+  poisonTick: number;
+  /** Stunned enemies stand still (Neurotoxin). */
+  stunT: number;
   reactCd: number;
 }
 
@@ -97,6 +107,17 @@ export interface Enemy {
   t1: number;
   phase: number;
   gen: number;
+  /** More per-AI scratch state (boss scripts). */
+  t2: number;
+  t3: number;
+  /** 'mini' marks the mini-boss; 'risen' a revived enemy. */
+  tag: '' | 'mini' | 'risen';
+  /** Out of phase: balls, chains and blasts pass through. */
+  phased: boolean;
+  /** Seconds of Chrono Core slow left. */
+  slowT: number;
+  /** Extra lives (Undying). */
+  lives: number;
   boss: boolean;
   killedBy: string;
   dmgAcc: number;
@@ -105,7 +126,7 @@ export interface Enemy {
   wobble: number;
 }
 
-export type PickupKind = 'xp' | 'coin' | 'core' | 'heal' | 'mystery';
+export type PickupKind = 'xp' | 'coin' | 'core' | 'heal' | 'mystery' | 'relic';
 
 export interface Pickup {
   kind: PickupKind;
@@ -130,7 +151,7 @@ export interface Projectile {
   color: string;
 }
 
-export type ZoneKind = 'fire' | 'frost' | 'pulse';
+export type ZoneKind = 'fire' | 'frost' | 'pulse' | 'toxic' | 'vortex' | 'mine' | 'stasis';
 
 export interface Zone {
   kind: ZoneKind;
@@ -151,7 +172,10 @@ export type Obstacle =
   | { kind: 'oil'; x: number; y: number; r: number; burning: number }
   | { kind: 'crate'; x: number; y: number; w: number; h: number; hp: number; alive: boolean; respawn: number; flash: number }
   | { kind: 'portal'; ax: number; ay: number; bx: number; by: number; r: number; spin: number }
-  | { kind: 'well'; x: number; y: number; r: number; strength: number };
+  | { kind: 'well'; x: number; y: number; r: number; strength: number }
+  | { kind: 'spore'; x: number; y: number; r: number; alive: boolean; respawn: number }
+  | { kind: 'pylon'; x: number; y: number; r: number; flash: number; cd: number }
+  | { kind: 'booster'; x: number; y: number; r: number; flash: number };
 
 /** Line segment collider. `owner` lets bosses own dynamic segments. */
 export interface Segment {

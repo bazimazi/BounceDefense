@@ -5,7 +5,9 @@ import { Rng } from '../core/rng';
 import { SpatialHash } from '../core/spatial';
 import { ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACT_MAP } from '../data/arenas';
 import { CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
-import { ENEMY_MAP } from '../data/enemies';
+import { ENEMY_MAP, INTERNAL_ENEMIES } from '../data/enemies';
+import { ascensionRules, type AscensionRule } from '../data/ascension';
+import { DEFAULT_UNLOCKED_RELICS, RELICS, RELIC_MAP, RELIC_WEIGHT } from '../data/relics';
 import { WORKSHOP_MAP } from '../data/meta';
 import { normalizeTalents, TALENTS, talentModifiers, type TalentRanks } from '../data/talents';
 import { EVOLUTION_MAP, SYNERGY_MAP } from '../data/synergies';
@@ -14,7 +16,7 @@ import type { ArenaDef, DifficultyDef, EnemyDef } from '../data/types';
 import type { DiscoveryCat, RunSummary } from '../meta/types';
 import { BEHAVIORS, type Behavior } from './behaviors';
 import { Build, buildName } from './build';
-import { explode } from './combat';
+import { applyChill, applyPoison, chainLightning, densest, explode, meteor, nearestEnemy, sparkNearest } from './combat';
 import { Director } from './director';
 import { updateEnemy } from './enemies';
 import { makeOffers, type Offer } from './offers';
@@ -45,6 +47,10 @@ export interface RunConfig {
   known: Partial<Record<DiscoveryCat, string[]>>;
   tutorial?: boolean;
   daily?: boolean;
+  /** Ascension level (only meaningful on Abyss). */
+  ascension?: number;
+  /** Relics this profile can find (defaults to the starting set). */
+  relicPool?: string[];
 }
 
 export interface WorldEvents {
@@ -70,6 +76,7 @@ export const TIER_SPEED = [1, 1, 1.05, 1.15, 1.2];
 export const COMBO_MILESTONES = [10, 25, 50, 100, 150, 200, 300];
 export const POWER_START = 0.55;
 export const POWER_END = 0.95;
+/** Default Tactical Recall cooldown; builds change it through the `recallCooldown` stat. */
 export const RECALL_COOLDOWN = 10;
 /** Seconds for Kinetic Barrier charges to refill after one is spent. */
 export const BARRIER_RECHARGE = 12;
@@ -117,6 +124,7 @@ interface Counters {
   bossesDefeated: string[];
   bossFightTimes: number[];
   bossNoDamage: boolean;
+  poisonKills: number;
 }
 
 export class World {
@@ -134,6 +142,26 @@ export class World {
 
   time = 0;
   state: 'playing' | 'levelup' | 'over' = 'playing';
+  /** What the open draft offers: upgrades on level-up, relics from a cache. */
+  draft: 'upgrade' | 'relic' = 'upgrade';
+  /** Relic caches waiting to be opened. */
+  pendingRelics = 0;
+  /** Ascension rules in force for this run. */
+  readonly asc: Set<AscensionRule>;
+  /** Pact rules in force for this run. */
+  readonly pacts: Set<string>;
+  /** Seconds of the Chronarch's time stop left. */
+  timeStop = 0;
+  /** Recent deaths a Necromancer can raise. */
+  graves: { x: number; y: number }[] = [];
+  /** Commander elites on the field (rebuilt each step). */
+  commanders: Enemy[] = [];
+  vortexCounter = 0;
+  lanternStacks = 0;
+  phoenixUsed = false;
+  /** Seconds survived since Endless began. */
+  endlessTime = 0;
+  private xpScale = 1;
   victory = false;
   endTimer = -1;
 
@@ -198,7 +226,7 @@ export class World {
     kills: 0, eliteKills: 0, damageDealt: 0, damageTaken: 0, healed: 0, bestCombo: 0, maxWallChain: 0, maxBounceChain: 0,
     maxBallsInFlight: 0, maxBallsOwned: 1, maxMomentumTier: 0, fireKills: 0, lightningKills: 0, explosionKills: 0,
     bleedKills: 0, frozenCount: 0, barrelsExploded: 0, goldenCaught: 0, coinsCollected: 0, coresCollected: 0,
-    bossesDefeated: [], bossFightTimes: [], bossNoDamage: true,
+    bossesDefeated: [], bossFightTimes: [], bossNoDamage: true, poisonKills: 0,
   };
   /** Discoveries made during this run (new to the profile). */
   newDiscoveries: { cat: DiscoveryCat; id: string }[] = [];
@@ -219,18 +247,25 @@ export class World {
     this.pool = new Set(cfg.pool);
     this.flags = new Set(cfg.flags);
     const pacts = cfg.pacts.map((p) => PACT_MAP[p]).filter(Boolean);
+    this.pacts = new Set(pacts.map((p) => p.rule ?? p.id));
+    // Ascension only applies on the hardest tier.
+    this.asc = ascensionRules(this.diff === DIFFICULTIES[DIFFICULTIES.length - 1] ? clamp(Math.floor(cfg.ascension ?? 0), 0, 20) : 0);
+    const asc = this.asc;
     this.noHeal = pacts.some((p) => p.rule === 'noHeal');
     this.loneBall = pacts.some((p) => p.rule === 'loneBall');
-    this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1);
-    this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1);
+    this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1);
+    this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) *
+      (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
-    this.rerolls = noReroll ? 0 : 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0);
-    this.banishes = noReroll || !this.flags.has('banish') ? 0 : 2;
+    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) - (asc.has('reroll') ? 1 : 0));
+    this.banishes = noReroll || !this.flags.has('banish') ? 0 : 2 + (this.flags.has('banish2') ? 1 : 0);
+    this.xpScale = asc.has('xp10') ? 1.1 : 1;
+    this.xpNext = Math.ceil(xpForLevel(1) * this.xpScale);
     this.trailColors = (TRAILS.find((t) => t.id === cfg.trail) ?? TRAILS[0]).colors;
     this.seen = {
       enemies: new Set(cfg.known.enemies), bosses: new Set(cfg.known.bosses), synergies: new Set(cfg.known.synergies),
       evolutions: new Set(cfg.known.evolutions), reactions: new Set(cfg.known.reactions), upgrades: new Set(cfg.known.upgrades),
-      arenas: new Set(cfg.known.arenas), events: new Set(cfg.known.events),
+      arenas: new Set(cfg.known.arenas), events: new Set(cfg.known.events), relics: new Set(cfg.known.relics),
     };
 
     // ---- build: core + parts + workshop + pacts + talents
@@ -249,6 +284,10 @@ export class World {
     }
     for (const p of pacts) if (p.mods) mods.push(...p.mods);
     mods.push(...talentModifiers(this.talents));
+    if (asc.has('hull15')) mods.push({ stat: 'maxHp', mult: -0.15 });
+    if (asc.has('heal30')) mods.push({ stat: 'healMult', mult: -0.3 });
+    if (this.flags.has('tactics')) mods.push({ stat: 'recallCooldown', add: -2 });
+    if (this.flags.has('surge1')) mods.push({ stat: 'surgeGain', mult: 0.15 });
     for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
     // Workshop Spare Ball raises Extra Ball's ceiling: more balls late, no early power spike.
     const caps: Record<string, number> = (cfg.workshop.spare_ball ?? 0) > 0 ? { extra_ball: 1 } : {};
@@ -265,6 +304,7 @@ export class World {
     this.director = new Director(this);
     this.discover('arenas', this.arena.id);
     if ((cfg.workshop.head_start ?? 0) > 0) this.pendingLevels++;
+    if ((cfg.workshop.relic_cache ?? 0) > 0 && !cfg.tutorial) this.grantRelic(false);
   }
 
   // ------------------------------------------------------------------ setup
@@ -298,6 +338,9 @@ export class World {
         }
         case 'portal': this.obstacles.push({ kind: 'portal', ax: mx(t.ax), ay: t.ay, bx: mx(t.bx), by: t.by, r: 24, spin: 0 }); break;
         case 'well': this.obstacles.push({ kind: 'well', x: mx(t.x), y: t.y, r: t.r, strength: t.strength }); break;
+        case 'spore': this.obstacles.push({ kind: 'spore', x: mx(t.x) + jitter(), y: t.y + jitter(), r: 16, alive: true, respawn: 0 }); break;
+        case 'pylon': this.obstacles.push({ kind: 'pylon', x: mx(t.x), y: t.y, r: t.r, flash: 0, cd: 0 }); break;
+        case 'booster': this.obstacles.push({ kind: 'booster', x: mx(t.x), y: t.y, r: t.r, flash: 0 }); break;
       }
     }
   }
@@ -354,7 +397,7 @@ export class World {
       life: kind === 'main' ? -1 : kind === 'frenzy' ? 9 : 12,
       recentId: [], recentT: [], trail: [], boost: 1, portalCd: 0, portalHops: 0, phased: false,
       splitGen: parent ? parent.splitGen + 1 : 0, hitCounter: 0, arcTimer: 0, firstHitDone: false, dead: false, pulse: 0,
-      anchorX: x, anchorY: y, stuckT: 0, idleT: 0,
+      anchorX: x, anchorY: y, stuckT: 0, idleT: 0, prism: false, meteorDone: false,
     };
     this.balls.push(b);
     let inFlight = 0;
@@ -370,12 +413,18 @@ export class World {
     const endless = this.director?.endlessPressure() ?? 1;
     // Tier and arena toughness phase in over the opening ninety seconds, so early fodder still pops in a hit or two.
     const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
-    const hp = def.boss ? def.hp * hpMult : def.hp * tier * timeScale * blood * hpMult * endless;
+    const crown = this.build.has('relic_cursed_crown') ? 1.25 : 1;
+    const bossAsc = def.boss && this.asc.has('boss20') ? 1.2 : 1;
+    const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown;
     return {
-      id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed, armor: def.armor,
+      id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed,
+      armor: def.armor + (this.pacts.has('ironclad') ? 3 : 0),
       kx: 0, ky: 0,
-      st: { burnDps: 0, burnT: 0, burnTick: 0, chill: 0, chillT: 0, frozenT: 0, bleed: 0, bleedT: 0, bleedDps: 0, bleedTick: 0, reactCd: 0 },
-      elite: [], shieldHp: 0, flash: 0, alive: true, spawnT: 0, t0: 0, t1: 0, phase: 0, gen: 0,
+      st: {
+        burnDps: 0, burnT: 0, burnTick: 0, chill: 0, chillT: 0, frozenT: 0, bleed: 0, bleedT: 0, bleedDps: 0, bleedTick: 0,
+        poison: 0, poisonT: 0, poisonDps: 0, poisonTick: 0, stunT: 0, reactCd: 0,
+      },
+      elite: [], shieldHp: 0, flash: 0, alive: true, spawnT: 0, t0: 0, t1: 0, phase: 0, gen: 0, t2: 0, t3: 0, tag: '', phased: false, slowT: 0, lives: 0,
       boss: !!def.boss, killedBy: '', dmgAcc: 0, dmgAccT: 0, dmgAccCrit: false, wobble: this.rng.range(0, 6.28),
     };
   }
@@ -386,8 +435,12 @@ export class World {
     if (!def) return null;
     const e = this.makeEnemy(def, clamp(x, def.radius + 4, W - def.radius - 4), y, opts.hpMult ?? 1);
     if (opts.elite?.length) this.makeElite(e, opts.elite);
+    if (this.event?.id === 'iron_tide' && !def.boss && def.ai !== 'golden' && def.ai !== 'pylon') {
+      e.armor += 3;
+      e.shieldHp = Math.max(e.shieldHp, e.maxHp * 0.25);
+    }
     this.enemies.push(e);
-    if (!def.boss && id !== 'splitling' && id !== 'swarmling' && id !== 'minion') {
+    if (!def.boss && !INTERNAL_ENEMIES.includes(id)) {
       this.enemiesSeen.add(id);
       this.discover('enemies', id);
     }
@@ -395,7 +448,7 @@ export class World {
   }
 
   makeElite(e: Enemy, mods: string[]): void {
-    e.elite = mods;
+    e.elite = this.asc.has('eliteRegen') && !mods.includes('regen') ? [...mods, 'regen'] : mods;
     e.hp *= 3;
     e.maxHp = e.hp;
     e.r *= 1.3;
@@ -403,7 +456,14 @@ export class World {
       if (m === 'swift') e.speed *= 1.7;
       if (m === 'armored') e.armor += 5;
       if (m === 'shielded') e.shieldHp = e.maxHp * 0.45;
+      if (m === 'undying') e.lives = 1;
     }
+  }
+
+  /** Remembers where a regular enemy fell, for Necromancers (bounded). */
+  recordGrave(e: Enemy): void {
+    this.graves.push({ x: e.x, y: e.y });
+    if (this.graves.length > 24) this.graves.shift();
   }
 
   spawnPickup(kind: PickupKind, x: number, y: number, value: number): void {
@@ -421,7 +481,8 @@ export class World {
   }
 
   spawnProjectile(x: number, y: number, vx: number, vy: number, dmg: number, color = '#ff4a6a', r = 8): void {
-    this.projectiles.push({ x, y, vx, vy, r, dmg, alive: true, color });
+    const k = this.asc.has('projectiles') ? 1.25 : 1;
+    this.projectiles.push({ x, y, vx: vx * k, vy: vy * k, r, dmg, alive: true, color });
   }
 
   addZone(kind: Zone['kind'], x: number, y: number, r: number, dur: number, dps: number): void {
@@ -429,24 +490,117 @@ export class World {
     this.zones.push({ kind, x, y, r, t: 0, dur, dps, tick: 0, alive: true });
   }
 
+  // ------------------------------------------------------------------ relics
+  /** Relics can be found unless a pact forbids them. */
+  relicsAllowed(): boolean {
+    return !this.pacts.has('noRelic');
+  }
+
+  /** A relic cache: opens a relic draft as soon as the arena is calm (between level-ups). */
+  grantRelic(announce = true): void {
+    if (!this.relicsAllowed() || !this.relicChoices().length) return;
+    this.pendingRelics++;
+    if (announce) {
+      this.banner(t('fx.relicCache'), '#ffb300', t('fx.relicCacheSub'));
+      this.emit({ t: 'sfx', name: 'relic' });
+    }
+  }
+
+  /** Relics that could appear in a cache right now. */
+  relicChoices(): string[] {
+    const pool = new Set([...DEFAULT_UNLOCKED_RELICS, ...(this.cfg.relicPool ?? [])]);
+    return RELICS.filter((r) => pool.has(r.id) && !this.build.hasRelic(r.id) &&
+      !(r.inert?.includes('noHeal') && this.noHeal) && !(r.inert?.includes('loneBall') && this.loneBall)).map((r) => r.id);
+  }
+
+  openRelicDraft(): void {
+    const count = Math.max(1, (this.flags.has('relic4') ? 4 : 3) - (this.asc.has('relic2') ? 1 : 0));
+    const candidates = this.relicChoices();
+    const luck = this.build.stats.luck;
+    const tier = { common: 0, rare: 1, legendary: 2 };
+    this.offers = [];
+    while (this.offers.length < count && candidates.length) {
+      const pick = this.rng.weighted(candidates, (id) => RELIC_WEIGHT[RELIC_MAP[id].rarity] * (1 + luck * 0.3 * tier[RELIC_MAP[id].rarity]));
+      if (!pick) break;
+      candidates.splice(candidates.indexOf(pick), 1);
+      this.offers.push({ kind: 'relic', id: pick });
+    }
+    if (!this.offers.length) {
+      this.pendingRelics = 0;
+      return;
+    }
+    this.draft = 'relic';
+    this.state = 'levelup';
+    this.bus.emit('levelUp', { offers: this.offers });
+  }
+
+  /** Charges Surge, scaled by the build's surge gain. */
+  chargeSurge(n: number): void {
+    this.surge.charge = Math.min(this.surge.max, this.surge.charge + n * this.build.stats.surgeGain);
+  }
+
+  // ------------------------------------------------------------------ arena devices
+  burstSpore(o: Extract<Obstacle, { kind: 'spore' }>): void {
+    if (!o.alive) return;
+    o.alive = false;
+    o.respawn = 10;
+    const st = this.build.stats;
+    const dps = Math.max(st.damage * 0.12, st.damage * st.poisonPower * 1.5) * st.elementPower;
+    this.addZone('toxic', o.x, o.y, 70, 3.5, dps);
+    this.grid.query(o.x, o.y, 80, this.q2);
+    for (const e of [...this.q2]) applyPoison(this, e, dps, 3, 1);
+    this.addCombo(2);
+    this.emit({ t: 'explosion', x: o.x, y: o.y, r: 70, color: '#9cff5e' });
+    this.emit({ t: 'sfx', name: 'poison' });
+  }
+
+  zapPylon(o: Extract<Obstacle, { kind: 'pylon' }>): void {
+    if (o.cd > 0) return;
+    o.cd = 0.35;
+    const st = this.build.stats;
+    const first = nearestEnemy(this, o.x, o.y, 200, undefined, undefined, 'lightning');
+    if (!first) return;
+    this.emit({ t: 'lightning', pts: [o.x, o.y, first.x, first.y], color: '#ffe38a' });
+    chainLightning(this, first, st.damage * 0.8 * st.elementPower, 2, 1);
+  }
+
   // ------------------------------------------------------------------ player
   hurt(dmg: number, x: number): void {
     if (this.state === 'over') return;
+    const st = this.build.stats;
     if (this.barrier.charges > 0) {
       this.barrier.charges--;
-      this.barrier.timer = BARRIER_RECHARGE;
+      this.barrier.timer = this.build.has('evo_aegis') ? 5 : BARRIER_RECHARGE;
       this.emit({ t: 'ring', x, y: DEFENSE_Y, r: 40, color: '#5ad7ff' });
       this.emit({ t: 'sfx', name: 'shield' });
+      if (this.build.has('evo_aegis')) {
+        for (const e of [...this.enemies]) {
+          if (e.alive && e.y > DEFENSE_Y - 160) explode(this, e.x, e.y, 30, st.damage * 1.5, 2, { src: 'quake', color: '#7ef0ff' });
+        }
+        this.emit({ t: 'ring', x: 270, y: DEFENSE_Y, r: 300, color: '#7ef0ff', dur: 0.5 });
+      }
       return;
     }
-    let amount = Math.max(1, dmg * this.diff.dmgMult - this.build.stats.armor);
+    let amount = Math.max(1, dmg * this.diff.dmgMult * st.damageTaken - st.armor);
     if (this.talents.last_bastion && this.hp <= this.maxHp * 0.35) amount *= 0.75;
+    if (st.comboGuard > 0 && this.combo.count >= 30) amount *= 1 - Math.min(0.6, st.comboGuard);
     this.hp -= amount;
     this.run.damageTaken += amount;
     if (this.director.bossActive) this.run.bossNoDamage = false;
     this.emit({ t: 'hurt', x, dmg: amount });
     this.emit({ t: 'shake', amt: Math.min(14, 4 + amount * 0.4) });
     this.emit({ t: 'sfx', name: 'hurt' });
+    if (this.hp <= 0 && this.build.has('relic_phoenix') && !this.phoenixUsed && !this.noHeal) {
+      this.phoenixUsed = true;
+      this.hp = this.maxHp * 0.4;
+      for (const e of [...this.enemies]) {
+        if (e.alive && e.y > DEFENSE_Y - 260) explode(this, e.x, e.y, 40, st.damage * 4, 1, { src: 'quake', color: '#ffb36b' });
+      }
+      this.banner(t('fx.phoenix'), '#ffb36b', t('fx.phoenixSub'), true);
+      this.emit({ t: 'flash', color: '#ffb36b', a: 0.5 });
+      this.emit({ t: 'slowmo', dur: 0.8, scale: 0.3 });
+      this.emit({ t: 'sfx', name: 'evolve' });
+    }
     if (this.hp <= 0) {
       this.hp = 0;
       this.finish(false);
@@ -455,6 +609,7 @@ export class World {
 
   heal(amount: number, budgeted = true): void {
     if (this.noHeal || amount <= 0 || this.hp >= this.maxHp) return;
+    amount *= this.build.stats.healMult;
     if (budgeted) {
       amount = Math.min(amount, this.healBudget);
       this.healBudget -= amount;
@@ -465,12 +620,13 @@ export class World {
   }
 
   gainXp(v: number): void {
-    const mult = this.build.stats.xpGain * (1 + Math.min(this.combo.count, 200) * 0.002) * (this.event?.id === 'blackout' ? 1.5 : 1);
+    const event = this.event?.id === 'blackout' || this.event?.id === 'swarm_surge' ? 1.5 : 1;
+    const mult = this.build.stats.xpGain * (1 + Math.min(this.combo.count, 200) * 0.002) * event;
     this.xp += v * mult;
     while (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
       this.level++;
-      this.xpNext = xpForLevel(this.level);
+      this.xpNext = Math.ceil(xpForLevel(this.level) * this.xpScale);
       this.pendingLevels++;
       this.emit({ t: 'sfx', name: 'levelup' });
       if (BALL_MILESTONES.includes(this.level)) this.grantMilestone();
@@ -569,7 +725,8 @@ export class World {
 
   activateRecall(): void {
     if (!this.canRecall()) return;
-    this.recallCooldown = RECALL_COOLDOWN;
+    this.recallCooldown = this.build.stats.recallCooldown;
+    const spark = this.build.has('quick_recall');
     this.recalls++;
     this.launchQueue = 0;
     this.powerQueue = 0;
@@ -583,15 +740,17 @@ export class World {
       b.trail.length = 0;
       this.emit({ t: 'ring', x: b.x, y: b.y, r: 42, color: '#8debdc' });
       this.emit({ t: 'beam', x0: b.x, y0: b.y, x1: LAUNCHER_X, y1: LAUNCHER_Y, color: '#8debdc' });
+      if (spark) sparkNearest(this, b.x, b.y, this.build.stats.damage * 1.5, '#8debdc');
     }
     this.emit({ t: 'sfx', name: 'recall' });
   }
 
   activateSurge(): void {
     if (!this.canSurge()) return;
+    const dur = this.build.stats.surgeDuration;
     this.surge.charge = 0;
-    this.surge.active = 5;
-    this.addBuff('surge', 5, [{ stat: 'speed', mult: 0.25 }, { stat: 'damage', mult: 0.3 }]);
+    this.surge.active = dur;
+    this.addBuff('surge', dur, [{ stat: 'speed', mult: 0.25 }, { stat: 'damage', mult: 0.3 }]);
     const st = this.build.stats;
     for (const b of this.balls) {
       if (b.state !== 'flight') continue;
@@ -614,8 +773,9 @@ export class World {
     const mods: Modifier[] = [];
     for (const b of this.buffs) mods.push(...b.mods);
     if (this.event?.id === 'overcharge') {
-      mods.push({ stat: 'burnChance', mult: 1 }, { stat: 'chillChance', mult: 1 }, { stat: 'chainChance', mult: 1 }, { stat: 'bleedChance', mult: 1 });
+      mods.push({ stat: 'burnChance', mult: 1 }, { stat: 'chillChance', mult: 1 }, { stat: 'chainChance', mult: 1 }, { stat: 'bleedChance', mult: 1 }, { stat: 'poisonChance', mult: 1 });
     }
+    if (this.event?.id === 'time_warp') mods.push({ stat: 'speed', mult: 0.2 });
     this.build.tempMods = mods;
     this.onBuildChanged(this.build.recompute());
   }
@@ -624,23 +784,25 @@ export class World {
   openLevelUp(): void {
     // Pacts make some upgrades inert; never offer a card that cannot do anything.
     const inert = [...(this.loneBall ? ['extra_ball'] : []), ...(this.noHeal ? ['vampiric', 'regen'] : [])];
+    const count = (this.flags.has('fourth_card') ? 4 : 3) + (this.build.has('relic_chaos_die') ? 1 : 0);
     this.offers = makeOffers({
       build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
-      count: this.flags.has('fourth_card') ? 4 : 3, levelIndex: this.levelUps, noHeal: this.noHeal,
+      count, levelIndex: this.levelUps, noHeal: this.noHeal,
     });
+    this.draft = 'upgrade';
     this.state = 'levelup';
     this.bus.emit('levelUp', { offers: this.offers });
   }
 
   reroll(): boolean {
-    if (this.state !== 'levelup' || this.rerolls <= 0) return false;
+    if (this.state !== 'levelup' || this.rerolls <= 0 || this.draft !== 'upgrade') return false;
     this.rerolls--;
     this.openLevelUp();
     return true;
   }
 
   banish(id: string): boolean {
-    if (this.state !== 'levelup' || this.banishes <= 0) return false;
+    if (this.state !== 'levelup' || this.banishes <= 0 || this.draft !== 'upgrade') return false;
     this.banishes--;
     this.banished.add(id);
     this.openLevelUp();
@@ -649,8 +811,12 @@ export class World {
 
   choose(offer: Offer): void {
     if (this.state !== 'levelup') return;
-    this.levelUps++;
-    this.pendingLevels = Math.max(0, this.pendingLevels - 1);
+    const relicDraft = this.draft === 'relic';
+    if (relicDraft) this.pendingRelics = Math.max(0, this.pendingRelics - 1);
+    else {
+      this.levelUps++;
+      this.pendingLevels = Math.max(0, this.pendingLevels - 1);
+    }
     const prevMaxHp = this.build.stats.maxHp;
     const prevBalls = this.maxBallsAllowed();
     const prevBarrier = this.build.stats.barrier;
@@ -669,10 +835,19 @@ export class World {
       this.emit({ t: 'sfx', name: 'evolve' });
       for (const b of this.balls) this.emit({ t: 'ring', x: b.x, y: b.y, r: 120, color: e.color });
       this.onBuildChanged(fresh);
+    } else if (offer.kind === 'relic') {
+      const r = RELIC_MAP[offer.id];
+      const fresh = this.build.addRelic(offer.id);
+      this.discover('relics', offer.id);
+      if (offer.id === 'chaos_die' && !this.pacts.has('noReroll')) this.rerolls += 2;
+      this.banner(t('fx.relicFound'), r.cursed ? '#ff5d73' : '#ffb300', `${r.icon} ${r.name}`, true);
+      this.emit({ t: 'flash', color: '#ffb300', a: 0.25 });
+      this.emit({ t: 'sfx', name: 'relic' });
+      this.onBuildChanged(fresh);
     } else if (offer.kind === 'heal') {
-      this.heal(this.maxHp * 0.3, false);
+      this.heal(this.maxHp * (this.flags.has('medic') ? 0.5 : 0.3), false);
     } else {
-      this.run.coinsCollected += 25;
+      this.run.coinsCollected += relicDraft ? 60 : 25;
     }
     // stat side-effects
     const st = this.build.stats;
@@ -708,7 +883,7 @@ export class World {
     this.banner(`${def.icon} ${def.name.toUpperCase()}`, def.color, def.desc);
     this.emit({ t: 'sfx', name: 'event' });
     this.bus.emit('eventStart', { id });
-    if (id === 'overcharge') this.syncTempMods();
+    if (id === 'overcharge' || id === 'time_warp') this.syncTempMods();
   }
 
   private updateEvent(dt: number): void {
@@ -729,10 +904,27 @@ export class World {
       ev.timer = 4;
       ev.dir = -ev.dir;
     }
+    if (ev.id === 'toxic_rain' && ev.timer <= 0) {
+      ev.timer = 1.3;
+      const st = this.build.stats;
+      const x = this.rng.range(60, W - 60);
+      const y = this.rng.range(FIELD_TOP + 80, DEFENSE_Y - 120);
+      this.addZone('toxic', x, y, 60, 3.5, Math.max(st.damage * 0.1, st.damage * st.poisonPower) * st.elementPower);
+    }
+    if (ev.id === 'meteor_shower' && ev.timer <= 0) {
+      ev.timer = 1.1;
+      const tgt = densest(this);
+      if (tgt) meteor(this, tgt.x, tgt.y, this.build.stats.damage * 2.4, 1);
+    }
+    if (ev.id === 'swarm_surge' && ev.timer <= 0) {
+      ev.timer = 3;
+      const cx = this.rng.range(80, W - 80);
+      for (let i = 0; i < 4; i++) this.spawnEnemy('mite', cx + (i - 1.5) * 26, FIELD_TOP - 30 - i * 8);
+    }
     if (ev.t >= ev.dur) {
-      const wasOvercharge = ev.id === 'overcharge';
+      const resync = ev.id === 'overcharge' || ev.id === 'time_warp';
       this.event = null;
-      if (wasOvercharge) this.syncTempMods();
+      if (resync) this.syncTempMods();
     }
   }
 
@@ -743,10 +935,16 @@ export class World {
       this.openLevelUp();
       return;
     }
+    if (this.pendingRelics > 0 && this.endTimer < 0) {
+      this.openRelicDraft();
+      if (this.state !== 'playing') return;
+    }
     // Level-ups pause the arena behind their cards; announce milestones once it is visible again.
     if (this.milestoneNews.length) for (const announce of this.milestoneNews.splice(0)) announce();
     this.time += dt;
+    if (this.director.endless) this.endlessTime += dt;
     this.explosionsThisStep = 0;
+    if (this.timeStop > 0) this.timeStop -= dt;
     const st = this.build.stats;
 
     // end-of-run grace period (victory slow-mo)
@@ -760,12 +958,13 @@ export class World {
     }
 
     this.healBudget = Math.min(this.healBudget + dt * (this.build.has('evo_blood') ? 16 : 8), 20);
+    for (const o of this.obstacles) if (o.kind === 'pylon' && o.cd > 0) o.cd -= dt;
     if (st.regen > 0) this.heal(st.regen * dt, false);
     if (st.barrier > 0 && this.barrier.charges < st.barrier) {
       this.barrier.timer -= dt;
       if (this.barrier.timer <= 0) {
         this.barrier.charges = st.barrier;
-        this.barrier.timer = BARRIER_RECHARGE;
+        this.barrier.timer = this.build.has('evo_aegis') ? 5 : BARRIER_RECHARGE;
       }
     }
 
@@ -840,10 +1039,13 @@ export class World {
     // grid (enemies) for ball collision queries
     this.grid.clear();
     this.fieldEnemies.length = 0;
+    this.commanders.length = 0;
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      this.grid.insert(e);
-      if (e.def.ai === 'magnet' || e.def.ai === 'warden' || e.def.id === 'boss_magnetar') this.fieldEnemies.push(e);
+      // Phased enemies are out of reach: nothing collides with or targets them.
+      if (!e.phased) this.grid.insert(e);
+      if (e.def.ai === 'magnet' || e.def.ai === 'warden' || e.def.ai === 'pulsar' || e.def.id === 'boss_magnetar') this.fieldEnemies.push(e);
+      if (e.elite.includes('commander')) this.commanders.push(e);
     }
 
     // balls
@@ -898,10 +1100,40 @@ export class World {
           z.tick = 0.4;
           this.grid.query(z.x, z.y, z.r, this.q2);
           for (const e of this.q2) {
-            if (e.alive) {
+            if (e.alive && !e.def.immune?.includes('fire')) {
               e.st.burnDps = Math.max(e.st.burnDps, z.dps);
               e.st.burnT = Math.max(e.st.burnT, 1.5);
             }
+          }
+        }
+      } else if (z.kind === 'toxic') {
+        z.tick -= dt;
+        if (z.tick <= 0) {
+          z.tick = 0.5;
+          this.grid.query(z.x, z.y, z.r, this.q2);
+          for (const e of [...this.q2]) applyPoison(this, e, z.dps, 1, 2);
+        }
+      } else if (z.kind === 'vortex') {
+        this.grid.query(z.x, z.y, z.r, this.q2);
+        for (const e of this.q2) {
+          if (!e.alive || e.boss || e.def.ai === 'charger' || e.def.ai === 'pylon') continue;
+          e.kx += (z.x - e.x) * 5 * dt * 6;
+          e.ky += (z.y - e.y) * 4 * dt * 6;
+        }
+        if (z.t + dt >= z.dur && this.build.has('implosion')) {
+          explode(this, z.x, z.y, z.r * 0.8 * this.build.stats.area, z.dps, 1, { color: '#b48cff' });
+        }
+      } else if (z.kind === 'mine') {
+        // Armed after a moment; any enemy touching it (or a nearby blast) sets it off.
+        if (z.t > 0.25) {
+          let hit = z.tick < 0;
+          if (!hit) {
+            this.grid.query(z.x, z.y, z.r, this.q2);
+            hit = this.q2.some((e) => e.alive);
+          }
+          if (hit) {
+            z.alive = false;
+            explode(this, z.x, z.y, 70 * this.build.stats.area, z.dps, 1, { src: 'mine', color: '#ffb13b' });
           }
         }
       }
@@ -944,6 +1176,16 @@ export class World {
           break;
         case 'portal':
           o.spin += dt * 2;
+          break;
+        case 'spore':
+          if (!o.alive) {
+            o.respawn -= dt;
+            if (o.respawn <= 0) o.alive = true;
+          }
+          break;
+        case 'pylon':
+        case 'booster':
+          o.flash = Math.max(0, o.flash - dt * 4);
           break;
         default:
           break;
@@ -1007,7 +1249,7 @@ export class World {
         this.emit({ t: 'sfx', name: 'pickup', pitch: 1 + Math.min(this.combo.count, 100) / 100, vol: 0.4 });
         break;
       case 'coin':
-        this.run.coinsCollected += p.value * this.build.stats.coinGain * blood;
+        this.run.coinsCollected += p.value * this.build.stats.coinGain * blood * (this.event?.id === 'iron_tide' ? 2 : 1);
         this.emit({ t: 'sfx', name: 'coin', vol: 0.5 });
         break;
       case 'core':
@@ -1020,6 +1262,9 @@ export class World {
         break;
       case 'mystery':
         this.mysteryTransform();
+        break;
+      case 'relic':
+        this.grantRelic();
         break;
     }
   }
@@ -1074,6 +1319,8 @@ export class World {
       lightningKills: r.lightningKills, explosionKills: r.explosionKills, bleedKills: r.bleedKills,
       frozenCount: r.frozenCount, barrelsExploded: r.barrelsExploded, goldenCaught: r.goldenCaught,
       coinsCollected: Math.round(r.coinsCollected), coresCollected: r.coresCollected,
+      poisonKills: r.poisonKills, relics: [...this.build.relics], endlessTime: this.endlessTime,
+      ascension: this.asc.size,
       reactions: [...this.reactionsRun], synergies: [...this.build.synergies], evolutions: [...this.build.evolutions],
       upgrades: [...this.build.upgrades.entries()].map(([id, level]) => ({ id, level })),
       enemiesSeen: [...this.enemiesSeen], eventsSeen: this.eventsSeen,

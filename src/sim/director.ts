@@ -1,4 +1,5 @@
 import { t as i18n } from '../i18n';
+import { HOSTILE_EVENTS } from '../data/arenas';
 import { BOSSES, BOSS_MAP, ELITE_MODS, ENEMY_MAP } from '../data/enemies';
 import type { SquadDef } from '../data/types';
 import { BOSS_SCRIPTS, BOSS_SPAWN_Y } from './bosses';
@@ -36,10 +37,15 @@ export class Director {
 
   constructor(private w: World) {
     const tut = !!w.cfg.tutorial;
-    this.bossTime = tut ? 330 : 400;
+    this.bossTime = tut ? 330 : 400 - (w.pacts.has('shortFuse') ? 90 : 0);
     // Even the hardest tiers give the build ~90 seconds to form before the first elite.
-    this.eliteTimer = tut ? 150 : Math.max(90, Math.min(110, w.diff.eliteEvery));
+    this.eliteTimer = tut ? 150 : Math.max(90, Math.min(110, this.eliteEvery()));
     this.eventTime = tut ? 75 : 65;
+  }
+
+  /** Seconds between elites: the tier's pace, doubled by the Elite Surge pact. */
+  eliteEvery(): number {
+    return this.w.diff.eliteEvery * (this.w.pacts.has('eliteSurge') ? 0.5 : 1);
   }
 
   get squadsPaused(): boolean {
@@ -55,7 +61,8 @@ export class Director {
     const tut = this.w.cfg.tutorial && t < 45 ? 0.8 : 1;
     // A lively opening (fodder to smash right away) that meets the long-run curve by ~4 minutes.
     const base = 0.3 + t * 0.0034 + Math.max(0, t - 240) * 0.003;
-    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut;
+    const asc = this.w.asc.has('spawn10') ? 1.1 : 1;
+    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut * asc;
   }
 
   private pickSquad(): SquadDef {
@@ -100,19 +107,22 @@ export class Director {
     if (!this.bossActive) {
       this.eliteTimer -= dt;
       if (this.eliteTimer <= 0) {
-        this.eliteTimer = w.diff.eliteEvery * w.rng.range(0.85, 1.15);
+        this.eliteTimer = this.eliteEvery() * w.rng.range(0.85, 1.15);
         this.spawnElite(this.eliteMods(), 1);
       }
       if (!this.miniDone && t >= this.bossTime * 0.62) {
         this.miniDone = true;
-        const e = this.spawnElite(Math.min(3, this.eliteMods() + 1), 1.5, 'brute');
-        if (e) w.banner(i18n('fx.miniBoss'), '#ff7ad9', i18n('fx.miniBossSub'));
+        const harder = w.asc.has('miniboss');
+        const e = this.spawnElite(Math.min(harder ? 4 : 3, this.eliteMods() + 1 + (harder ? 1 : 0)), harder ? 2.25 : 1.5, 'brute');
+        if (e) {
+          e.tag = 'mini';
+          w.banner(i18n('fx.miniBoss'), '#ff7ad9', w.relicsAllowed() ? i18n('fx.miniBossRelic') : i18n('fx.miniBossSub'));
+        }
       }
       if (t >= this.eventTime && !w.event && !this.squadsPaused) {
         // Abyss promises hostile events everywhere, even in arenas whose own list has none.
-        const hostile = ['blood_moon', 'gravity_storm', 'blackout'];
-        const own = w.arena.events.filter((e) => hostile.includes(e));
-        const pool = w.cfg.difficulty >= 4 ? (own.length ? own : hostile) : w.arena.events;
+        const own = w.arena.events.filter((e) => HOSTILE_EVENTS.includes(e));
+        const pool = w.cfg.difficulty >= 4 ? (own.length ? own : HOSTILE_EVENTS) : w.arena.events;
         w.startEvent(w.rng.pick(pool));
         this.eventTime = t + w.rng.range(85, 105);
       }
@@ -122,7 +132,7 @@ export class Director {
     this.goldenTimer -= dt;
     if (this.goldenTimer <= 0) {
       this.goldenTimer = 50;
-      const chance = 0.28 + w.build.stats.luck * 0.08 + w.build.level('greed') * 0.1;
+      const chance = 0.28 + w.build.stats.luck * 0.08 + w.build.level('greed') * 0.1 + (w.flags.has('prospect') ? 0.15 : 0);
       if (w.rng.chance(chance)) {
         w.spawnEnemy('golden', w.rng.range(80, W - 80), 480);
         w.banner(i18n('fx.goldenWisp'), '#ffd84a', i18n('fx.goldenWispSub'));
@@ -132,7 +142,8 @@ export class Director {
 
   /** Elite modifier count ramps up with time: one early, the difficulty's full count from 5 minutes. */
   eliteMods(): number {
-    return Math.min(this.w.diff.eliteModCount, 1 + Math.floor(this.w.time / 150));
+    const base = Math.min(this.w.diff.eliteModCount, 1 + Math.floor(this.w.time / 150));
+    return Math.min(ELITE_MODS.length, base + (this.w.asc.has('eliteMod') ? 1 : 0));
   }
 
   private place(s: SquadDef): [string, number, number][] {
@@ -158,7 +169,8 @@ export class Director {
   spawnSquad(s: SquadDef): void {
     const w = this.w;
     // Elite traits on ordinary enemies phase in over the first 90 seconds.
-    const traitChance = (w.cfg.difficulty >= 4 ? 0.15 : w.cfg.difficulty >= 3 ? 0.08 : 0) * Math.min(1, w.time / 90);
+    const base = (w.cfg.difficulty >= 4 ? 0.15 : w.cfg.difficulty >= 3 ? 0.08 : 0) + (w.asc.has('traits') ? 0.1 : 0);
+    const traitChance = base * Math.min(1, w.time / 90);
     for (const [id, x, y] of this.place(s)) {
       const e = w.spawnEnemy(id, x, y);
       if (e && traitChance && w.rng.chance(traitChance)) {
@@ -235,6 +247,7 @@ export class Director {
     for (let i = 0; i < 12; i++) w.spawnPickup('coin', e.x, e.y, 12);
     for (let i = 0; i < 2; i++) w.spawnPickup('core', e.x, e.y, 1);
     for (let i = 0; i < 6; i++) w.spawnPickup('xp', e.x, e.y, 6);
+    w.grantRelic();
 
     if (this.endless) {
       this.endlessCycle++;
@@ -242,7 +255,8 @@ export class Director {
       this.warned = false;
       return;
     }
-    if (w.diff.secondBoss && this.bossesSpawned === 1) {
+    const bosses = 1 + (w.diff.secondBoss ? 1 : 0) + (w.asc.has('thirdBoss') ? 1 : 0);
+    if (this.bossesSpawned < bosses) {
       this.bossTime = w.time + 80;
       this.warned = false;
       this.eventTime = w.time + 30;

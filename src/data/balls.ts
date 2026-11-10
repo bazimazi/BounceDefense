@@ -56,6 +56,45 @@ export const CORES: CoreDef[] = [
     unlockCost: 8,
     unlockReq: { boss: 'magnetar', text: 'Defeat The Magnetar' },
   },
+  {
+    id: 'venom', name: 'Venom Core', icon: '🧪', color: '#8dff5a', element: 'poison',
+    desc: 'Patient and lethal. Every hit leaves something behind.',
+    passive: 'Toxin: +30% poison chance and +25% poison damage. Poisoned enemies move 20% slower.',
+    mods: [{ stat: 'poisonChance', add: 0.3 }, { stat: 'poisonPower', mult: 0.25 }],
+    startUpgrades: ['venom'],
+    behavior: 'venom_core',
+    unlockCost: 6,
+    unlockReq: { boss: 'hydra', text: 'Defeat The Hydra' },
+  },
+  {
+    id: 'titan', name: 'Titan Core', icon: '🪨', color: '#d9a066',
+    desc: 'Huge, slow and devastating. Every hit lands like a hammer.',
+    passive: 'Colossus: +40% ball size, +22% damage, +40% knockback, −15% speed, +10 max HP.',
+    mods: [{ stat: 'radius', mult: 0.4 }, { stat: 'damage', mult: 0.22 }, { stat: 'knockback', mult: 0.4 }, { stat: 'speed', mult: -0.15 }, { stat: 'maxHp', add: 10 }],
+    startUpgrades: ['heavy_impact'],
+    unlockCost: 6,
+    unlockReq: { achievement: 'elite_hunter', text: 'Kill 25 elites' },
+  },
+  {
+    id: 'gemini', name: 'Gemini Core', icon: '♊', color: '#ffc2f4',
+    desc: 'Never flies alone. Two balls, one mind.',
+    passive: 'Twin Star: every launch also fires a twin at 45% power. −15% damage.',
+    mods: [{ stat: 'damage', mult: -0.15 }],
+    startUpgrades: ['shard_forge'],
+    behavior: 'gemini_core',
+    unlockCost: 7,
+    unlockReq: { achievement: 'swarm_protocol', text: 'Have 6 balls in flight at once' },
+  },
+  {
+    id: 'chrono', name: 'Chrono Core', icon: '⌛', color: '#ffd27a',
+    desc: 'Bends time around itself. The battlefield crawls while you think.',
+    passive: 'Time Dilation: enemies near your balls move 40% slower. +0.4s combo window, Surge charges 20% faster.',
+    mods: [{ stat: 'comboWindow', add: 0.4 }, { stat: 'surgeGain', mult: 0.2 }],
+    startUpgrades: [],
+    behavior: 'chrono_core',
+    unlockCost: 9,
+    unlockReq: { boss: 'chronarch', text: 'Defeat The Chronarch' },
+  },
 ];
 export const CORE_MAP: Record<string, CoreDef> = Object.fromEntries(CORES.map((c) => [c.id, c]));
 
@@ -82,6 +121,26 @@ export const PARTS: PartDef[] = [
     mods: [{ stat: 'bleedChance', add: 0.15 }, { stat: 'damage', mult: 0.08 }],
     unlock: { achievement: 'blood_bank', text: 'Heal 300 HP total' },
   },
+  {
+    id: 'shell_lead', slot: 'shell', name: 'Lead Shell', icon: '🔩', desc: '+12% damage, +40% knockback, −6% speed.',
+    mods: [{ stat: 'damage', mult: 0.12 }, { stat: 'knockback', mult: 0.4 }, { stat: 'speed', mult: -0.06 }],
+    unlock: { coins: 900, text: '900 coins' },
+  },
+  {
+    id: 'shell_crystal', slot: 'shell', name: 'Crystal Shell', icon: '💎', desc: '+8% crit chance, −15 max HP.',
+    mods: [{ stat: 'critChance', add: 0.08 }, { stat: 'maxHp', add: -15 }],
+    unlock: { coins: 1100, text: '1,100 coins' },
+  },
+  {
+    id: 'shell_toxic', slot: 'shell', name: 'Toxic Shell', icon: '🧪', desc: '+12% poison chance.',
+    mods: [{ stat: 'poisonChance', add: 0.12 }],
+    unlock: { achievement: 'toxicologist', text: 'Kill 300 enemies with poison' },
+  },
+  {
+    id: 'shell_phase', slot: 'shell', name: 'Phase Shell', icon: '👻', desc: '+1 pierce, −8% damage.',
+    mods: [{ stat: 'pierce', add: 1 }, { stat: 'damage', mult: -0.08 }],
+    unlock: { achievement: 'veteran_pilot', text: 'Play 25 runs' },
+  },
   // impacts
   { id: 'impact_std', slot: 'impact', name: 'Standard Impact', icon: '⚪', desc: 'No modifications.', mods: [] },
   {
@@ -104,6 +163,27 @@ export const PARTS: PartDef[] = [
     mods: [{ stat: 'knockback', mult: 1 }, { stat: 'armorPen', add: 3 }],
     unlock: { achievement: 'demolition', text: 'Get 50 explosion kills' },
   },
+  {
+    id: 'impact_incendiary', slot: 'impact', name: 'Incendiary Impact', icon: '🔥', desc: '+10% burn chance.',
+    mods: [{ stat: 'burnChance', add: 0.1 }],
+    unlock: { coins: 800, text: '800 coins' },
+  },
+  {
+    id: 'impact_cryo', slot: 'impact', name: 'Cryo Impact', icon: '❄️', desc: '+10% chill chance.',
+    mods: [{ stat: 'chillChance', add: 0.1 }],
+    unlock: { coins: 800, text: '800 coins' },
+  },
+  {
+    id: 'impact_arc', slot: 'impact', name: 'Arc Impact', icon: '⚡', desc: '+10% chain chance.',
+    mods: [{ stat: 'chainChance', add: 0.1 }],
+    unlock: { coins: 800, text: '800 coins' },
+  },
+  {
+    id: 'impact_gravity', slot: 'impact', name: 'Gravity Impact', icon: '🌑', desc: 'Hits pull nearby enemies toward the target.',
+    mods: [],
+    behavior: 'impact_gravity',
+    unlock: { achievement: 'evolution_master', text: 'Evolve 10 times' },
+  },
   // momentum
   { id: 'mom_std', slot: 'momentum', name: 'Standard Drive', icon: '⚪', desc: 'No modifications.', mods: [] },
   {
@@ -122,6 +202,26 @@ export const PARTS: PartDef[] = [
     behavior: 'stabilizer',
     unlock: { achievement: 'unstable', text: 'Reach Unstable momentum' },
   },
+  {
+    id: 'mom_overdrive', slot: 'momentum', name: 'Overdrive Drive', icon: '🏎️', desc: '+10% speed, −25% momentum gain.',
+    mods: [{ stat: 'speed', mult: 0.1 }, { stat: 'momentumGain', mult: -0.25 }],
+    unlock: { coins: 1000, text: '1,000 coins' },
+  },
+  {
+    id: 'mom_capacitor', slot: 'momentum', name: 'Capacitor Drive', icon: '🔋', desc: 'Surge charges 30% faster.',
+    mods: [{ stat: 'surgeGain', mult: 0.3 }],
+    unlock: { coins: 1200, text: '1,200 coins' },
+  },
+  {
+    id: 'mom_gyro', slot: 'momentum', name: 'Gyro Drive', icon: '🪀', desc: '+1 floor bounce per launch, −10% damage.',
+    mods: [{ stat: 'floorBounces', add: 1 }, { stat: 'damage', mult: -0.1 }],
+    unlock: { achievement: 'ricochet_virtuoso', text: '40 wall bounces in one flight' },
+  },
+  {
+    id: 'mom_resonant', slot: 'momentum', name: 'Resonant Drive', icon: '🎐', desc: 'Starfall deals +40% damage.',
+    mods: [{ stat: 'starfallPower', mult: 0.4 }],
+    unlock: { achievement: 'stargazer', text: 'Call 50 Starfalls' },
+  },
 ];
 export const PART_MAP: Record<string, PartDef> = Object.fromEntries(PARTS.map((p) => [p.id, p]));
 
@@ -133,6 +233,17 @@ export const TRAILS = [
   { id: 'void', name: 'Void', colors: ['#e0b3ff', '#4a1a8a'] },
   { id: 'gold', name: 'Gilded', colors: ['#fff3b0', '#ffb300'] },
   { id: 'prism', name: 'Prism', colors: ['#ff6ad5', '#5ee7ff'] },
+  { id: 'toxin', name: 'Toxin', colors: ['#e6ff9a', '#3aa000'] },
+  { id: 'magma', name: 'Magma', colors: ['#ffe0a0', '#c43a00'] },
+  { id: 'mirror', name: 'Mirror', colors: ['#ffffff', '#ffb3ff'] },
+  { id: 'chrono', name: 'Clockwork', colors: ['#fff2c4', '#c98b1a'] },
+  { id: 'frost', name: 'Frost', colors: ['#ffffff', '#6ad1ff'] },
+  { id: 'storm', name: 'Storm', colors: ['#f0f8ff', '#3f6bff'] },
+  { id: 'nebula', name: 'Nebula', colors: ['#ff9af0', '#4a2aff'] },
+  { id: 'sunset', name: 'Sunset', colors: ['#ffd08a', '#ff3d7a'] },
+  { id: 'abyssal', name: 'Abyssal', colors: ['#c77dff', '#1a0040'] },
+  { id: 'celestial', name: 'Celestial', colors: ['#fffbe6', '#bca7ff'] },
+  { id: 'ascendant', name: 'Ascendant', colors: ['#ffffff', '#ffd451'] },
 ];
 
 localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);

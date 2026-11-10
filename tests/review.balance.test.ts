@@ -9,7 +9,7 @@ import { STARFALL_BOSS_SHARE } from '../src/sim/resonance';
 import { FLOOR_Y, SIM_DT } from '../src/sim/types';
 import { BALL_MILESTONES, LONE_FOCUS } from '../src/sim/world';
 import { ENDLESS_RAMP } from '../src/sim/director';
-import { ENEMY_MAP } from '../src/data/enemies';
+import { BOSSES, ENEMY_MAP } from '../src/data/enemies';
 import { emptyWorld, makeWorld, steps } from './helpers';
 
 function summary(over: Partial<RunSummary> = {}): RunSummary {
@@ -143,10 +143,11 @@ describe('offers', () => {
 
 describe('endless', () => {
   it('cycles through every boss instead of repeating one', () => {
-    for (const [arena, diff] of [['proving', 0], ['foundry', 2], ['rift', 0]] as const) {
+    const n = BOSSES.length;
+    for (const [arena, diff] of [['proving', 0], ['foundry', 2], ['rift', 0], ['blight', 1], ['spire', 3], ['citadel', 4]] as const) {
       const w = makeWorld({ arena, difficulty: diff });
       const seen: string[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < n * 2; i++) {
         w.director.spawnBoss();
         seen.push(w.director.bossId);
         for (const e of w.enemies) e.alive = false;
@@ -154,8 +155,8 @@ describe('endless', () => {
         w.director.bossActive = false;
       }
       expect(seen[0]).toBe(w.arena.bossId);
-      expect(new Set(seen.slice(0, 3)).size).toBe(3);
-      expect(seen.slice(3)).toEqual(seen.slice(0, 3));
+      expect(new Set(seen.slice(0, n)).size).toBe(n);
+      expect(seen.slice(n)).toEqual(seen.slice(0, n));
     }
   });
 

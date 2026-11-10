@@ -79,7 +79,15 @@ export function ballSpeed(w: World, b: Mover): number {
     const dy = e.y - b.y;
     if (dx * dx + dy * dy < 115 * 115) s *= 0.55;
   }
-  return s;
+  // The Chronarch's time stop and its stasis bubbles.
+  if (w.timeStop > 0) s *= 0.12;
+  for (const z of w.zones) {
+    if (z.kind === 'stasis' && (z.x - b.x) ** 2 + (z.y - b.y) ** 2 < z.r * z.r) {
+      s *= 0.5;
+      break;
+    }
+  }
+  return Math.max(40, s);
 }
 
 /** `stormDir` lets the aim tracer use a gravity-storm direction it has advanced ahead of time. */
@@ -136,6 +144,10 @@ function steer(w: World, b: Mover, dt: number, spd: number, stormDir?: number): 
       const pull = (pulse ? -2600 : 820 + e.phase * 300) * (1 - d / 320);
       ax += (dx / d) * pull;
       ay += (dy / d) * pull;
+    } else if (e.def.ai === 'pulsar' && e.t1 > 0 && d < 130) {
+      const push = -2400 * (1 - d / 130);
+      ax += (dx / d) * push;
+      ay += (dy / d) * push;
     }
   }
   const storm = stormDir ?? (w.event?.id === 'gravity_storm' ? w.event.dir : 0);
@@ -163,7 +175,7 @@ function markHit(w: World, b: Ball, id: number): void {
   }
 }
 
-export function onWallBounce(w: World, b: Ball, x: number, y: number, nx: number, ny: number, kind: Segment['kind'] | 'bumper' | 'crate'): void {
+export function onWallBounce(w: World, b: Ball, x: number, y: number, nx: number, ny: number, kind: Segment['kind'] | 'bumper' | 'crate' | 'pylon'): void {
   const st = w.build.stats;
   const double = w.event?.id === 'double_bounce';
   b.wallBounces += double ? 2 : 1;
@@ -176,7 +188,7 @@ export function onWallBounce(w: World, b: Ball, x: number, y: number, nx: number
   w.emit({ t: 'wall', x, y, nx, ny, color: kind === 'shield' ? '#8fa8ff' : w.trailColors[1] });
   if (kind !== 'bumper') w.emit({ t: 'sfx', name: kind === 'shield' ? 'shield' : 'wall', pitch: 1 + Math.min(b.wallBounces, 20) * 0.03, vol: 0.35 });
   if (double) sparkNearest(w, b.x, b.y, st.damage * 0.6, '#8fa8ff');
-  for (const [bh, p] of w.bh) bh.onWall?.(w, b, p);
+  for (const [bh, p] of w.bh) bh.onWall?.(w, b, p, kind);
 }
 
 function collideSegments(w: World, b: Ball, segs: Segment[]): void {
@@ -259,6 +271,37 @@ function collideObstacles(w: World, b: Ball): void {
         if (!o.alive) break;
         const n = bounceCircle(b, o.x, o.y, o.r);
         if (n) w.detonateBarrel(o, 0);
+        break;
+      }
+      case 'spore': {
+        if (!o.alive) break;
+        const n = bounceCircle(b, o.x, o.y, o.r);
+        if (n) w.burstSpore(o);
+        break;
+      }
+      case 'pylon': {
+        const n = bounceCircle(b, o.x, o.y, o.r);
+        if (n) {
+          o.flash = 1;
+          if (!recentlyHit(w, b, -3000 - i)) {
+            markHit(w, b, -3000 - i);
+            w.addCombo(1);
+            w.zapPylon(o);
+            onWallBounce(w, b, o.x + n.nx * o.r, o.y + n.ny * o.r, n.nx, n.ny, 'pylon');
+          }
+        }
+        break;
+      }
+      case 'booster': {
+        if ((b.x - o.x) ** 2 + (b.y - o.y) ** 2 < o.r * o.r) {
+          b.boost = Math.max(b.boost, 1.55);
+          if (!recentlyHit(w, b, -4000 - i)) {
+            markHit(w, b, -4000 - i);
+            o.flash = 1;
+            b.momentum += w.build.stats.momentumGain;
+            w.emit({ t: 'sfx', name: 'bumper', pitch: 1.5, vol: 0.35 });
+          }
+        }
         break;
       }
       case 'crate': {
@@ -619,7 +662,7 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
       }
     }
     for (const o of w.obstacles) {
-      if (o.kind === 'bumper' || (o.kind === 'barrel' && o.alive)) {
+      if (o.kind === 'bumper' || o.kind === 'pylon' || ((o.kind === 'barrel' || o.kind === 'spore') && o.alive)) {
         const dx = g.x - o.x;
         const dy = g.y - o.y;
         const rr = o.r + g.r;
@@ -635,10 +678,12 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
             g.dx = rv.x;
             g.dy = rv.y;
             enforceAngle(g);
-            if (o.kind === 'bumper') wall();
+            if (o.kind === 'bumper' || o.kind === 'pylon') wall();
             bounced = true;
           }
         }
+      } else if (o.kind === 'booster') {
+        if ((g.x - o.x) ** 2 + (g.y - o.y) ** 2 < o.r * o.r) g.boost = Math.max(g.boost, 1.55);
       } else if (o.kind === 'crate' && o.alive) {
         const cx = clamp(g.x, o.x, o.x + o.w);
         const cy = clamp(g.y, o.y, o.y + o.h);

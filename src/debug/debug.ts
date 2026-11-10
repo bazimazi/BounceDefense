@@ -36,6 +36,7 @@ export function createDebugPanel(game: Game): HTMLElement {
     btn('Kill all', () => { const x = w(); x?.enemies.forEach((e) => !e.boss && damageEnemy(x, e, 1e9, { src: 'spark', crit: false, depth: 5 })); }),
     btn('Boss', () => { const x = w(); if (x) x.director.bossTime = x.time; }),
     btn('Elite', () => w()?.director.spawnElite(2, 1)),
+    btn('Relic', () => w()?.grantRelic()),
     btn('Surge', () => { const x = w(); if (x) x.surge.charge = x.surge.max; }),
     btn('+Combo50', () => w()?.addCombo(50)),
     h('div', {}, 'Time:', btn('¼', () => { game.timeScale = 0.25; }), btn('1', () => { game.timeScale = 1; }), btn('3', () => { game.timeScale = 3; })),

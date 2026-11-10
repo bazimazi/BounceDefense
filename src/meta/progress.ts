@@ -1,17 +1,20 @@
 import { t } from '../i18n';
 import { analytics } from '../core/analytics';
-import { dailyKey } from '../core/rng';
+import { dailyKey, hashString, Rng } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../data/balls';
 import { BOSS_MAP, ENEMY_MAP } from '../data/enemies';
 import {
-  ACHIEVEMENTS, CHALLENGES, RESEARCH, RESEARCH_MAP, WORKSHOP_MAP, masteryLevel, masteryRewards,
+  ACHIEVEMENTS, CHALLENGES, RESEARCH, RESEARCH_MAP, WORKSHOP_MAP, masteryLevel, masteryRewards, rankLevel, rankRewards,
 } from '../data/meta';
+import { ASCENSION_REWARD, MAX_ASCENSION } from '../data/ascension';
+import { CONTRACTS, CONTRACT_MAP, DAILY_CONTRACTS, DAILY_REWARDS, WEEKLY_REWARD } from '../data/contracts';
+import { DEFAULT_UNLOCKED_RELICS, RELIC_MAP } from '../data/relics';
 import { EVENT_MAP } from '../data/arenas';
 import { EVOLUTION_MAP, REACTION_MAP, SYNERGY_MAP } from '../data/synergies';
 import { DEFAULT_UNLOCKED_UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import type { RunConfig } from '../sim/world';
-import type { DiscoveryCat, Profile, RunSummary, Unlock } from './types';
+import type { ContractSlot, DiscoveryCat, Profile, RunSummary, Unlock } from './types';
 import { normalizeTalents } from '../data/talents';
 import { talentProgress } from './talents';
 
@@ -26,6 +29,14 @@ export function researchFlags(p: Profile): string[] {
 
 export function upgradePool(p: Profile): string[] {
   return [...new Set([...DEFAULT_UNLOCKED_UPGRADES, ...p.unlockedUpgrades])];
+}
+
+export function relicPool(p: Profile): string[] {
+  return [...new Set([...DEFAULT_UNLOCKED_RELICS, ...p.unlockedRelics])];
+}
+
+export function isRelicUnlocked(p: Profile, id: string): boolean {
+  return DEFAULT_UNLOCKED_RELICS.includes(id) || p.unlockedRelics.includes(id);
 }
 
 export function isArenaUnlocked(p: Profile, arenaId: string): boolean {
@@ -105,23 +116,26 @@ export function buyWorkshop(p: Profile, id: string): boolean {
   return true;
 }
 
-export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean }): RunConfig {
+export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean; ascension?: number }): RunConfig {
   const l = p.loadout;
+  const flags = researchFlags(p);
   return {
     seed: opts.seed,
     arena: opts.arena,
     difficulty: opts.difficulty,
     core: p.unlockedCores.includes(l.core) ? l.core : 'striker',
     parts: [l.shell, l.impact, l.momentum].filter((id) => isPartUnlocked(p, id)),
-    pacts: opts.pacts.filter((id) => PACT_MAP[id]),
+    pacts: opts.pacts.filter((id) => PACT_MAP[id] && (!PACT_MAP[id].flag || flags.includes(PACT_MAP[id].flag!))),
     workshop: { ...p.workshop },
     talents: normalizeTalents(p.talents, talentProgress(p).total),
     pool: upgradePool(p),
-    flags: researchFlags(p),
+    flags,
     trail: p.cosmetics.includes(l.trail) ? l.trail : 'classic',
     known: Object.fromEntries(Object.entries(p.discoveries).map(([k, v]) => [k, [...v]])),
     tutorial: !p.tutorialDone,
     daily: opts.daily,
+    ascension: opts.difficulty >= DIFFICULTIES.length - 1 ? Math.max(0, Math.min(p.ascension, Math.floor(opts.ascension ?? 0))) : 0,
+    relicPool: relicPool(p),
   };
 }
 
@@ -136,6 +150,7 @@ export function describeUnlock(u: Unlock): string {
     case 'coins': return t('unlock.coins', { n: u.amount });
     case 'cores': return t('unlock.cores', { n: u.amount });
     case 'research': return t('unlock.research', { n: u.amount });
+    case 'relic': return t('unlock.relic', { icon: RELIC_MAP[u.id]?.icon ?? '', name: RELIC_MAP[u.id]?.name ?? u.id });
   }
 }
 
@@ -167,6 +182,10 @@ export function applyUnlock(p: Profile, u: Unlock): string | null {
     case 'coins': p.coins += u.amount; break;
     case 'cores': p.cores += u.amount; break;
     case 'research': p.research += u.amount; break;
+    case 'relic':
+      if (isRelicUnlocked(p, u.id) || !RELIC_MAP[u.id]) return null;
+      p.unlockedRelics.push(u.id);
+      break;
   }
   return describeUnlock(u);
 }
@@ -179,22 +198,82 @@ export interface RunRewards {
   masteryXp: number;
 }
 
-export function rewardMultiplier(s: Pick<RunSummary, 'difficulty' | 'pacts'>): number {
+export function rewardMultiplier(s: Pick<RunSummary, 'difficulty' | 'pacts'> & { ascension?: number }): number {
   const diff = DIFFICULTIES[s.difficulty] ?? DIFFICULTIES[0];
   const pact = s.pacts.reduce((a, id) => a + (PACT_MAP[id]?.reward ?? 0), 0);
-  return diff.rewardMult * (1 + pact);
+  return diff.rewardMult * (1 + pact) * (1 + ASCENSION_REWARD * (s.ascension ?? 0));
 }
 
 /** Every run pays out, win or lose. Victories and harder settings pay more. */
-export function computeRewards(s: RunSummary, newDiscoveries: number): RunRewards {
+export function computeRewards(s: RunSummary, newDiscoveries: number, flags: string[] = []): RunRewards {
   const mult = rewardMultiplier(s) * (s.victory ? 1.3 : 1);
   const base = s.coinsCollected + s.kills * 0.5 + s.eliteKills * 8 + s.bossesDefeated.length * 120 + Math.floor(s.time / 6);
+  const asc = s.ascension ?? 0;
+  const study = flags.includes('mastery') ? 1.15 : 1;
   return {
     coins: Math.round(base * mult),
-    cores: s.coresCollected + (s.victory ? 1 + s.difficulty : 0),
+    cores: s.coresCollected + (s.victory ? 1 + s.difficulty + Math.floor(asc / 2) + (flags.includes('salvage') ? 1 : 0) : 0),
     research: newDiscoveries + (s.victory ? 1 : 0),
-    masteryXp: Math.round((s.kills * 0.6 + s.level * 10 + s.bossesDefeated.length * 80 + (s.victory ? 100 : 0)) * (1 + s.difficulty * 0.25)),
+    masteryXp: Math.round((s.kills * 0.6 + s.level * 10 + s.bossesDefeated.length * 80 + (s.victory ? 100 : 0)) * (1 + s.difficulty * 0.25 + asc * 0.05) * study),
   };
+}
+
+// ------------------------------------------------------------------ contracts
+/** Week index (weeks start on Monday, UTC): the weekly contract's key. */
+export function weekKey(date = new Date()): string {
+  const day = Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86400000);
+  return `w${Math.floor((day - 4) / 7)}`;
+}
+
+function drawContracts(p: Profile, key: string, n: number, weekly: boolean): ContractSlot[] {
+  const rng = new Rng(hashString(`${weekly ? 'weekly' : 'daily'}:${key}`));
+  const pool = CONTRACTS.filter((c) => !c.available || c.available(p));
+  rng.shuffle(pool);
+  return pool.slice(0, n).map((c) => ({ id: c.id, target: weekly ? c.weekly : c.daily, progress: 0, done: false }));
+}
+
+/** Today's board: three daily contracts and this week's contract, drawn fresh when the day or week turns. */
+export function contractBoard(p: Profile, date = new Date()): Profile['contracts'] {
+  const b = p.contracts;
+  const day = dailyKey(date);
+  const week = weekKey(date);
+  if (b.day !== day || b.daily.length !== DAILY_CONTRACTS || b.daily.some((c) => !CONTRACT_MAP[c.id])) {
+    b.day = day;
+    b.daily = drawContracts(p, day, DAILY_CONTRACTS, false);
+  }
+  if (b.week !== week || !b.weekly || !CONTRACT_MAP[b.weekly.id]) {
+    b.week = week;
+    b.weekly = drawContracts(p, week, 1, true)[0] ?? null;
+  }
+  return b;
+}
+
+export function contractText(slot: ContractSlot): string {
+  const def = CONTRACT_MAP[slot.id];
+  return def ? def.desc.replace('{n}', String(slot.target)) : slot.id;
+}
+
+/** Adds a run to the board; returns the contracts it completed, rewards already applied. */
+function progressContracts(p: Profile, s: RunSummary, date: Date, push: (u: Unlock) => void): string[] {
+  const b = contractBoard(p, date);
+  const done: string[] = [];
+  const slots: [ContractSlot, Unlock[]][] = b.daily.map((c, i) => [c, DAILY_REWARDS[i] ?? DAILY_REWARDS[0]]);
+  if (b.weekly) slots.push([b.weekly, WEEKLY_REWARD]);
+  for (const [slot, rewards] of slots) {
+    const def = CONTRACT_MAP[slot.id];
+    if (!def || slot.done) continue;
+    const v = Math.max(0, def.value(s));
+    slot.progress = def.mode === 'max' ? Math.max(slot.progress, v) : slot.progress + v;
+    if (slot.progress >= slot.target) {
+      slot.done = true;
+      slot.progress = slot.target;
+      p.stats.contractsDone++;
+      done.push(`${def.icon} ${contractText(slot)}`);
+      rewards.forEach(push);
+      analytics.emit('ContractCompleted', { id: slot.id, weekly: slot === b.weekly });
+    }
+  }
+  return done;
 }
 
 /** The first finished Daily Seed run each day pays this coin multiplier and bonus Research. */
@@ -220,6 +299,7 @@ export function discoveryName(cat: DiscoveryCat, id: string): string {
     case 'upgrades': return UPGRADE_MAP[id]?.name ?? id;
     case 'arenas': return ARENA_MAP[id]?.name ?? id;
     case 'events': return EVENT_MAP[id]?.name ?? id;
+    case 'relics': return `${RELIC_MAP[id]?.icon ?? ''} ${RELIC_MAP[id]?.name ?? id}`;
   }
 }
 
@@ -263,6 +343,12 @@ export function nextGoals(p: Profile, n = 3): Goal[] {
   if (affordable) goals.push({ kind: 'research', text: t('goal.research', { name: affordable.name }), reward: affordable.desc, cur: 1, max: 1 });
   const d = maxDifficulty(p);
   if (d < DIFFICULTIES.length - 1) goals.push({ kind: 'diff', text: t('goal.winOn', { name: DIFFICULTIES[d].name }), reward: t('goal.unlockDifficulty', { name: DIFFICULTIES[d + 1].name }), cur: 0, max: 1 });
+  else if (p.ascension < MAX_ASCENSION) {
+    goals.push({ kind: 'asc', text: p.ascension ? t('goal.ascension', { n: p.ascension }) : t('goal.winOn', { name: DIFFICULTIES[d].name }), reward: t('goal.unlockAscension', { n: p.ascension + 1 }), cur: 0, max: 1 });
+  }
+  const board = p.tutorialDone ? contractBoard(p) : null;
+  const open = board?.daily.find((c) => !c.done);
+  if (open) goals.push({ kind: 'contract', text: contractText(open), reward: t('goal.contractReward'), cur: open.progress, max: open.target });
 
   // most-progressed first, but keep variety: one per kind before repeating
   goals.sort((a, b) => b.cur / Math.max(1, b.max) - a.cur / Math.max(1, a.max));
@@ -291,9 +377,12 @@ export interface RunReport {
   difficultyUnlocked: string | null;
   /** Daily Seed outcome: whether this run claimed today's bonus and set a new best. */
   daily: { bonus: boolean; best: number; newBest: boolean } | null;
+  rank: { before: number; after: number; into: number; need: number };
+  contracts: string[];
+  ascensionUnlocked: number | null;
 }
 
-export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: DiscoveryCat; id: string }[], today = dailyKey()): RunReport {
+export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: DiscoveryCat; id: string }[], today = dailyKey(), now = new Date()): RunReport {
   const arenasBefore = ARENAS.filter((a) => isArenaUnlocked(p, a.id)).map((a) => a.id);
   const diffBefore = maxDifficulty(p);
   const st = p.stats;
@@ -316,13 +405,28 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   st.maxMomentumTier = Math.max(st.maxMomentumTier, s.maxMomentumTier);
   st.elitesKilled += s.eliteKills;
   st.playTime += s.time;
+  st.poisonKills += s.poisonKills ?? 0;
+  st.starfalls += s.starfalls ?? 0;
+  st.goldenCaught += s.goldenCaught;
+  st.relicsFound += s.relics?.length ?? 0;
   s.bossesDefeated.forEach((b, i) => {
     p.bossKills[b] = (p.bossKills[b] ?? 0) + 1;
     analytics.emit('BossDefeated', { id: b, fightTime: s.bossFightTimes[i] ?? 0 });
   });
+  let ascensionUnlocked: number | null = null;
   if (s.victory) {
     p.cleared[s.arena] = Math.max(p.cleared[s.arena] ?? -1, s.difficulty);
     analytics.emit('ArenaCompleted', { arena: s.arena, difficulty: s.difficulty });
+    // Abyss opens Ascension 1; winning at the highest open level opens the next.
+    if (s.difficulty >= DIFFICULTIES.length - 1) {
+      const asc = s.ascension ?? 0;
+      st.maxAscension = Math.max(st.maxAscension, asc);
+      if (asc >= p.ascension && p.ascension < MAX_ASCENSION) {
+        p.ascension = Math.min(MAX_ASCENSION, asc + 1);
+        ascensionUnlocked = p.ascension;
+        analytics.emit('AscensionUnlocked', { level: p.ascension });
+      }
+    }
   }
   p.tutorialDone = true;
   p.runsSinceUnlock++;
@@ -338,10 +442,11 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     if (RESEARCH_CATS.includes(d.cat)) researchFromDiscovery++;
     if (d.cat === 'synergies') analytics.emit('SynergyDiscovered', { id: d.id });
     if (d.cat === 'evolutions') analytics.emit('EvolutionUnlocked', { id: d.id, runTime: s.time });
+    if (d.cat === 'relics') analytics.emit('RelicFound', { id: d.id, runTime: s.time });
   }
 
   // ---- currencies
-  const rewards = computeRewards(s, researchFromDiscovery);
+  const rewards = computeRewards(s, researchFromDiscovery, researchFlags(p));
   let daily: RunReport['daily'] = null;
   if (s.daily) {
     const rec = dailyRecord(p, today);
@@ -373,6 +478,16 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   p.mastery[s.core] = (p.mastery[s.core] ?? 0) + rewards.masteryXp;
   const newTalentPoints = talentProgress(p).total - talentPointsBefore;
   if (newTalentPoints > 0) unlocks.push(t('report.talentPoints', { n: newTalentPoints }));
+  // Pilot Rank rides on the same XP, across every core.
+  const rankBefore = rankLevel(p.rankXp);
+  p.rankXp += rewards.masteryXp;
+  const rankAfter = rankLevel(p.rankXp);
+  for (let r = rankBefore.level + 1; r <= rankAfter.level; r++) {
+    unlocks.push(t('report.rank', { n: r }));
+    rankRewards(r).forEach(push);
+    analytics.emit('RankUp', { rank: r });
+  }
+  const contracts = progressContracts(p, s, now, push);
   const after = masteryLevel(p.mastery[s.core]);
   const masteryTexts: string[] = [];
   for (const r of masteryRewards(s.core)) {
@@ -430,6 +545,9 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     arenaUnlocked,
     difficultyUnlocked: diffAfter > diffBefore ? DIFFICULTIES[diffAfter].name : null,
     daily,
+    rank: { before: rankBefore.level, after: rankAfter.level, into: rankAfter.into, need: rankAfter.need },
+    contracts,
+    ascensionUnlocked,
   };
 }
 

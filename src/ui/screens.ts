@@ -3,14 +3,17 @@ import { dailySeed } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS } from '../data/arenas';
 import { CORES, CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
 import { BOSSES, CODEX_ENEMIES } from '../data/enemies';
-import { ACHIEVEMENTS, CHALLENGES, RESEARCH, WORKSHOP, masteryLevel, masteryRewards } from '../data/meta';
+import { ACHIEVEMENTS, CHALLENGES, RESEARCH, WORKSHOP, masteryLevel, masteryRewards, rankLevel, rankRewards } from '../data/meta';
+import { ASCENSIONS, ASCENSION_REWARD } from '../data/ascension';
+import { CONTRACT_MAP } from '../data/contracts';
+import { RELICS, RELIC_COLOR, RELIC_MAP } from '../data/relics';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
-  buyPart, buyWorkshop, canResearch, canUnlockCore, coreRequirementMet, dailyRecord, describeUnlock, doResearch, isArenaUnlocked, maxDifficulty,
-  nextGoals, partsForSlot, rewardMultiplier, unlockCore, workshopCost, type Goal, type RunReport,
+  buyPart, buyWorkshop, canResearch, canUnlockCore, contractBoard, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
+  isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, partsForSlot, rewardMultiplier, unlockCore, workshopCost, type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
 import { talentProgress } from '../meta/talents';
@@ -19,7 +22,7 @@ import { createArenaSurface } from '../render/arena';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_FORMATS, statLabel, type StatKey } from '../sim/stats';
 import { FIELD_TOP } from '../sim/types';
-import { RECALL_COOLDOWN, type World } from '../sim/world';
+import type { World } from '../sim/world';
 import type { Game } from '../game';
 import { LANGUAGES, localizeDigits, t, type UiKey } from '../i18n';
 import { amount, badge, iconButton, meter, orb, pips, richText, sectionTitle, segmented, statTile, wallet } from './components';
@@ -85,7 +88,7 @@ export class UI {
   private handEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
-  private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>() };
+  private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>(), ascension: 0 };
   private forgeSegment: ForgeSegment = 'workshop';
   private goalSegment: GoalSegment = 'next';
   private codexTab = 'balls';
@@ -425,7 +428,9 @@ export class UI {
     const choice = this.setupChoices();
     if (!ARENA_MAP[s.arena]) s.arena = 'proving';
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
+    s.ascension = Math.max(0, Math.min(s.ascension, p.ascension));
     if (!choice.pacts) s.pacts.clear();
+    for (const id of [...s.pacts]) if (!this.pactAvailable(id)) s.pacts.delete(id);
     if (!choice.arena) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
     this.game.previewArena(first ? 'proving' : s.arena);
     // English splits the logo over two lines; a one-word brand (Persian "توپاد") leaves the second empty.
@@ -448,7 +453,18 @@ export class UI {
         h('div', { class: 'play-row' },
           choice.difficulty ? h('button', { class: 'daily-btn', 'aria-label': t('home.nav.daily'), title: t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
             icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)) : null,
-          this.playButton({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }, isArenaUnlocked(p, s.arena)))));
+          this.playButton(this.runOptions(), isArenaUnlocked(p, s.arena)))));
+  }
+
+  /** The current setup as run options; Ascension only rides along on the hardest tier. */
+  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number } {
+    const s = this.setup;
+    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty === DIFFICULTIES.length - 1 ? s.ascension : 0 };
+  }
+
+  private pactAvailable(id: string): boolean {
+    const pc = PACTS.find(x => x.id === id);
+    return !!pc && (!pc.flag || this.game.flags().includes(pc.flag));
   }
 
   private setupChoices(): { arena: boolean; difficulty: boolean; pacts: boolean } {
@@ -460,7 +476,7 @@ export class UI {
     };
   }
 
-  private playButton(config: { arena: string; difficulty: number; pacts: string[] }, enabled = true): HTMLButtonElement {
+  private playButton(config: { arena: string; difficulty: number; pacts: string[]; ascension?: number }, enabled = true): HTMLButtonElement {
     return h('button', {
       class: 'primary big launch-button play-btn', disabled: !enabled,
       onclick: () => { this.click(); this.game.startRun(config); },
@@ -491,7 +507,9 @@ export class UI {
     const arena = ARENA_MAP[s.arena];
     const unlocked = isArenaUnlocked(p, arena.id);
     const difficulty = DIFFICULTIES[s.difficulty];
-    const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
+    const opts = this.runOptions();
+    const mult = rewardMultiplier(opts);
+    const diffName = opts.ascension ? t('home.ascensionTag', { difficulty: difficulty.name, n: opts.ascension }) : difficulty.name;
     const card = h('button', {
       class: `run-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}`,
       onclick: () => { this.click(); this.runSheet(); },
@@ -500,7 +518,7 @@ export class UI {
     h('span', { class: 'run-copy' },
       h('b', {}, arena.name),
       h('small', {}, unlocked
-        ? [h('i', { class: 'dot', style: `background:${difficulty.color}` }), mult !== 1 ? t('home.playReward', { difficulty: difficulty.name, n: mult.toFixed(2) }) : difficulty.name]
+        ? [h('i', { class: 'dot', style: `background:${difficulty.color}` }), mult !== 1 ? t('home.playReward', { difficulty: diffName, n: mult.toFixed(2) }) : diffName]
         : arena.unlockReq?.text ?? '')),
     s.pacts.size ? h('span', { class: 'run-pacts', title: t('home.pactsOn', { n: s.pacts.size }) }, icon('pact'), h('b', {}, String(s.pacts.size))) : null,
     icon('forward', 'chev'));
@@ -531,10 +549,11 @@ export class UI {
     const build = () => this.runSheetBody();
     const footer = () => {
       const s = this.setup;
-      const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
+      const opts = this.runOptions();
+      const mult = rewardMultiplier(opts);
       return [
         mult !== 1 ? h('div', { class: 'run-total' }, icon('star'), t('setup.multiplier', { n: mult.toFixed(2) })) : null,
-        this.playButton({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }, isArenaUnlocked(this.p, s.arena)),
+        this.playButton(opts, isArenaUnlocked(this.p, s.arena)),
       ];
     };
     this.runSheetRender = () => this.openSheetInPlace('run', title, build, footer);
@@ -581,11 +600,12 @@ export class UI {
           }, ok ? null : icon('lock'), h('span', {}, d.name));
         })),
         h('p', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc),
+        ...(s.difficulty === DIFFICULTIES.length - 1 ? this.ascensionPicker(update) : []),
       ] : []),
       ...(choice.pacts ? [
         sectionTitle(t('setup.pacts')),
         h('p', { class: 'sheet-intro' }, t('home.pactsIntro')),
-        h('div', { class: 'pact-list' }, PACTS.map(pc => h('button', {
+        h('div', { class: 'pact-list' }, PACTS.filter(pc => this.pactAvailable(pc.id)).map(pc => h('button', {
           class: `pact-row ${s.pacts.has(pc.id) ? 'on' : ''}`, role: 'switch', 'aria-checked': String(s.pacts.has(pc.id)),
           'data-motion-key': `pact:${pc.id}`,
           onclick: () => { if (s.pacts.has(pc.id)) s.pacts.delete(pc.id); else s.pacts.add(pc.id); this.click(); update(); },
@@ -595,6 +615,27 @@ export class UI {
         h('span', { class: 'pact-reward' }, t('setup.pactReward', { n: Math.round(pc.reward * 100) })),
         h('span', { class: 'check' }, icon('check'))))),
       ] : []),
+    ];
+  }
+
+  /** Abyss carries the Ascension ladder: a stepper and the rules it adds. */
+  private ascensionPicker(update: () => void): (Node | null)[] {
+    const p = this.p;
+    const s = this.setup;
+    if (p.ascension <= 0) return [h('p', { class: 'sheet-intro ascension-hint' }, icon('lock'), t('setup.ascensionHint'))];
+    const set = (n: number) => { const v = Math.max(0, Math.min(p.ascension, n)); if (v === s.ascension) return; s.ascension = v; this.click(); update(); };
+    const rules = ASCENSIONS.filter(a => a.level <= s.ascension);
+    return [
+      sectionTitle(t('setup.ascension')),
+      h('div', { class: 'ascension-stepper', 'data-motion-key': 'ascension' },
+        iconButton('back', t('setup.ascensionMinus'), () => set(s.ascension - 1), 'carousel-btn'),
+        h('div', { class: 'ascension-value' },
+          h('b', {}, s.ascension ? t('setup.ascensionLevel', { n: s.ascension }) : t('setup.ascensionOff')),
+          s.ascension ? h('small', {}, t('setup.pactReward', { n: Math.round(ASCENSION_REWARD * s.ascension * 100) })) : null),
+        iconButton('forward', t('setup.ascensionPlus'), () => set(s.ascension + 1), 'carousel-btn')),
+      rules.length ? h('details', { class: 'ascension-rules' },
+        h('summary', {}, t('setup.ascensionRules'), h('b', {}, String(rules.length))),
+        h('ol', {}, rules.map(a => h('li', {}, a.desc)))) : null,
     ];
   }
 
@@ -823,6 +864,11 @@ export class UI {
       });
       case 'reactions': return REACTIONS.map(r => ({ id: r.id, known: d.reactions.includes(r.id), name: r.name, glyph: r.icon, lines: [richText(r.desc)], hint: t('codex.reactionHint', { a: elementName(r.elements[0]), b: elementName(r.elements[1]) }) }));
       case 'enemies': return CODEX_ENEMIES.map(e => ({ id: e.id, known: d.enemies.includes(e.id), name: e.name, glyph: orb(e.color, 'tiny enemy'), color: e.color, lines: [e.desc, t('codex.tip', { tip: e.tip })], hint: t('codex.notEncountered') }));
+      case 'relics': return RELICS.map(r => ({
+        id: r.id, known: !!d.relics?.includes(r.id), name: r.name, glyph: r.icon, color: r.cursed ? '#ff5d73' : RELIC_COLOR[r.rarity],
+        lines: [richText(r.desc), `${t(`relic.${r.rarity}` as UiKey)}${r.cursed ? ` · ${t('relic.cursed')}` : ''}`],
+        hint: isRelicUnlocked(p, r.id) ? t('codex.relicFind') : t('codex.relicLocked'),
+      }));
       case 'bosses': return BOSSES.map(b => ({ id: b.id, known: d.bosses.includes(b.id), name: b.name, glyph: icon('skull'), color: '#ff5d73', lines: [b.title, b.desc, t('codex.defeated', { n: p.bossKills[b.id] ?? 0 })], hint: t('codex.bossUnknown') }));
       default: return ARENAS.map(a => ({ id: a.id, known: d.arenas.includes(a.id), name: a.name, glyph: icon('flag'), color: a.theme.accent, lines: [a.desc, t('codex.events', { list: a.events.map((e) => EVENT_MAP[e].name).join(', ') })], hint: a.unlockReq?.text ?? '' }));
     }
@@ -837,6 +883,7 @@ export class UI {
       ['synergies', t('codex.synergies'), d.synergies.length, SYNERGIES.length],
       ['evolutions', t('codex.evolutions'), d.evolutions.length, EVOLUTIONS.length],
       ['reactions', t('codex.reactions'), d.reactions.length, REACTIONS.length],
+      ['relics', t('codex.relics'), d.relics?.length ?? 0, RELICS.length],
       ['enemies', t('codex.enemies'), d.enemies.length, CODEX_ENEMIES.length],
       ['bosses', t('codex.bosses'), d.bosses.length, BOSSES.length],
       ['arenas', t('codex.arenas'), d.arenas.length, ARENAS.length],
@@ -912,7 +959,7 @@ export class UI {
         }))];
         break;
       default:
-        body = [h('div', { class: 'goal-list reveal' }, nextGoals(p, 5).map(g => this.goalCard(g))),
+        body = [this.rankCard(), ...this.contractCards(), h('div', { class: 'goal-list reveal' }, nextGoals(p, 5).map(g => this.goalCard(g))),
           h('div', { class: 'lifetime reveal' },
             statTile(t('home.runs'), formatNum(p.stats.runs)), statTile(t('home.wins'), formatNum(p.stats.wins)),
             statTile(t('home.bestCombo'), formatNum(p.stats.bestCombo)), statTile(t('goals.kills'), formatNum(p.stats.kills)))];
@@ -925,6 +972,39 @@ export class UI {
         { id: 'mastery', label: t('goals.mastery') },
       ], this.goalSegment, choose, t('tab.goals')),
       h('div', { class: 'scroll goals-body', 'data-segment-body': this.goalSegment }, body));
+  }
+
+  /** Pilot Rank: the account-wide bar every run fills, with the next reward in sight. */
+  private rankCard(): HTMLElement {
+    const r = rankLevel(this.p.rankXp);
+    const next = r.need ? rankRewards(r.level + 1).map(describeUnlock).join(', ') : '';
+    return h('div', { class: 'rank-card reveal' },
+      h('span', { class: 'rank-badge' }, h('b', {}, String(r.level))),
+      h('div', { class: 'rank-copy' },
+        h('div', { class: 'row' }, h('b', {}, t('goals.rank', { n: r.level })), h('span', { class: 'spacer' }), h('small', {}, r.need ? `${formatNum(Math.floor(r.into))}/${formatNum(r.need)}` : t('common.max'))),
+        meter(r.need ? r.into / r.need : 1, 'gold thin'),
+        h('small', { class: 'rank-next' }, r.need ? t('goals.rankNext', { text: next }) : t('goals.rankMax'))));
+  }
+
+  /** Today's three contracts and the weekly one; they pay out automatically when finished. */
+  private contractCards(): HTMLElement[] {
+    const p = this.p;
+    if (!p.tutorialDone) return [];
+    const board = contractBoard(p);
+    const row = (slot: (typeof board.daily)[number]) => {
+      const def = CONTRACT_MAP[slot.id];
+      return h('div', { class: `contract-row ${slot.done ? 'done' : ''}` },
+        h('span', { class: 'contract-icon' }, def?.icon ?? '•'),
+        h('div', { class: 'contract-copy' },
+          h('b', {}, contractText(slot)),
+          slot.done ? null : meter(slot.progress / Math.max(1, slot.target), 'gold thin')),
+        slot.done ? h('span', { class: 'done-mark' }, icon('check')) : h('small', { class: 'contract-count' }, `${formatNum(Math.floor(slot.progress))}/${formatNum(slot.target)}`));
+    };
+    return [
+      sectionTitle(t('goals.contracts')),
+      h('div', { class: 'contract-list reveal' }, board.daily.map(row)),
+      ...(board.weekly ? [sectionTitle(t('goals.weekly')), h('div', { class: 'contract-list weekly reveal' }, row(board.weekly))] : []),
+    ];
   }
 
   // ------------------------------------------------------------------ settings
@@ -1113,7 +1193,7 @@ export class UI {
     if (label.textContent !== text) label.textContent = text;
     if (this.recallBtn) {
       this.recallBtn.disabled = !w.canRecall() || !this.game.controlsEnabled;
-      this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / RECALL_COOLDOWN) * 100}%`);
+      this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / w.build.stats.recallCooldown) * 100}%`);
       const small = this.recallBtn.querySelector('small')!;
       const status = localizeDigits(w.recallCooldown > 0 ? t('hud.seconds', { n: Math.ceil(w.recallCooldown) }) : w.canRecall() ? t('hud.ready') : t('hud.noBalls'));
       if (small.textContent !== status) small.textContent = status;
@@ -1175,10 +1255,49 @@ export class UI {
       entries.length ? entries.map(([id, lv]) => h('span', { class: `build-chip ${UPGRADE_MAP[id].rarity}`, title: `${UPGRADE_MAP[id].name} ${lv}` },
         h('span', { class: 'build-chip-icon' }, UPGRADE_MAP[id].icon), h('b', {}, String(lv))))
         : h('span', { class: 'build-empty' }, t('levelup.emptyBuild')),
-      [...w.build.evolutions].map(id => h('span', { class: 'build-chip evolution', title: EVOLUTION_MAP[id].name }, h('span', { class: 'build-chip-icon' }, EVOLUTION_MAP[id].icon))));
+      [...w.build.evolutions].map(id => h('span', { class: 'build-chip evolution', title: EVOLUTION_MAP[id].name }, h('span', { class: 'build-chip-icon' }, EVOLUTION_MAP[id].icon))),
+      w.build.relics.map(id => h('span', { class: `build-chip relic ${RELIC_MAP[id].rarity}`, title: RELIC_MAP[id].name }, h('span', { class: 'build-chip-icon' }, RELIC_MAP[id].icon))));
+  }
+
+  /** A relic cache: pick one of three relics (no rerolls), or take coins instead. */
+  private relicDraft(w: World): void {
+    const fresh = this.overlay?.dataset.view !== 'relic';
+    const card = (o: Offer, i: number) => {
+      if (o.kind !== 'relic') return null;
+      const r = RELIC_MAP[o.id];
+      const color = r.cursed ? '#ff5d73' : RELIC_COLOR[r.rarity];
+      return h('button', { class: `offer relic-offer ${r.rarity} ${r.cursed ? 'cursed' : ''}`, style: `--i:${i};--c:${color}`, onclick: () => this.pick(w, o, overlay) },
+        h('span', { class: 'offer-gem', 'aria-hidden': 'true' }),
+        h('span', { class: 'oicon' }, r.icon),
+        h('span', { class: 'obody' },
+          h('span', { class: 'okicker', style: `color:${color}` }, `${t(`relic.${r.rarity}` as UiKey)}${r.cursed ? ` · ${t('relic.cursed')}` : ''}`),
+          h('span', { class: 'oname' }, r.name),
+          h('span', { class: 'odesc' }, richText(r.desc))));
+    };
+    const peek = h('button', { class: 'draft-action peek-btn', 'aria-label': t('levelup.peek'), title: t('levelup.peek') }, icon('eye'), h('span', {}, t('levelup.peekShort')));
+    const hold = (on: boolean) => overlay.classList.toggle('peeking', on);
+    peek.addEventListener('pointerdown', (e) => { e.preventDefault(); hold(true); });
+    for (const type of ['pointerup', 'pointercancel', 'pointerleave', 'blur']) peek.addEventListener(type, () => hold(false));
+    const skip = h('button', { class: 'draft-action ghost', 'aria-label': t('relic.skipLabel'), title: t('relic.skipLabel'), onclick: () => this.pick(w, { kind: 'coins' }, overlay) },
+      icon('coin'), h('span', {}, t('relic.skip')));
+    const overlay: HTMLElement = h('div', { class: 'levelup draft relic-draft', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('relic.kicker') },
+      h('div', { class: 'draft-head' },
+        h('div', { class: 'draft-kicker' }, icon('star'), t('relic.kicker'), w.build.relics.length ? h('span', { class: 'draft-queue' }, t('relic.owned', { n: w.build.relics.length })) : null),
+        h('div', { class: 'lvtitle' }, t('relic.title')),
+        this.buildStrip(w)),
+      h('div', { class: 'col offer-list' }, w.offers.map(card)),
+      h('div', { class: 'offer-actions' }, peek, skip));
+    if (fresh) {
+      overlay.setAttribute('data-arming', '');
+      setTimeout(() => overlay.removeAttribute('data-arming'), DRAFT_ARM_MS);
+      this.dealSound(w);
+      this.game.haptic('levelup');
+    }
+    this.showOverlay(overlay, 'relic');
   }
 
   levelUp(w: World): void {
+    if (w.draft === 'relic') { this.relicDraft(w); return; }
     const codex = w.flags.has('codex');
     const fresh = this.overlay?.dataset.view !== 'upgrade';
     const card = (o: Offer, i: number) => {
@@ -1304,14 +1423,16 @@ export class UI {
     const overlay = h('div', { class: 'levelup pause-overlay' },
       h('div', { class: 'pause-head' },
         h('div', { class: 'lvtitle' }, t('pause.title')),
-        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
+        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
       h('div', { class: 'scroll pause-body' },
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('pause.currentBuild')), h('div', { class: 'buildname' }, this.game.buildName()))),
           this.buildStrip(w, 'wrap'),
           [...w.build.synergies].length || w.build.evolutions.size ? h('div', { class: 'build-tags' },
             [...w.build.evolutions].map(id => h('span', { class: 'tag evo', style: `--c:${EVOLUTION_MAP[id].color}`, title: EVOLUTION_MAP[id].desc }, `${EVOLUTION_MAP[id].icon} ${EVOLUTION_MAP[id].name}`)),
-            [...w.build.synergies].map(id => h('span', { class: 'tag syn', title: SYNERGY_MAP[id].desc }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`))) : null),
+            [...w.build.synergies].map(id => h('span', { class: 'tag syn', title: SYNERGY_MAP[id].desc }, `${SYNERGY_MAP[id].icon} ${SYNERGY_MAP[id].name}`))) : null,
+          w.build.relics.length ? h('div', { class: 'build-tags relics-line' }, w.build.relics.map(id =>
+            h('span', { class: `tag relic ${RELIC_MAP[id].cursed ? 'cursed' : ''}`, style: `--c:${RELIC_COLOR[RELIC_MAP[id].rarity]}`, title: RELIC_MAP[id].desc }, `${RELIC_MAP[id].icon} ${RELIC_MAP[id].name}`))) : null),
         h('div', { class: 'stat-grid' }, keys.filter((k) => st[k] > 0 && STAT_FORMATS[k]).map((k) => statTile(statLabel(k), STAT_FORMATS[k]!(st[k])))),
         talentSpent(w.talents) ? h('div', { class: 'build-tags talents-line' }, TALENTS.filter(tl => w.talents[tl.id]).map(tl =>
           h('span', { class: 'tag', title: tl.desc(w.talents[tl.id]) }, t('pause.talentChip', { icon: tl.icon, name: tl.name, rank: w.talents[tl.id], max: tl.maxRank })))) : null,
@@ -1360,6 +1481,8 @@ export class UI {
       ...r.challenges.map((c): [IconName, string] => ['flag', t('results.challengeShort', { name: c })]),
       ...(r.arenaUnlocked ? [['battle', t('results.newArenaShort', { name: r.arenaUnlocked })] as [IconName, string]] : []),
       ...(r.difficultyUnlocked ? [['fire', t('results.newDifficultyShort', { name: r.difficultyUnlocked })] as [IconName, string]] : []),
+      ...(r.ascensionUnlocked ? [['fire', t('results.ascensionShort', { n: r.ascensionUnlocked })] as [IconName, string]] : []),
+      ...r.contracts.map((c): [IconName, string] => ['daily', t('results.contractShort', { name: c })]),
       ...(r.daily?.bonus ? [['daily', t('results.dailyBonusShort')] as [IconName, string]] : []),
       ...(r.daily?.newBest ? [['daily', t('results.dailyBestShort', { n: formatNum(r.daily.best) })] as [IconName, string]] : []),
       ...r.mastery.rewards.map((text): [IconName, string] => ['star', text]),
@@ -1374,7 +1497,7 @@ export class UI {
       h('div', { class: 'results-head' },
         h('div', { class: 'results-emblem', 'aria-hidden': 'true' }, icon(s.victory ? 'trophy' : abandoned ? 'flag' : 'skull')),
         h('div', { class: `result-title ${outcome}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),
-        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.daily ? t('results.daily') : ''}`)),
+        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.daily ? t('results.daily') : ''}`)),
       h('div', { class: 'scroll results-body' },
         h('div', { class: 'reward-row reveal' },
           reward('coins', r.rewards.coins),
@@ -1385,6 +1508,11 @@ export class UI {
           h('div', { class: 'mastery-copy' },
             h('div', { class: 'row' }, h('b', {}, t('results.masteryShort', { name: core.name, level: r.mastery.after })), leveled ? h('span', { class: 'level-up-tag' }, icon('arrowUp'), t('results.levelUp')) : null),
             h('div', { class: 'meter pink', role: 'presentation' }, h('i', { style: 'width:0%', 'data-to': String(masteryFrac * 100) })))),
+        h('div', { class: `mastery-card rank-line ${r.rank.after > r.rank.before ? 'leveled' : ''}` },
+          h('span', { class: 'rank-badge small' }, h('b', {}, String(r.rank.after))),
+          h('div', { class: 'mastery-copy' },
+            h('div', { class: 'row' }, h('b', {}, t('results.rankShort', { n: r.rank.after })), r.rank.after > r.rank.before ? h('span', { class: 'level-up-tag' }, icon('arrowUp'), t('results.levelUp')) : null),
+            h('div', { class: 'meter gold', role: 'presentation' }, h('i', { style: 'width:0%', 'data-to': String(r.rank.need ? r.rank.into / r.rank.need * 100 : 100) })))),
         unlockLines.length ? h('div', { class: 'unlock-list reveal' }, unlockLines.map(([glyph, text]) => h('div', { class: 'unlock-card' }, h('span', { class: 'unlock-icon' }, icon(glyph)), h('span', {}, text)))) : null,
         h('div', { class: 'stat-grid reveal' },
           statTile(t('results.kills'), formatNum(s.kills)),
@@ -1398,7 +1526,8 @@ export class UI {
           statTile(t('results.recalls'), s.recalls ?? 0)),
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('results.yourBuild')), h('div', { class: 'buildname' }, s.buildName))),
-          h('div', { class: 'build-strip wrap' }, s.upgrades.map(u => UPGRADE_MAP[u.id] ? h('span', { class: `build-chip ${UPGRADE_MAP[u.id].rarity}`, title: UPGRADE_MAP[u.id].name }, h('span', { class: 'build-chip-icon' }, UPGRADE_MAP[u.id].icon), h('b', {}, String(u.level))) : null)),
+          h('div', { class: 'build-strip wrap' }, s.upgrades.map(u => UPGRADE_MAP[u.id] ? h('span', { class: `build-chip ${UPGRADE_MAP[u.id].rarity}`, title: UPGRADE_MAP[u.id].name }, h('span', { class: 'build-chip-icon' }, UPGRADE_MAP[u.id].icon), h('b', {}, String(u.level))) : null),
+            (s.relics ?? []).map(id => RELIC_MAP[id] ? h('span', { class: `build-chip relic ${RELIC_MAP[id].rarity}`, title: RELIC_MAP[id].name }, h('span', { class: 'build-chip-icon' }, RELIC_MAP[id].icon)) : null)),
           h('div', { class: 'statgrid' },
             ...[[t('results.damage'), bs.damage.toFixed(0)], [t('results.crit'), `${Math.round(bs.critChance * 100)}%`], [t('results.speed'), Math.round(bs.speed)], [t('results.balls'), bs.balls],
               ...(bs.chain ? [[t('results.chain'), bs.chain]] : []), ...(bs.lifesteal ? [[t('results.lifesteal'), `${(bs.lifesteal * 100).toFixed(1)}%`]] : [])]
@@ -1435,8 +1564,7 @@ export class UI {
     };
     requestAnimationFrame(step);
     setTimeout(() => {
-      const bar = screen.querySelector<HTMLElement>('.mastery-card .meter > i');
-      if (bar) bar.style.width = `${bar.dataset.to}%`;
+      for (const bar of screen.querySelectorAll<HTMLElement>('.mastery-card .meter > i')) bar.style.width = `${bar.dataset.to}%`;
     }, 450);
     if (victory) this.game.haptic('victory');
   }

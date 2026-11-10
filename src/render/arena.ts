@@ -61,6 +61,38 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
         ctx.fillRect(x + 4, y, 8, 19);
       }
     }
+  } else if (arena.id === 'blight') {
+    // Organic cells and creeping veins.
+    for (let i = 0; i < 26; i++) {
+      const x = 40 + (i * 151.7) % (W - 80);
+      const y = FIELD_TOP + 40 + (i * 89.3) % (DEFENSE_Y - FIELD_TOP - 80);
+      const r = 18 + (i * 7) % 26;
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.75, i, 0, TAU); ctx.stroke();
+      ctx.fillStyle = accent + '08'; ctx.fill();
+    }
+    ctx.strokeStyle = accent + '16';
+    for (let v = 0; v < 5; v++) {
+      ctx.beginPath(); ctx.moveTo(30 + v * 120, FIELD_TOP);
+      for (let y = FIELD_TOP; y < DEFENSE_Y; y += 40) ctx.lineTo(30 + v * 120 + Math.sin(y * 0.03 + v) * 26, y);
+      ctx.stroke();
+    }
+  } else if (arena.id === 'spire') {
+    // Clockwork: concentric dials and tick marks.
+    for (const [cx, cy, r] of [[270, 420, 210], [270, 420, 150], [270, 420, 90]] as const) {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
+      for (let i = 0; i < 24; i++) {
+        const a = i * TAU / 24;
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6)); ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke();
+      }
+    }
+    ctx.beginPath(); ctx.moveTo(270, 420); ctx.lineTo(270, 230); ctx.moveTo(270, 420); ctx.lineTo(400, 470); ctx.stroke();
+  } else if (arena.id === 'citadel') {
+    // Masonry: staggered stone courses.
+    for (let row = 0; row < 18; row++) {
+      const y = FIELD_TOP + row * 38;
+      ctx.beginPath(); ctx.moveTo(14, y); ctx.lineTo(W - 14, y); ctx.stroke();
+      for (let x = 14 + (row % 2) * 45; x < W - 14; x += 90) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 38); ctx.stroke(); }
+    }
   } else {
     for (const r of [135, 145, 225]) {
       ctx.beginPath(); ctx.arc(270, 435, r, 0, TAU); ctx.stroke();

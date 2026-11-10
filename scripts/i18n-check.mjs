@@ -99,7 +99,7 @@ try {
       p.tutorialDone = true; p.coins = 10000; p.cores = 30; p.research = 30; p.mastery.striker = 6000;
       p.cleared.proving = 0; p.bossKills.fortress = 1; p.researchNodes = ['risk_pacts', 'evolution_codex'];
       p.discoveries = { enemies: ['grunt', 'runner'], bosses: ['fortress'], synergies: ['shatter'], evolutions: ['glacier'],
-        reactions: ['overload'], upgrades: ['heavy_impact', 'executioner'], arenas: ['proving'], events: ['jackpot'] };
+        reactions: ['overload'], upgrades: ['heavy_impact', 'executioner'], arenas: ['proving'], events: ['jackpot'], relics: ['war_drum'] };
       p.presets = [{ ...p.loadout, name: 'Striker Standard' }];
       g.save(); g.ui.home();
     });

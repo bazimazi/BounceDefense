@@ -1,12 +1,12 @@
 import type { Modifier } from '../sim/stats';
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
-export type Element = 'fire' | 'ice' | 'lightning';
+export type Element = 'fire' | 'ice' | 'lightning' | 'poison';
 export type UpgradeCategory = 'offense' | 'physics' | 'multiply' | 'element' | 'defense' | 'utility';
 export type Tag =
   | 'impact' | 'crit' | 'ricochet' | 'kinetic' | 'swarm' | 'fire' | 'ice' | 'lightning'
   | 'element' | 'explosion' | 'vampire' | 'bleed' | 'defense' | 'tank' | 'utility'
-  | 'combo' | 'momentum' | 'control' | 'chain';
+  | 'combo' | 'momentum' | 'control' | 'chain' | 'poison';
 
 export interface UpgradeDef {
   id: string;
@@ -69,7 +69,9 @@ export interface ReactionDef {
   elements: [Element, Element];
 }
 
-export type EnemyShape = 'circle' | 'triangle' | 'square' | 'hex' | 'diamond' | 'cross' | 'star' | 'ring' | 'mirror' | 'hourglass';
+export type EnemyShape =
+  | 'circle' | 'triangle' | 'square' | 'hex' | 'diamond' | 'cross' | 'star' | 'ring' | 'mirror' | 'hourglass'
+  | 'gear' | 'egg' | 'crescent' | 'skull' | 'pentagon' | 'spike';
 export type Material = 'flesh' | 'metal' | 'stone' | 'energy' | 'crystal';
 
 export interface EnemyDef {
@@ -90,7 +92,11 @@ export interface EnemyDef {
   shape: EnemyShape;
   color: string;
   material: Material;
-  ai: 'walker' | 'runner' | 'shielder' | 'healer' | 'spawner' | 'magnet' | 'teleporter' | 'warden' | 'golden' | 'boss' | 'minion';
+  ai:
+    | 'walker' | 'runner' | 'shielder' | 'healer' | 'spawner' | 'magnet' | 'teleporter' | 'warden' | 'golden' | 'boss' | 'minion'
+    | 'spitter' | 'phantom' | 'charger' | 'necro' | 'aegis' | 'pulsar' | 'egg' | 'pylon';
+  /** Elements that cannot affect this enemy (statuses, chains and reactions of that element). */
+  immune?: Element[];
   /** Direct ball damage multiplier (reflector takes reduced direct hits). */
   directMult?: number;
   splitsInto?: { id: string; count: number };
@@ -152,7 +158,13 @@ export type ObstacleTemplate =
   | { kind: 'oil'; x: number; y: number; r: number }
   | { kind: 'crate'; x: number; y: number; w: number; h: number }
   | { kind: 'portal'; ax: number; ay: number; bx: number; by: number }
-  | { kind: 'well'; x: number; y: number; r: number; strength: number };
+  | { kind: 'well'; x: number; y: number; r: number; strength: number }
+  /** Toxic pod: bursts into a poison cloud when struck, then regrows. */
+  | { kind: 'spore'; x: number; y: number }
+  /** Tesla pylon: a solid post that arcs lightning into nearby enemies when a ball strikes it. */
+  | { kind: 'pylon'; x: number; y: number; r: number }
+  /** Booster pad: a floor plate that accelerates any ball crossing it. */
+  | { kind: 'booster'; x: number; y: number; r: number };
 
 export interface ArenaDef {
   id: string;
@@ -208,7 +220,28 @@ export interface PactDef {
   desc: string;
   reward: number; // added reward multiplier
   mods?: Modifier[];
-  rule?: 'noHeal' | 'loneBall' | 'haste' | 'fortified' | 'fragile' | 'noReroll';
+  rule?: 'noHeal' | 'loneBall' | 'haste' | 'fortified' | 'fragile' | 'noReroll' | 'eliteSurge' | 'ironclad' | 'noRelic' | 'shortFuse';
+  /** Requires this research flag to appear in Run setup. */
+  flag?: string;
+}
+
+export type RelicRarity = 'common' | 'rare' | 'legendary';
+
+/** Relics are run-long artifacts found at mini-bosses and bosses: strong, distinct, collectible. */
+export interface RelicDef {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+  rarity: RelicRarity;
+  mods?: Modifier[];
+  behavior?: string;
+  /** Must be unlocked (achievement, rank, research) before it can be found. */
+  locked?: boolean;
+  /** Double-edged: shown with a warning tint. */
+  cursed?: boolean;
+  /** Pacts under which this relic would do nothing. */
+  inert?: ('noHeal' | 'loneBall')[];
 }
 
 export interface ArenaEventDef {
@@ -218,4 +251,6 @@ export interface ArenaEventDef {
   desc: string;
   duration: number;
   color: string;
+  /** Hostile anomalies are the only kind Abyss allows. */
+  hostile?: boolean;
 }

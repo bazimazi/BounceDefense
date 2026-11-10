@@ -2,14 +2,15 @@ import { t as i18n } from '../i18n';
 import { localize } from '../i18n/content';
 import type { Modifier } from '../sim/stats';
 
-export type TalentTree = 'kinetics' | 'conduit' | 'warden';
+export type TalentTree = 'kinetics' | 'conduit' | 'warden' | 'havoc';
 export type TalentRanks = Record<string, number>;
-export const TALENT_POINT_CAP = 15;
+export const TALENT_POINT_CAP = 20;
 export const TALENT_XP_PER_POINT = 500;
 export const TALENT_TREES: { id: TalentTree; name: string; icon: string; color: string; desc: string }[] = [
   { id: 'kinetics', name: 'Kinetics', icon: '↗', color: '#ffbf69', desc: 'Master the angle. Turn ricochets into momentum.' },
   { id: 'conduit', name: 'Conduit', icon: '✧', color: '#c49bff', desc: 'Amplify the elements your run build unlocks.' },
   { id: 'warden', name: 'Warden', icon: '⬡', color: '#7be0cb', desc: 'Hold the line. Stay dangerous under pressure.' },
+  { id: 'havoc', name: 'Havoc', icon: '✸', color: '#ff8a6b', desc: 'Blasts, swarms and sharp edges: make every hit spill over.' },
 ];
 
 export interface TalentDef {
@@ -59,6 +60,16 @@ export const TALENTS: TalentDef[] = [
     desc: r => `+${r * 15}% knockback on direct hits against non-boss enemies.`, mods: r => [{ stat: 'knockback', mult: r * 0.15 }] },
   { id: 'last_bastion', tree: 'warden', name: 'Last Bastion', icon: '♜', tier: 2, maxRank: 1, gate: 8, requires: 'recovery',
     desc: () => 'While already at or below 35% HP, take 25% less damage after armor. Does not prevent lethal hits or restore HP.' },
+  { id: 'blasting', tree: 'havoc', name: 'Blasting Caps', icon: '✸', tier: 0, maxRank: 3, gate: 0,
+    desc: r => `Your explosions deal ${r * 6}% more damage. Requires an explosion source.`, mods: r => [{ stat: 'explosionDamage', mult: r * 0.06 }] },
+  { id: 'keen', tree: 'havoc', name: 'Keen Edge', icon: '◆', tier: 0, maxRank: 3, gate: 0,
+    desc: r => `+${r * 8}% critical damage.`, mods: r => [{ stat: 'critMult', add: r * 0.08 }] },
+  { id: 'shrapnel', tree: 'havoc', name: 'Shrapnel', icon: '❋', tier: 1, maxRank: 2, gate: 3, requires: 'blasting',
+    desc: r => `Your explosions reach ${r * 6}% wider.`, mods: r => [{ stat: 'area', mult: r * 0.06 }] },
+  { id: 'swarmcraft', tree: 'havoc', name: 'Swarmcraft', icon: '⁂', tier: 1, maxRank: 2, gate: 3, requires: 'keen',
+    desc: r => `Shards and clones deal ${r * 6}% more damage. Requires a shard or clone source.`, mods: r => [{ stat: 'shardPower', add: r * 0.06 }] },
+  { id: 'cascade', tree: 'havoc', name: 'Cascade', icon: '✺', tier: 2, maxRank: 1, gate: 8, requires: 'shrapnel',
+    desc: () => 'Every 25th kill sends a shockwave from the fallen enemy (110% damage). Shockwaves cannot trigger it.', behavior: 'talent_cascade' },
 ];
 export const TALENT_MAP: Record<string, TalentDef> = Object.fromEntries(TALENTS.map(t => [t.id, t]));
 
