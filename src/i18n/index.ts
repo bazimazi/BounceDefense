@@ -13,17 +13,34 @@ export interface LanguageDef {
   /** Native name, shown in the language picker; `lang.<id>` gives the name in the active language. */
   name: string;
   dir: 'ltr' | 'rtl';
+  /** Native numerals, when the language does not write 0-9: digits from zero to nine, and its separators. */
+  numerals?: { digits: string; group: string; decimal: string; percent: string };
 }
 
 export const LANGUAGES: readonly LanguageDef[] = [
   { id: 'en', name: 'English', dir: 'ltr' },
-  { id: 'fa', name: 'فارسی', dir: 'rtl' },
+  { id: 'fa', name: 'فارسی', dir: 'rtl', numerals: { digits: '۰۱۲۳۴۵۶۷۸۹', group: '٬', decimal: '٫', percent: '٪' } },
 ];
 export const DEFAULT_LANGUAGE: Language = 'en';
 
 const DICTIONARIES: Record<Language, Dictionary> = { en, fa };
 const listeners = new Set<(language: Language) => void>();
 let current: Language = DEFAULT_LANGUAGE;
+let numerals: LanguageDef['numerals'];
+
+/**
+ * Rewrites 0-9 in the active language's numerals: "1,234.5 50%" becomes "۱٬۲۳۴٫۵ ۵۰٪" in Persian.
+ * Applied where text reaches the screen (`h()`, live HUD labels, canvas text), so formatted and raw
+ * numbers alike follow the language while game logic and `t()` keep working with plain digits.
+ */
+export function localizeDigits(text: string): string {
+  if (!numerals || !/\d/.test(text)) return text;
+  const n = numerals;
+  return text
+    .replace(/(\d)([,.])(?=\d)/g, (_, digit: string, sep: string) => digit + (sep === ',' ? n.group : n.decimal))
+    .replace(/(\d)%/g, `$1${n.percent}`)
+    .replace(/\d/g, digit => n.digits[Number(digit)]);
+}
 
 export function isLanguage(value: unknown): value is Language {
   return LANGUAGES.some((l) => l.id === value);
@@ -53,9 +70,11 @@ export function setLanguage(next: Language): void {
   const resolved = isLanguage(next) ? next : DEFAULT_LANGUAGE;
   const changed = resolved !== current;
   current = resolved;
+  numerals = LANGUAGES.find((l) => l.id === current)!.numerals;
   if (typeof document !== 'undefined') {
     document.documentElement.lang = current;
     document.documentElement.dir = direction();
+    document.title = t('app.name');
   }
   if (changed) for (const fn of listeners) fn(current);
 }

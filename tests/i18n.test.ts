@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { LANGUAGES, language, setLanguage, t } from '../src/i18n';
+import { LANGUAGES, language, localizeDigits, setLanguage, t } from '../src/i18n';
 import { en } from '../src/i18n/en';
 import { fa } from '../src/i18n/fa';
 import { CONTENT_REGISTRY } from '../src/i18n/content';
@@ -18,7 +18,7 @@ import '../src/data/synergies';
 const PERSIAN = /[؀-ۿ]/;
 const LATIN_WORD = /[A-Za-z]{3,}/;
 /** Brand, ids and configuration tokens that stay Latin in every language. */
-const LATIN_OK = new Set(['home.title1', 'home.title2', 'home.system', 'loadout.presetWord']);
+const LATIN_OK = new Set(['home.system', 'loadout.presetWord']);
 const placeholders = (phrase: unknown) => (typeof phrase === 'string' ? [...phrase.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort() : null);
 
 afterEach(() => setLanguage('en'));
@@ -46,6 +46,14 @@ describe('ui dictionary', () => {
       // Pure glyph/number phrases (arrows, "{n}/{max}") carry no letters at all.
       if (/\p{L}/u.test(stripped)) expect(stripped, key).toMatch(PERSIAN);
     }
+  });
+
+  it('shows numbers in the active language digits and separators', () => {
+    const text = '+1,234.5 · 50% · 3:07 · 12.3K';
+    expect(localizeDigits(text)).toBe(text);
+    setLanguage('fa');
+    expect(localizeDigits(text)).toBe('+۱٬۲۳۴٫۵ · ۵۰٪ · ۳:۰۷ · ۱۲٫۳K');
+    expect(localizeDigits('یک, دو.')).toBe('یک, دو.');
   });
 
   it('interpolates placeholders in the active language and falls back safely', () => {

@@ -38,7 +38,8 @@ both in `C:\Users\msynk\Desktop\bDefence-bazaar` (the folder the user uploads fr
 
 ## What the script does
 
-1. Sets `JAVA_HOME` (JDK 17 at `C:\Program Files (x86)\Android\openjdk\jdk-17.0.14`),
+1. Sets `JAVA_HOME` (newest JDK 17+ under `C:\Program Files (x86)\Android\openjdk\jdk-*`,
+   currently `jdk-21.0.8`; the folder changes with Visual Studio updates),
    `ANDROID_HOME` (`C:\Program Files (x86)\Android\android-sdk`) and `NDK_HOME`
    (newest under `C:\Android\ndk`) when they are not already set - the normal
    shell has none of them - and loads the MSVC environment (`vcvars64.bat`)

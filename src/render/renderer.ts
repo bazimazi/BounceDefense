@@ -1,4 +1,4 @@
-import { fontFamily, isRtl, t } from '../i18n';
+import { fontFamily, isRtl, localizeDigits, t } from '../i18n';
 import { TAU, clamp, easeOutBack, formatNum, formatTime } from '../core/math';
 import { EVENT_MAP } from '../data/arenas';
 import { CORE_MAP } from '../data/balls';
@@ -39,6 +39,18 @@ export interface RenderOptions {
 /** Resolved per frame so a language switch also changes the canvas typeface. */
 let FONT = fontFamily();
 
+/**
+ * Every string the HUD draws or measures passes through `localizeDigits`, so canvas numbers follow
+ * the language the same way DOM text does. `maxWidth` is forwarded only when given: an explicit
+ * `undefined` would make the browser draw nothing.
+ */
+function localizeCanvasText(ctx: CanvasRenderingContext2D): void {
+  const { fillText, strokeText, measureText } = ctx;
+  ctx.fillText = (text, x, y, maxWidth?) => maxWidth === undefined ? fillText.call(ctx, localizeDigits(text), x, y) : fillText.call(ctx, localizeDigits(text), x, y, maxWidth);
+  ctx.strokeText = (text, x, y, maxWidth?) => maxWidth === undefined ? strokeText.call(ctx, localizeDigits(text), x, y) : strokeText.call(ctx, localizeDigits(text), x, y, maxWidth);
+  ctx.measureText = text => measureText.call(ctx, localizeDigits(text));
+}
+
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
   scale = 1;
@@ -74,6 +86,7 @@ export class Renderer {
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
+    localizeCanvasText(this.ctx);
   }
 
   resize(): { x: number; y: number; w: number; h: number } {
@@ -1183,7 +1196,10 @@ export class Renderer {
         ctx.font = `900 ${Math.round(24 * pulse)}px ${FONT}`;
         // Anchor the baseline so the pop grows upward, away from the COMBO line.
         ctx.textBaseline = 'alphabetic';
-        ctx.fillText(t('canvas.comboCount', { n: formatNum(c) }), right, 35, Math.min(110, right - W / 2 - 64));
+        // Glyphs below the baseline (the Persian decimal sign ٫) lift the count by their depth.
+        const count = t('canvas.comboCount', { n: formatNum(c) });
+        const sink = Math.max(0, ctx.measureText(count).actualBoundingBoxDescent - 1);
+        ctx.fillText(count, right, 35 - sink, Math.min(110, right - W / 2 - 64));
         ctx.textBaseline = 'middle';
         ctx.font = `700 ${smallText(10)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.75)';

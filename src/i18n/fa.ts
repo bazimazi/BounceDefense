@@ -1,6 +1,6 @@
 import type { Dictionary } from './index';
 
-/** Persian (فارسی). Latin digits are kept so numbers stay readable next to icons and in monospace readouts. */
+/** Persian (فارسی). Numbers are written with 0-9 here and shown in Persian digits on screen (see `localizeDigits`). */
 export const fa: Dictionary = {
   // ---- shared
   'common.back': 'بازگشت',
@@ -17,21 +17,18 @@ export const fa: Dictionary = {
   'common.lockedText': '🔒 {text}',
 
   // ---- home
-  'home.title1': 'BOUNCE',
-  'home.title2': 'DEFENSE',
+  'app.name': 'توپاد',
+  /** The Persian brand is one word, so the logo has no second line. */
+  'home.title1': 'توپاد',
+  'home.title2': '',
   'home.subtitle': 'مدار خود را پیدا کن. ستاره‌ها را فرو بیاور.',
   'home.play': 'بازی',
-  'home.start': 'شروع',
-  'home.firstContact': 'نخستین برخورد',
   'home.mastery': 'تسلط',
   'home.nav.daily': 'چالش روزانه',
   'home.nav.dailyBest': 'بهترین امروز: {n} نابودی',
   'home.nav.talents': 'استعدادها',
   'home.nav.workshop': 'کارگاه',
   'home.nav.research': 'پژوهش',
-  'home.guide1': 'هر جای صفحه بکش تا نشانه بگیری',
-  'home.guide2': 'برای شلیک رها کن',
-  'home.guide3': 'از هر 3 سیگنال بگذر تا ستاره‌باران شود',
   'home.runs': 'دورها',
   'home.wins': 'بردها',
   'home.bestCombo': 'بهترین کمبو',
@@ -43,7 +40,6 @@ export const fa: Dictionary = {
   'setup.difficulty': 'درجهٔ سختی',
   'setup.pacts': 'پیمان‌های خطر',
   'setup.pactReward': '+{n}٪ پاداش',
-  'setup.pactsLocked': '🔒 «پیمان‌های خطر» را پژوهش کن تا دورها سخت‌تر و پاداش‌ها بیشتر شوند.',
   'setup.multiplier': 'ضریب پاداش ×{n}',
 
   // ---- loadout

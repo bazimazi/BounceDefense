@@ -1,5 +1,5 @@
 import { formatNum } from '../core/math';
-import { t } from '../i18n';
+import { localizeDigits, t } from '../i18n';
 import { h } from './dom';
 import { CURRENCY_ICON, icon, type Currency, type IconName } from './icons';
 
@@ -12,8 +12,9 @@ export function wallet(p: { coins: number; cores: number; research: number }): H
   const pill = (currency: Currency, n: number) => h('span', {
     class: `chip wallet-pill ${currency}`, title: `${n.toLocaleString()} ${t(`common.${currency}`)}`,
   }, icon(CURRENCY_ICON[currency]), h('b', {}, formatNum(n)));
+  // Cores and Research join the wallet once earned; a row of unexplained zeros only adds noise.
   return h('div', { class: 'chips wallet', 'aria-label': t('common.currencies') },
-    pill('coins', p.coins), pill('cores', p.cores), pill('research', p.research));
+    pill('coins', p.coins), p.cores > 0 ? pill('cores', p.cores) : null, p.research > 0 ? pill('research', p.research) : null);
 }
 
 /** Level pips: filled for owned ranks, an outlined "next" pip when one is on offer. */
@@ -45,15 +46,17 @@ export function orb(color: string, cls = ''): HTMLElement {
 /** Numbers in effect text carry the information; they are set bold so a card scans at a glance. */
 export function richText(text: string): HTMLElement {
   const el = h('span', { class: 'rich' });
-  const re = /([+\-−×]?\d+(?:[.,]\d+)?\s?[%٪]?|×\s?\d+(?:\.\d+)?)/g;
+  // A space belongs to the number only before its percent sign: a trailing one would sit inside
+  // the left-to-right number and, in Persian, end up on the wrong side of it.
+  const re = /([+\-−×]?\d+(?:[.,]\d+)?(?:\s?[%٪])?|×\s?\d+(?:\.\d+)?)/g;
   let last = 0;
   for (const m of text.matchAll(re)) {
     const i = m.index ?? 0;
-    if (i > last) el.append(text.slice(last, i));
+    if (i > last) el.append(localizeDigits(text.slice(last, i)));
     el.append(h('b', { class: 'num' }, m[0]));
     last = i + m[0].length;
   }
-  if (last < text.length) el.append(text.slice(last));
+  if (last < text.length) el.append(localizeDigits(text.slice(last)));
   return el;
 }
 

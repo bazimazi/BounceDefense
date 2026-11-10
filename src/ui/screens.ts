@@ -20,7 +20,7 @@ import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_FORMATS, statLabel, type StatKey } from '../sim/stats';
 import { RECALL_COOLDOWN, type World } from '../sim/world';
 import type { Game } from '../game';
-import { LANGUAGES, t, type UiKey } from '../i18n';
+import { LANGUAGES, localizeDigits, t, type UiKey } from '../i18n';
 import { amount, badge, iconButton, meter, orb, pips, richText, sectionTitle, segmented, statTile, wallet } from './components';
 import { h } from './dom';
 import { icon, type IconName } from './icons';
@@ -242,11 +242,12 @@ export class UI {
   private hubShell(tab: HubTab, page: HTMLElement): HTMLElement {
     const p = this.p;
     const first = !p.tutorialDone;
+    // Battle carries the big logo, so its header is only the wallet and Settings.
     const title = tab === 'battle' ? null : t(`tab.${tab}` as UiKey);
     const badges = this.badges();
-    return h('div', { class: `screen hub hub-${tab} ${first ? 'hub-first' : ''}`, 'data-tab': tab },
+    return h('div', { class: `screen hub hub-${tab}`, 'data-tab': tab },
       h('header', { class: 'hub-top' },
-        title ? h('h2', { class: 'hub-title' }, title) : h('div', { class: 'hub-brand', lang: 'en', dir: 'ltr' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }), 'BOUNCE', h('b', {}, 'DEFENSE')),
+        title ? h('h2', { class: 'hub-title' }, title) : null,
         first ? null : wallet(p),
         iconButton('gear', t('common.settings'), () => { this.click(); this.settings(); }, 'settings-btn')),
       h('main', { class: 'hub-page' }, page),
@@ -413,20 +414,27 @@ export class UI {
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
     const pactsOn = this.game.flags().includes('pacts');
     if (!pactsOn) s.pacts.clear();
+    // English splits the logo over two lines; a one-word brand (Persian "توپاد") leaves the second empty.
+    const title2 = t('home.title2');
     const stage = h('div', { class: 'battle-stage' },
-      h('h1', { class: 'title logo', lang: 'en', dir: 'ltr' }, t('home.title1'), h('span', {}, t('home.title2'))),
+      h('h1', { class: 'title logo' }, t('home.title1'), title2 ? h('span', {}, title2) : null),
       h('p', { class: 'tagline' }, t('home.subtitle')));
+    const launch = (config: { arena: string; difficulty: number; pacts: string[] }, label: string | null, enabled = true) => h('button', {
+      class: 'primary big launch-button play-btn', disabled: !enabled,
+      onclick: () => { this.click(); this.game.startRun(config); },
+    }, icon(enabled ? 'play' : 'lock'), h('span', { class: 'launch-copy' }, h('strong', {}, t('home.play')), label ? h('small', {}, label) : null));
+    // First visit: the logo and one button. The run itself teaches aiming with a guide hand.
     if (!p.tutorialDone) {
       return h('div', { class: 'battle first-run' }, stage,
-        h('div', { class: 'battle-panel' },
-          h('ol', { class: 'first-steps reveal' },
-            [['aim', 'home.guide1'], ['play', 'home.guide2'], ['star', 'home.guide3']].map(([glyph, key], i) =>
-              h('li', {}, h('span', { class: 'step-icon' }, icon(glyph as IconName)), h('b', {}, String(i + 1)), h('span', {}, t(key as UiKey))))),
-          h('button', {
-            class: 'primary big launch-button play-btn', onclick: () => { this.click(); this.game.startRun({ arena: 'proving', difficulty: 0, pacts: [] }); },
-          }, icon('play'), h('span', { class: 'launch-copy' }, h('strong', {}, t('home.start')), h('small', {}, t('home.firstContact'))))));
+        h('div', { class: 'battle-panel' }, launch({ arena: 'proving', difficulty: 0, pacts: [] }, null)));
     }
 
+    // Every choice appears only once it is a real choice: a second arena, a second difficulty
+    // (after the first clear, which also opens the Daily Seed), researched pacts, a second core.
+    const arenaChoice = ARENAS.filter(a => isArenaUnlocked(p, a.id)).length > 1;
+    const clearedOnce = maxDifficulty(p) > 0;
+    const coreChoice = p.unlockedCores.length > 1;
+    if (!arenaChoice) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
     const unlocked = isArenaUnlocked(p, s.arena);
     const arena = ARENA_MAP[s.arena];
     const index = ARENAS.indexOf(arena);
@@ -440,7 +448,7 @@ export class UI {
         h('div', { class: 'arena-name' }, unlocked ? arena.name : t('common.lockedName', { name: arena.name })),
         h('div', { class: 'arena-meta' }, unlocked ? [icon('skull'), boss?.name ?? ''] : [icon('lock'), arena.unlockReq?.text ?? '']),
         cleared >= 0 ? h('span', { class: 'arena-cleared', style: `--c:${DIFFICULTIES[cleared].color}` }, icon('check'), DIFFICULTIES[cleared].name) : null));
-    this.swipe(card, moveArena);
+    if (arenaChoice) this.swipe(card, moveArena);
     const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
     const daily = dailyRecord(p);
     const core = CORE_MAP[p.loadout.core] ?? CORE_MAP.striker;
@@ -448,47 +456,40 @@ export class UI {
     const goal = nextGoals(p, 1)[0];
     const difficulty = DIFFICULTIES[s.difficulty];
 
-    return h('div', { class: 'battle' }, stage,
+    return h('div', { class: `battle ${clearedOnce ? '' : 'lean'}` }, stage,
       h('div', { class: 'battle-panel reveal' },
         goal ? h('button', { class: 'goal-ribbon', onclick: () => { this.click(); this.goalSegment = 'next'; this.openTab('goals'); } },
           h('span', { class: 'goal-ribbon-icon' }, icon('flag')),
           h('span', { class: 'goal-ribbon-copy' }, h('small', {}, t('home.nextGoal')), h('b', {}, goal.text), goal.max > 1 ? meter(goal.cur / goal.max, 'gold thin') : null),
           icon('forward', 'chev')) : null,
-        h('div', { class: 'arena-carousel' },
+        arenaChoice ? h('div', { class: 'arena-carousel' },
           iconButton('back', t('home.prevArena'), () => moveArena(-1), 'carousel-btn'),
           card,
-          iconButton('forward', t('home.nextArena'), () => moveArena(1), 'carousel-btn')),
+          iconButton('forward', t('home.nextArena'), () => moveArena(1), 'carousel-btn')) : card,
         // Unlocked tiers plus the next one as a visible goal; later tiers stay out of the way.
-        h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
+        clearedOnce ? h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
           const ok = i <= maxDifficulty(p);
           return h('button', {
             role: 'radio', 'aria-checked': String(s.difficulty === i), disabled: !ok, class: s.difficulty === i ? 'on' : '',
             'data-motion-key': `difficulty:${i}`, style: `--c:${d.color}`,
             onclick: () => { s.difficulty = i; this.click(); this.home(); },
           }, ok ? null : icon('lock'), h('span', {}, d.name));
-        })),
-        h('div', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc),
+        })) : null,
+        clearedOnce ? h('div', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc) : null,
         h('div', { class: 'play-row' },
-          h('button', { class: 'side-btn daily-btn', 'aria-label': t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
-            icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)),
-          h('button', {
-            class: 'primary big launch-button play-btn', disabled: !unlocked,
-            onclick: () => { this.click(); this.game.startRun({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }); },
-          }, icon(unlocked ? 'play' : 'lock'),
-          h('span', { class: 'launch-copy' }, h('strong', {}, t('home.play')),
-            h('small', {}, mult !== 1 ? t('home.playReward', { difficulty: difficulty.name, n: mult.toFixed(2) }) : difficulty.name))),
+          clearedOnce ? h('button', { class: 'side-btn daily-btn', 'aria-label': t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
+            icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)) : null,
+          launch({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] },
+            mult !== 1 ? t('home.playReward', { difficulty: difficulty.name, n: mult.toFixed(2) }) : clearedOnce ? difficulty.name : null, unlocked),
           pactsOn ? h('button', { class: `side-btn pacts-btn ${s.pacts.size ? 'active' : ''}`, 'aria-label': t('setup.pacts'), onclick: () => { this.click(); this.pactSheet(); } },
-            icon('pact'), h('span', {}, s.pacts.size ? t('home.pactsOn', { n: s.pacts.size }) : t('home.pactsShort')))
-            // Before Research unlocks pacts, the slot previews the feature instead of hiding it.
-            : h('button', { class: 'side-btn pacts-btn locked', 'aria-label': t('setup.pactsLocked'), onclick: () => { this.click(); this.toast(t('setup.pactsLocked').replace(/^🔒\s*/u, ''), 'lock'); } },
-              icon('lock'), h('span', {}, t('home.pactsShort')))),
-        h('button', { class: 'core-strip', style: `--core:${core.color}`, onclick: () => { this.click(); this.armoryIndex = -1; this.openTab('armory'); } },
+            icon('pact'), h('span', {}, s.pacts.size ? t('home.pactsOn', { n: s.pacts.size }) : t('home.pactsShort'))) : null),
+        coreChoice ? h('button', { class: 'core-strip', style: `--core:${core.color}`, onclick: () => { this.click(); this.armoryIndex = -1; this.openTab('armory'); } },
           orb(core.color, 'small'),
           h('span', { class: 'core-strip-copy' },
             h('b', {}, core.name),
             daily.claimed && daily.best > 0 ? h('small', {}, t('home.nav.dailyBest', { n: formatNum(daily.best) })) : meter(mastery.need ? mastery.into / mastery.need : 1, 'pink thin')),
           h('span', { class: 'core-strip-mastery' }, h('small', {}, t('home.mastery')), h('b', {}, String(mastery.level))),
-          icon('forward', 'chev'))));
+          icon('forward', 'chev')) : null));
   }
 
   private swipe(el: HTMLElement, move: (d: number) => void): void {
@@ -886,8 +887,8 @@ export class UI {
           'aria-valuetext': `${percent}%`, style: `--volume:${percent}%`,
           oninput: (e: Event) => {
             const input = e.target as HTMLInputElement, value = Number(input.value);
-            s[key] = value / 100; readout.textContent = `${value}%`;
-            input.style.setProperty('--volume', `${value}%`); input.setAttribute('aria-valuetext', `${value}%`); apply();
+            s[key] = value / 100; readout.textContent = localizeDigits(`${value}%`);
+            input.style.setProperty('--volume', `${value}%`); input.setAttribute('aria-valuetext', localizeDigits(`${value}%`)); apply();
           },
         }));
     };
@@ -1035,13 +1036,13 @@ export class UI {
     this.surgeBtn.classList.toggle('active', w.surge.active > 0);
     if (ready !== wasReady && ready) { feedback(this.surgeBtn); this.game.haptic('ready'); }
     const label = this.surgeBtn.querySelector('.surge-text')!;
-    const text = w.surge.active > 0 ? t('hud.surgeActive') : ready ? t('hud.surgeReady') : `${Math.floor(frac * 100)}%`;
+    const text = localizeDigits(w.surge.active > 0 ? t('hud.surgeActive') : ready ? t('hud.surgeReady') : `${Math.floor(frac * 100)}%`);
     if (label.textContent !== text) label.textContent = text;
     if (this.recallBtn) {
       this.recallBtn.disabled = !w.canRecall() || !this.game.controlsEnabled;
       this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / RECALL_COOLDOWN) * 100}%`);
       const small = this.recallBtn.querySelector('small')!;
-      const status = w.recallCooldown > 0 ? t('hud.seconds', { n: Math.ceil(w.recallCooldown) }) : w.canRecall() ? t('hud.ready') : t('hud.noBalls');
+      const status = localizeDigits(w.recallCooldown > 0 ? t('hud.seconds', { n: Math.ceil(w.recallCooldown) }) : w.canRecall() ? t('hud.ready') : t('hud.noBalls'));
       if (small.textContent !== status) small.textContent = status;
     }
     if (this.compactTelemetry && this.root.hasAttribute('data-compact-hud')) {
@@ -1058,8 +1059,8 @@ export class UI {
         boss: w.director.bossActive ? t('hud.bossHp', { name: BOSSES.find(b => b.id === w.director.bossId)?.name ?? t('hud.boss'), pct: Math.ceil(bossHp / (bossMax || 1) * 100) }) :
           t('hud.bossIn', { time: formatTime(Math.max(0, w.director.bossTime - w.time)) }),
       };
-      for (const [key, value] of Object.entries(labels)) {
-        const el = this.compactTelemetry.querySelector(`.compact-${key}`)!;
+      for (const [key, raw] of Object.entries(labels)) {
+        const el = this.compactTelemetry.querySelector(`.compact-${key}`)!, value = localizeDigits(raw);
         if (el.textContent !== value) el.textContent = value;
       }
       const xp = this.compactTelemetry.querySelector('.compact-xp > span') as HTMLElement;
@@ -1075,7 +1076,7 @@ export class UI {
       this.hintEl = null;
       return;
     }
-    if (this.hintEl?.textContent === text) return;
+    if (this.hintEl?.textContent === localizeDigits(text)) return;
     retire(this.hintEl, 'notice', 0);
     cancelWithin(this.hintEl);
     this.hintEl?.remove();
@@ -1353,7 +1354,7 @@ export class UI {
       if (!screen.isConnected) return;
       const k = Math.max(0, Math.min(1, (now - start) / dur));
       const e = 1 - Math.pow(1 - k, 3);
-      for (const c of counters) c.textContent = `+${formatNum(Math.round(Number(c.dataset.count) * e))}`;
+      for (const c of counters) c.textContent = localizeDigits(`+${formatNum(Math.round(Number(c.dataset.count) * e))}`);
       const due = Math.floor(k * 8);
       if (k > 0 && due > ticks && counters.length) { ticks = due; this.game.audio.play('coin', 1 + ticks * 0.06, 0.45); }
       if (k < 1) requestAnimationFrame(step);

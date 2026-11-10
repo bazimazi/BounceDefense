@@ -44,10 +44,12 @@ function First-Existing([string[]]$paths) {
 # --- Toolchain -----------------------------------------------------------------
 Step 'Toolchain'
 if (-not $env:JAVA_HOME) {
-  $env:JAVA_HOME = First-Existing @(
-    'C:\Program Files (x86)\Android\openjdk\jdk-17.0.14',
-    'C:\Program Files\Android\openjdk\jdk-17*',
-    'C:\Program Files\Android\Android Studio\jbr')
+  # Newest JDK 17+ shipped with the Visual Studio Android workload; its version
+  # changes with VS updates, so pick it by pattern instead of a fixed path.
+  $jdk = Get-ChildItem 'C:\Program Files (x86)\Android\openjdk', 'C:\Program Files\Android\openjdk' -Directory -Filter 'jdk-*' -ErrorAction SilentlyContinue |
+    Where-Object { (Test-Path (Join-Path $_.FullName 'bin\java.exe')) -and ([int]($_.Name -replace '^jdk-(\d+).*', '$1') -ge 17) } |
+    Sort-Object { [version]($_.Name -replace '^jdk-', '') } -Descending | Select-Object -First 1
+  $env:JAVA_HOME = if ($jdk) { $jdk.FullName } else { First-Existing @('C:\Program Files\Android\Android Studio\jbr') }
 }
 if (-not $env:ANDROID_HOME) {
   $env:ANDROID_HOME = First-Existing @(

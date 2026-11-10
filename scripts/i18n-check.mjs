@@ -16,8 +16,8 @@ fs.mkdirSync(out, { recursive: true });
 const url = process.env.URL ?? 'http://localhost:4173';
 const errors = [], checks = [];
 const PERSIAN = /[؀-ۿ]/;
-/** Latin words allowed to remain in a Persian UI: the logo and the system tag. */
-const LATIN_OK = new Set(['BOUNCE', 'DEFENSE', 'English']);
+/** Latin words allowed to remain in a Persian UI: the system tag. */
+const LATIN_OK = new Set(['English']);
 const rx = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 const word = (phrase) => rx(String(phrase).replace(/^[^\p{L}\p{N}]+/u, '').split(/\s+·|\s+\(/)[0]);
 
@@ -82,6 +82,7 @@ try {
       });
       const bad = found.filter(text => (text.match(/[A-Za-z]{3,}/g) ?? []).some(w => !LATIN_OK.has(w)));
       assert.deepEqual(bad, [], `${name}: untranslated text`);
+      assert.deepEqual(found.filter(text => /[0-9]/.test(text)), [], `${name}: numbers not in Persian digits`);
       assert.ok(found.some(text => PERSIAN.test(text)), `${name}: no Persian text at all`);
     };
     const back = async () => { await ready(); await page.getByRole('button', { name: fa['common.back'], exact: true }).tap(); await ready(); };

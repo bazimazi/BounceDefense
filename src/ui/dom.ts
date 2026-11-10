@@ -1,3 +1,5 @@
+import { localizeDigits } from '../i18n';
+
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, unknown> & { class?: string; style?: string; onclick?: (e: MouseEvent) => void };
 
@@ -12,6 +14,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
       el.className = String(v);
     } else if (k === 'style') {
       el.setAttribute('style', String(v));
+    } else if (LABELS.has(k)) {
+      el.setAttribute(k, localizeDigits(String(v)));
     } else if (k in el && typeof v !== 'string') {
       (el as unknown as Record<string, unknown>)[k] = v;
     } else {
@@ -29,10 +33,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
   return el;
 }
 
+/** Text people read or hear; numbers in it follow the language (see `localizeDigits`). */
+const LABELS = new Set(['title', 'aria-label', 'aria-valuetext']);
+
 function append(el: HTMLElement, children: Child[]): void {
   for (const c of children) {
     if (c === null || c === undefined || c === false) continue;
     if (Array.isArray(c)) append(el, c);
-    else el.append(c instanceof Node ? c : String(c));
+    else el.append(c instanceof Node ? c : localizeDigits(String(c)));
   }
 }

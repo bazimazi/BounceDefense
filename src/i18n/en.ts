@@ -22,21 +22,18 @@ export const en = {
   'common.lockedText': '🔒 {text}',
 
   // ---- home
+  /** The game's name: the browser tab and window title. */
+  'app.name': 'Bounce Defense',
   'home.title1': 'BOUNCE',
   'home.title2': 'DEFENSE',
   'home.subtitle': 'Find your orbit. Bring down the stars.',
   'home.play': 'PLAY',
-  'home.start': 'START',
-  'home.firstContact': 'FIRST CONTACT',
   'home.mastery': 'Mastery',
   'home.nav.daily': 'Daily Seed',
   'home.nav.dailyBest': 'Today’s best: {n} destroyed',
   'home.nav.talents': 'Talents',
   'home.nav.workshop': 'Workshop',
   'home.nav.research': 'Research',
-  'home.guide1': 'Drag anywhere to aim',
-  'home.guide2': 'Release to fire',
-  'home.guide3': 'Thread the 3 signals for Starfall',
   'home.runs': 'RUNS',
   'home.wins': 'WINS',
   'home.bestCombo': 'BEST COMBO',
@@ -48,7 +45,6 @@ export const en = {
   'setup.difficulty': 'Difficulty',
   'setup.pacts': 'Risk Pacts',
   'setup.pactReward': '+{n}% rewards',
-  'setup.pactsLocked': '🔒 Research "Risk Pacts" to make runs harder for greater rewards.',
   'setup.multiplier': 'Reward multiplier ×{n}',
 
   // ---- loadout
