@@ -61,7 +61,7 @@ try {
       const issues = [];
       const describe = el => `${el.tagName.toLowerCase()}.${el.className} ${el.textContent.trim().slice(0, 65)}`;
       const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
-      for (const el of document.querySelectorAll('.screen, .levelup, .screen button, .levelup button, .topbar, .hub-top, .hub-page, .tabbar, .battle-panel, .arena-card, .play-row, .goal-ribbon, .core-strip, .segmented, .shop-row, .slot-row, .option-row, .pact-row, .preset-card, .codex-grid, .codex-tile, .goal-card, .achievement, .stat-grid, .stat-tile, .reward-row, .mastery-card, .unlock-card, .buildcard, .offer, .offer-actions, .results-actions, .row:not(.wrap), .statgrid, .settings-section, .settings-audio, .setting-volume, .setting-volume-head, .setting-switch, .aim-modes, .aim-option, .talent-panel, .talent-tree, .talent-detail, .sheet, .modal, .compact-main, .compact-details, .compact-main > div, .compact-details > div')) {
+      for (const el of document.querySelectorAll('.screen, .levelup, .screen button, .levelup button, .topbar, .hub-top, .hub-page, .tabbar, .battle-panel, .arena-card, .play-row, .goal-chip, .run-card, .segmented, .shop-row, .slot-row, .option-row, .pact-row, .preset-card, .codex-grid, .codex-tile, .goal-card, .achievement, .stat-grid, .stat-tile, .reward-row, .mastery-card, .unlock-card, .buildcard, .offer, .offer-actions, .results-actions, .row:not(.wrap), .statgrid, .settings-section, .settings-audio, .setting-volume, .setting-volume-head, .setting-switch, .aim-modes, .aim-option, .talent-panel, .talent-tree, .talent-detail, .sheet, .modal, .compact-main, .compact-details, .compact-main > div, .compact-details > div')) {
         if (!visible(el)) continue;
         // Rank badges deliberately extend a few pixels beyond their talent node, inside the slot;
         // a draft card may scroll its own text in phone landscape.
@@ -231,7 +231,7 @@ try {
       await page.locator('.codex-tile').first().click(); await settle();
       await capture('codex-sheet', width, height);
       await at('settings', width, height, () => window.game.ui.settings());
-      await at('pacts-sheet', width, height, () => { const g = window.game; g.ui.home(); g.ui.pactSheet(); });
+      await at('run-sheet', width, height, () => { const g = window.game; g.ui.home(); g.ui.runSheet(); });
       await page.evaluate(() => {
         const p = window.game.profile; p.coins = p.cores = p.research = 999999; window.game.ui.home();
       });

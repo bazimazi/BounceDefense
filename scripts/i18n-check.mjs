@@ -130,16 +130,17 @@ try {
     // The tab bar mirrors: Armory sits at the inline start, which is the right edge in RTL.
     const first = await ui.locator('.tabbar .tab-armory').boundingBox(), last = await ui.locator('.tabbar .tab-goals').boundingBox();
     assert.ok(first.x > last.x, 'tab bar mirrored in RTL');
-    // Difficulty names and pacts are localized data, not just UI strings.
+    // Difficulty names and pacts in Run setup are localized data, not just UI strings.
+    await ui.locator('.run-card').tap(); await ready(); await scan('run-setup');
     await page.getByRole('radio', { name: faContent.difficulty.veteran.name, exact: true }).tap(); await ready();
     assert.equal(await page.evaluate(() => window.game.ui.setup.difficulty), 1);
-    await ui.locator('.pacts-btn').tap(); await ready(); await scan('pacts'); await closeSheet();
     // A swipe toward the reading direction's end advances the arena carousel in RTL as well.
     const card = ui.locator('.arena-card');
     await card.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 21, clientX: 100, clientY: 200 });
     await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 21, clientX: 260, clientY: 205 });
     await ready();
     assert.equal(await page.evaluate(() => window.game.ui.setup.arena), 'foundry', 'swipe right advances in RTL');
+    await closeSheet();
     await tab('armory'); await scan('armory'); await shot('armory');
     await ui.locator('.slot-row').first().tap(); await ready(); await scan('part-sheet'); await closeSheet();
     await tab('forge'); await walkSegments('forge'); await shot('forge');

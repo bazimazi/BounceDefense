@@ -18,6 +18,7 @@ import type { DiscoveryCat, RunSummary } from '../meta/types';
 import { createArenaSurface } from '../render/arena';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_FORMATS, statLabel, type StatKey } from '../sim/stats';
+import { FIELD_TOP } from '../sim/types';
 import { RECALL_COOLDOWN, type World } from '../sim/world';
 import type { Game } from '../game';
 import { LANGUAGES, localizeDigits, t, type UiKey } from '../i18n';
@@ -63,7 +64,7 @@ interface CodexEntry { id: string; known: boolean; name: string; glyph: Node | s
 /** Tab-like controls whose selection moves a pill, and the containers whose scroll survives a re-render. */
 const SEGMENTS = '.segmented, .talent-tabs, .codex-tabs';
 const SELECTED = '[aria-selected="true"], [aria-checked="true"], .on';
-const SCROLLERS = '.scroll, .chip-scroller, .difficulty-options';
+const SCROLLERS = '.scroll, .chip-scroller';
 const segmentKind = (tabs: Element) => ['segmented', 'talent-tabs', 'codex-tabs'].find(c => tabs.classList.contains(c)) ?? '';
 interface ViewSnapshot {
   scrolls: [number, number][];
@@ -110,6 +111,10 @@ export class UI {
   layout(rect: { x: number; y: number; w: number; h: number }): void {
     Object.assign(this.root.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px` });
     this.root.style.setProperty('--s', String(rect.w / 540));
+    // Home fades the live arena into the page: where its field begins, and how far the canvas
+    // sits inside the centered menu column (desktop and landscape letterbox it at the sides).
+    this.root.style.setProperty('--field-top', `${Math.round(rect.y + FIELD_TOP * rect.w / 540)}px`);
+    this.root.style.setProperty('--stage-inset', `${Math.max(0, Math.round(rect.x - Math.max(0, (innerWidth - (innerHeight <= 500 ? 820 : 560)) / 2)))}px`);
     this.root.toggleAttribute('data-compact-hud', rect.w < 300 && innerWidth > innerHeight);
     this.root.toggleAttribute('data-small-controls', rect.w < 360);
   }
@@ -161,7 +166,7 @@ export class UI {
       if (left) s.scrollLeft = left;
     });
     // A chosen chip at the edge of a sideways rail is brought fully into view.
-    for (const rail of el.querySelectorAll<HTMLElement>('.chip-scroller, .difficulty-options')) {
+    for (const rail of el.querySelectorAll<HTMLElement>('.chip-scroller')) {
       const chip = rail.querySelector<HTMLElement>(SELECTED);
       if (!chip) continue;
       const r = rail.getBoundingClientRect(), c = chip.getBoundingClientRect();
@@ -342,7 +347,7 @@ export class UI {
 
   // ------------------------------------------------------------------ sheets & dialogs
   /** Bottom sheets keep the page underneath in view and close with Back, the scrim or ×. */
-  private openSheet(key: string, title: string, build: () => (Node | null)[], cls = ''): void {
+  private openSheet(key: string, title: string, build: () => (Node | null)[], cls = '', footer?: () => (Node | null)[]): void {
     const render = () => {
       const close = () => { this.click(); this.navigation.dismiss(); };
       const el = h('div', { class: `levelup sheet-layer ${cls}`.trim(), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
@@ -350,7 +355,8 @@ export class UI {
         h('div', { class: 'sheet' },
           h('div', { class: 'sheet-grip', 'aria-hidden': 'true' }),
           h('div', { class: 'sheet-head' }, h('h3', {}, title), iconButton('close', t('common.close'), close, 'sheet-close')),
-          h('div', { class: 'sheet-body scroll' }, build())));
+          h('div', { class: 'sheet-body scroll' }, build()),
+          footer ? h('div', { class: 'sheet-foot' }, footer()) : null));
       this.showOverlay(el, `sheet:${key}`);
     };
     this.navigation.view(`sheet:${key}`, render);
@@ -407,38 +413,144 @@ export class UI {
     this.home();
   }
 
+  /**
+   * Home is a lobby: the live arena and the logo above, then one decision and one action. Run
+   * options live behind the run card in a sheet, so the page never stacks more than two controls
+   * above the tab bar.
+   */
   private battlePage(): HTMLElement {
     const p = this.p;
     const s = this.setup;
+    const first = !p.tutorialDone;
+    const choice = this.setupChoices();
     if (!ARENA_MAP[s.arena]) s.arena = 'proving';
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
-    const pactsOn = this.game.flags().includes('pacts');
-    if (!pactsOn) s.pacts.clear();
+    if (!choice.pacts) s.pacts.clear();
+    if (!choice.arena) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
+    this.game.previewArena(first ? 'proving' : s.arena);
     // English splits the logo over two lines; a one-word brand (Persian "توپاد") leaves the second empty.
     const title2 = t('home.title2');
+    const goal = first ? undefined : nextGoals(p, 1)[0];
     const stage = h('div', { class: 'battle-stage' },
       h('h1', { class: 'title logo' }, t('home.title1'), title2 ? h('span', {}, title2) : null),
-      h('p', { class: 'tagline' }, t('home.subtitle')));
-    const launch = (config: { arena: string; difficulty: number; pacts: string[] }, label: string | null, enabled = true) => h('button', {
-      class: 'primary big launch-button play-btn', disabled: !enabled,
-      onclick: () => { this.click(); this.game.startRun(config); },
-    }, icon(enabled ? 'play' : 'lock'), h('span', { class: 'launch-copy' }, h('strong', {}, t('home.play')), label ? h('small', {}, label) : null));
+      first ? h('p', { class: 'tagline' }, t('home.subtitle')) : null,
+      goal ? this.goalChip(goal) : null);
     // First visit: the logo and one button. The run itself teaches aiming with a guide hand.
-    if (!p.tutorialDone) {
-      return h('div', { class: 'battle first-run' }, stage,
-        h('div', { class: 'battle-panel' }, launch({ arena: 'proving', difficulty: 0, pacts: [] }, null)));
-    }
+    if (first) return h('div', { class: 'battle first-run' }, stage, h('div', { class: 'battle-panel' }, this.playButton({ arena: 'proving', difficulty: 0, pacts: [] })));
 
     // Every choice appears only once it is a real choice: a second arena, a second difficulty
-    // (after the first clear, which also opens the Daily Seed), researched pacts, a second core.
-    const arenaChoice = ARENAS.filter(a => isArenaUnlocked(p, a.id)).length > 1;
-    const clearedOnce = maxDifficulty(p) > 0;
-    const coreChoice = p.unlockedCores.length > 1;
-    if (!arenaChoice) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
-    const unlocked = isArenaUnlocked(p, s.arena);
+    // (after the first clear, which also opens the Daily Seed) or researched pacts.
+    const configurable = choice.arena || choice.difficulty || choice.pacts;
+    const daily = dailyRecord(p);
+    return h('div', { class: `battle ${configurable ? '' : 'lean'}` }, stage,
+      h('div', { class: 'battle-panel reveal' },
+        configurable ? this.runCard(choice.arena) : null,
+        h('div', { class: 'play-row' },
+          choice.difficulty ? h('button', { class: 'daily-btn', 'aria-label': t('home.nav.daily'), title: t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
+            icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)) : null,
+          this.playButton({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }, isArenaUnlocked(p, s.arena)))));
+  }
+
+  private setupChoices(): { arena: boolean; difficulty: boolean; pacts: boolean } {
+    const p = this.p;
+    return {
+      arena: ARENAS.filter(a => isArenaUnlocked(p, a.id)).length > 1,
+      difficulty: maxDifficulty(p) > 0,
+      pacts: this.game.flags().includes('pacts'),
+    };
+  }
+
+  private playButton(config: { arena: string; difficulty: number; pacts: string[] }, enabled = true): HTMLButtonElement {
+    return h('button', {
+      class: 'primary big launch-button play-btn', disabled: !enabled,
+      onclick: () => { this.click(); this.game.startRun(config); },
+    }, icon(enabled ? 'play' : 'lock'), h('strong', {}, t('home.play')));
+  }
+
+  /** The next goal, one line under the logo; its bottom edge fills as it nears completion. */
+  private goalChip(goal: Goal): HTMLElement {
+    const progress = goal.max > 1 ? Math.max(0, Math.min(1, goal.cur / goal.max)) : 0;
+    return h('button', {
+      class: 'goal-chip', style: `--p:${progress.toFixed(3)}`, 'aria-label': `${t('home.nextGoal')}: ${goal.text}`,
+      onclick: () => { this.click(); this.goalSegment = 'next'; this.openTab('goals'); },
+    }, icon('flag'), h('span', { class: 'goal-chip-text' }, goal.text), icon('forward', 'chev'));
+  }
+
+  private moveArena(d: number): void {
+    const s = this.setup;
+    const index = Math.max(0, ARENAS.findIndex(a => a.id === s.arena));
+    s.arena = ARENAS[(index + d + ARENAS.length) % ARENAS.length].id;
+    this.click();
+    this.game.previewArena(s.arena);
+  }
+
+  /** The current setup in one line; it opens the Run setup sheet, and swipes through arenas. */
+  private runCard(arenaChoice: boolean): HTMLElement {
+    const p = this.p;
+    const s = this.setup;
+    const arena = ARENA_MAP[s.arena];
+    const unlocked = isArenaUnlocked(p, arena.id);
+    const difficulty = DIFFICULTIES[s.difficulty];
+    const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
+    const card = h('button', {
+      class: `run-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}`,
+      onclick: () => { this.click(); this.runSheet(); },
+    },
+    h('span', { class: 'run-emblem', 'aria-hidden': 'true' }, icon(unlocked ? 'pin' : 'lock')),
+    h('span', { class: 'run-copy' },
+      h('b', {}, arena.name),
+      h('small', {}, unlocked
+        ? [h('i', { class: 'dot', style: `background:${difficulty.color}` }), mult !== 1 ? t('home.playReward', { difficulty: difficulty.name, n: mult.toFixed(2) }) : difficulty.name]
+        : arena.unlockReq?.text ?? '')),
+    s.pacts.size ? h('span', { class: 'run-pacts', title: t('home.pactsOn', { n: s.pacts.size }) }, icon('pact'), h('b', {}, String(s.pacts.size))) : null,
+    icon('forward', 'chev'));
+    if (arenaChoice) this.swipe(card, d => { this.moveArena(d); this.home(); });
+    return card;
+  }
+
+  private swipe(el: HTMLElement, move: (d: number) => void): void {
+    let start: { x: number; y: number } | null = null;
+    let swiped = 0;
+    el.addEventListener('pointerdown', e => { start = { x: e.clientX, y: e.clientY }; });
+    el.addEventListener('pointercancel', () => { start = null; });
+    el.addEventListener('pointerup', e => {
+      if (!start) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y; start = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        swiped = performance.now();
+        move((dx < 0 ? 1 : -1) * (document.dir === 'rtl' ? -1 : 1));
+      }
+    });
+    // A swipe on a tappable card is not also a tap.
+    el.addEventListener('click', e => { if (performance.now() - swiped < 400) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  }
+
+  /** Arena, difficulty and pacts in one sheet, with Play at hand once the run is set. */
+  runSheet(): void {
+    const title = t('home.setup');
+    const build = () => this.runSheetBody();
+    const footer = () => {
+      const s = this.setup;
+      const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
+      return [
+        mult !== 1 ? h('div', { class: 'run-total' }, icon('star'), t('setup.multiplier', { n: mult.toFixed(2) })) : null,
+        this.playButton({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] }, isArenaUnlocked(this.p, s.arena)),
+      ];
+    };
+    this.runSheetRender = () => this.openSheetInPlace('run', title, build, footer);
+    this.openSheet('run', title, build, 'run-sheet', footer);
+  }
+
+  private runSheetRender: (() => void) | null = null;
+
+  private runSheetBody(): (Node | null)[] {
+    const p = this.p;
+    const s = this.setup;
+    const choice = this.setupChoices();
+    const update = () => this.runSheetRender?.();
     const arena = ARENA_MAP[s.arena];
     const index = ARENAS.indexOf(arena);
-    const moveArena = (d: number) => { s.arena = ARENAS[(index + d + ARENAS.length) % ARENAS.length].id; this.click(); this.home(); };
+    const unlocked = isArenaUnlocked(p, arena.id);
     const cleared = p.cleared[arena.id] ?? -1;
     const boss = BOSSES.find(b => b.id === arena.bossId);
     const card = h('div', { class: `arena-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}` },
@@ -448,87 +560,46 @@ export class UI {
         h('div', { class: 'arena-name' }, unlocked ? arena.name : t('common.lockedName', { name: arena.name })),
         h('div', { class: 'arena-meta' }, unlocked ? [icon('skull'), boss?.name ?? ''] : [icon('lock'), arena.unlockReq?.text ?? '']),
         cleared >= 0 ? h('span', { class: 'arena-cleared', style: `--c:${DIFFICULTIES[cleared].color}` }, icon('check'), DIFFICULTIES[cleared].name) : null));
-    if (arenaChoice) this.swipe(card, moveArena);
-    const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
-    const daily = dailyRecord(p);
-    const core = CORE_MAP[p.loadout.core] ?? CORE_MAP.striker;
-    const mastery = masteryLevel(p.mastery[core.id] ?? 0);
-    const goal = nextGoals(p, 1)[0];
+    const move = (d: number) => { this.moveArena(d); update(); };
+    if (choice.arena) this.swipe(card, move);
     const difficulty = DIFFICULTIES[s.difficulty];
-
-    return h('div', { class: `battle ${clearedOnce ? '' : 'lean'}` }, stage,
-      h('div', { class: 'battle-panel reveal' },
-        goal ? h('button', { class: 'goal-ribbon', onclick: () => { this.click(); this.goalSegment = 'next'; this.openTab('goals'); } },
-          h('span', { class: 'goal-ribbon-icon' }, icon('flag')),
-          h('span', { class: 'goal-ribbon-copy' }, h('small', {}, t('home.nextGoal')), h('b', {}, goal.text), goal.max > 1 ? meter(goal.cur / goal.max, 'gold thin') : null),
-          icon('forward', 'chev')) : null,
-        arenaChoice ? h('div', { class: 'arena-carousel' },
-          iconButton('back', t('home.prevArena'), () => moveArena(-1), 'carousel-btn'),
-          card,
-          iconButton('forward', t('home.nextArena'), () => moveArena(1), 'carousel-btn')) : card,
+    return [
+      sectionTitle(t('setup.arena')),
+      choice.arena ? h('div', { class: 'arena-carousel' },
+        iconButton('back', t('home.prevArena'), () => move(-1), 'carousel-btn'),
+        card,
+        iconButton('forward', t('home.nextArena'), () => move(1), 'carousel-btn')) : card,
+      ...(choice.difficulty ? [
+        sectionTitle(t('setup.difficulty')),
         // Unlocked tiers plus the next one as a visible goal; later tiers stay out of the way.
-        clearedOnce ? h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
+        h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
           const ok = i <= maxDifficulty(p);
           return h('button', {
             role: 'radio', 'aria-checked': String(s.difficulty === i), disabled: !ok, class: s.difficulty === i ? 'on' : '',
             'data-motion-key': `difficulty:${i}`, style: `--c:${d.color}`,
-            onclick: () => { s.difficulty = i; this.click(); this.home(); },
+            onclick: () => { if (s.difficulty === i) return; s.difficulty = i; this.click(); update(); },
           }, ok ? null : icon('lock'), h('span', {}, d.name));
-        })) : null,
-        clearedOnce ? h('div', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc) : null,
-        h('div', { class: 'play-row' },
-          clearedOnce ? h('button', { class: 'side-btn daily-btn', 'aria-label': t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
-            icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)) : null,
-          launch({ arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts] },
-            mult !== 1 ? t('home.playReward', { difficulty: difficulty.name, n: mult.toFixed(2) }) : clearedOnce ? difficulty.name : null, unlocked),
-          pactsOn ? h('button', { class: `side-btn pacts-btn ${s.pacts.size ? 'active' : ''}`, 'aria-label': t('setup.pacts'), onclick: () => { this.click(); this.pactSheet(); } },
-            icon('pact'), h('span', {}, s.pacts.size ? t('home.pactsOn', { n: s.pacts.size }) : t('home.pactsShort'))) : null),
-        coreChoice ? h('button', { class: 'core-strip', style: `--core:${core.color}`, onclick: () => { this.click(); this.armoryIndex = -1; this.openTab('armory'); } },
-          orb(core.color, 'small'),
-          h('span', { class: 'core-strip-copy' },
-            h('b', {}, core.name),
-            daily.claimed && daily.best > 0 ? h('small', {}, t('home.nav.dailyBest', { n: formatNum(daily.best) })) : meter(mastery.need ? mastery.into / mastery.need : 1, 'pink thin')),
-          h('span', { class: 'core-strip-mastery' }, h('small', {}, t('home.mastery')), h('b', {}, String(mastery.level))),
-          icon('forward', 'chev')) : null));
-  }
-
-  private swipe(el: HTMLElement, move: (d: number) => void): void {
-    let start: { x: number; y: number } | null = null;
-    el.addEventListener('pointerdown', e => { start = { x: e.clientX, y: e.clientY }; });
-    el.addEventListener('pointercancel', () => { start = null; });
-    el.addEventListener('pointerup', e => {
-      if (!start) return;
-      const dx = e.clientX - start.x, dy = e.clientY - start.y; start = null;
-      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.4) move((dx < 0 ? 1 : -1) * (document.dir === 'rtl' ? -1 : 1));
-    });
-  }
-
-  private pactSheet(): void {
-    const s = this.setup;
-    const build = () => {
-      const mult = rewardMultiplier({ difficulty: s.difficulty, pacts: [...s.pacts] });
-      return [
+        })),
+        h('p', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc),
+      ] : []),
+      ...(choice.pacts ? [
+        sectionTitle(t('setup.pacts')),
         h('p', { class: 'sheet-intro' }, t('home.pactsIntro')),
         h('div', { class: 'pact-list' }, PACTS.map(pc => h('button', {
           class: `pact-row ${s.pacts.has(pc.id) ? 'on' : ''}`, role: 'switch', 'aria-checked': String(s.pacts.has(pc.id)),
           'data-motion-key': `pact:${pc.id}`,
-          onclick: () => { if (s.pacts.has(pc.id)) s.pacts.delete(pc.id); else s.pacts.add(pc.id); this.click(); this.pactSheetRender?.(); },
+          onclick: () => { if (s.pacts.has(pc.id)) s.pacts.delete(pc.id); else s.pacts.add(pc.id); this.click(); update(); },
         },
         h('span', { class: 'pact-icon' }, pc.icon),
         h('span', { class: 'pact-copy' }, h('b', {}, pc.name), h('small', {}, pc.desc)),
         h('span', { class: 'pact-reward' }, t('setup.pactReward', { n: Math.round(pc.reward * 100) })),
         h('span', { class: 'check' }, icon('check'))))),
-        h('div', { class: 'sheet-total' }, t('setup.multiplier', { n: mult.toFixed(2) })),
-      ];
-    };
-    this.pactSheetRender = () => this.openSheetInPlace('pacts', t('setup.pacts'), build);
-    this.openSheet('pacts', t('setup.pacts'), build);
+      ] : []),
+    ];
   }
 
-  private pactSheetRender: (() => void) | null = null;
-
   /** Re-render an open sheet's contents without a new history entry. */
-  private openSheetInPlace(key: string, title: string, build: () => (Node | null)[]): void {
+  private openSheetInPlace(key: string, title: string, build: () => (Node | null)[], footer?: () => (Node | null)[]): void {
     if (this.overlay?.dataset.view !== `sheet:${key}`) return;
     const body = this.overlay.querySelector<HTMLElement>('.sheet-body');
     if (!body) return;
@@ -536,8 +607,10 @@ export class UI {
     const interactionKey = this.interactionKey; this.interactionKey = null;
     body.replaceChildren(...build().filter((x): x is Node => !!x));
     body.scrollTop = top;
+    const foot = this.overlay.querySelector<HTMLElement>('.sheet-foot');
+    if (foot && footer) foot.replaceChildren(...footer().filter((x): x is Node => !!x));
     this.overlay.setAttribute('aria-label', title);
-    const target = interactionKey ? body.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(interactionKey)}"]`) : null;
+    const target = interactionKey ? this.overlay.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(interactionKey)}"]`) : null;
     if (target) feedback(target);
   }
 

@@ -34,6 +34,8 @@ export class Game {
   /** Debug-panel time scale; multiplies every simulation and effect step. */
   timeScale = 1;
   private demo: World | null = null;
+  /** The arena Home has selected; the attract demo plays there. */
+  private demoArena: string | null = null;
   private demoRng = new Rng(99);
   private mode: 'menu' | 'run' = 'menu';
   private paused = false;
@@ -146,11 +148,18 @@ export class Game {
     if (!this.demo) this.newDemo();
   }
 
+  /** Home shows the arena the player has chosen, live, behind the menu. */
+  previewArena(id: string): void {
+    if (this.demoArena === id) return;
+    this.demoArena = id;
+    if (this.mode === 'menu' && this.demo && this.demo.arena.id !== id) this.newDemo();
+  }
+
   private newDemo(): void {
     this.renderer.reset();
     const arenas = ['proving', 'foundry', 'rift'];
     this.demo = new World(defaultConfig({
-      seed: this.demoRng.int(1, 1e9), arena: this.demoRng.pick(arenas), core: this.demoRng.pick(['striker', 'pyro', 'tesla', 'cryo']),
+      seed: this.demoRng.int(1, 1e9), arena: this.demoArena ?? this.demoRng.pick(arenas), core: this.demoRng.pick(['striker', 'pyro', 'tesla', 'cryo']),
       pool: FULL_POOL,
     }));
     this.demo.hp = this.demo.maxHp = 400;

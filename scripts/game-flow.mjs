@@ -151,16 +151,18 @@ try {
       [.05, .05, 'slingshot', true, 'pyro', 1]);
     mark('Settings touch/keyboard/drag controls, debug visibility and save/reload');
 
-    // Battle tab: arena carousel, difficulty, pacts sheet, then launch with that configuration.
+    // Battle tab: the run card opens Run setup (arena carousel, difficulty, pacts); Home then
+    // summarizes the choice and launches with it.
     assert.equal(await isHome(), true);
+    await ui.locator('.run-card').tap(); await ready();
     await ui.getByRole('button', { name: 'Next arena', exact: true }).tap(); await ready();
     assert.match(await ui.locator('.arena-name').textContent(), /Foundry/);
     await ui.getByRole('radio', { name: 'Veteran', exact: true }).tap(); await ready();
-    await ui.locator('.pacts-btn').tap(); await ready();
     const pact = row('.pact-row', 'Glass Heart'); await pact.focus(); await pact.press('Space'); await ready();
     assert.equal(await pact.getAttribute('aria-checked'), 'true');
     await closeSheet();
-    assert.match(await ui.locator('.pacts-btn').textContent(), /1/);
+    assert.match(await ui.locator('.run-card').textContent(), /Foundry.*Veteran/);
+    assert.match(await ui.locator('.run-pacts').textContent(), /1/);
     await ui.locator('.play-btn').tap();
     await page.waitForFunction(() => window.game.world && !window.game.world.cfg.tutorial);
     assert.deepEqual(await state(() => [window.game.world.cfg.arena, window.game.world.cfg.difficulty, window.game.world.cfg.pacts, window.game.world.talents.bankcraft]), ['foundry', 1, ['fragile'], 1]);

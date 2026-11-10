@@ -183,13 +183,15 @@ Store submission is manual:
 ## Interface
 
 The menus are a hub with a five-tab bar, thumb-reachable on a phone: **Armory**, **Forge**, **Battle**
-(the raised center tab and Home), **Codex** and **Goals**, with Settings behind the gear. The tab bar
+(the center tab and Home), **Codex** and **Goals**, with Settings behind the gear. The tab bar
 appears after First Contact, whose home is just a start button and three one-line steps; red dots
 mark only actions that can be taken now (an affordable unlock, a talent point, a Research node).
 
-- **Battle** keeps every launch choice on one screen over the live attract-mode game: the next goal
-  (one tap to Goals), an arena carousel drawn from each arena's real floor, the unlocked difficulties
-  plus the next one as a teaser, Daily Seed, Risk Pacts in a sheet, and the equipped core.
+- **Battle** is a lobby over the live attract-mode game, which plays in the selected arena: the logo
+  with the next goal under it (one tap to Goals), then one run card and Play. The run card sums up
+  arena, difficulty, reward multiplier and active pacts; tap it for **Run setup** (an arena carousel
+  drawn from each arena's real floor, the unlocked difficulties plus the next one as a teaser, and
+  Risk Pacts, with Play pinned below) or swipe it to change arena. Daily Seed sits beside Play.
 - **Armory** shows the core as a large orb in a carousel (unlock in place), parts and trails as
   slots that open a bottom sheet to compare, buy and equip, and three build presets.
 - **Forge** holds every permanent upgrade: Workshop (coins), Research (sorted available first) and
