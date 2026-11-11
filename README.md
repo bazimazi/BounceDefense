@@ -163,7 +163,7 @@ Without this file, release builds are unsigned. Debug builds are always signed w
 Bump `version` in `package.json`, commit, then push a matching tag:
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 It can also be started from the Actions tab. Desktop jobs run the tests and upload the installers;
