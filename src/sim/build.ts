@@ -21,6 +21,8 @@ export class Build implements BuildView {
   stats!: Stats;
   /** Upgrade order, used for the build summary. */
   readonly history: string[] = [];
+  /** Evolution Catalyst: levels taken off every recipe ingredient that needs two or more. */
+  evoDiscount = 0;
 
   constructor(
     public core: string,
@@ -96,14 +98,19 @@ export class Build implements BuildView {
   }
 
   eligibleEvolutions(): string[] {
-    return EVOLUTIONS.filter((e) => !this.evolutions.has(e.id) && e.recipe.every((r) => this.level(r.id) >= r.level)).map((e) => e.id);
+    return EVOLUTIONS.filter((e) => !this.evolutions.has(e.id) && e.recipe.every((r) => this.level(r.id) >= this.recipeLevel(r.level))).map((e) => e.id);
+  }
+
+  /** The level an evolution ingredient needs in this run. */
+  recipeLevel(level: number): number {
+    return level > 1 ? Math.max(1, level - this.evoDiscount) : level;
   }
 
   /** Evolutions where some but not all ingredients are in place (used to nudge offers). */
   eligibleEvolutionsPartial(): string[] {
     return EVOLUTIONS.filter((e) => {
       if (this.evolutions.has(e.id)) return false;
-      const met = e.recipe.filter((r) => this.level(r.id) >= r.level).length;
+      const met = e.recipe.filter((r) => this.level(r.id) >= this.recipeLevel(r.level)).length;
       return met > 0 && met < e.recipe.length;
     }).map((e) => e.id);
   }

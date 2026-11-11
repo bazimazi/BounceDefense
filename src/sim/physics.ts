@@ -144,6 +144,10 @@ function steer(w: World, b: Mover, dt: number, spd: number, stormDir?: number): 
       const pull = (pulse ? -2600 : 820 + e.phase * 300) * (1 - d / 320);
       ax += (dx / d) * pull;
       ay += (dy / d) * pull;
+    } else if (e.def.id === 'boss_sovereign' && d < 280) {
+      const pull = (560 + e.phase * 160) * (1 - d / 280);
+      ax += (dx / d) * pull;
+      ay += (dy / d) * pull;
     } else if (e.def.ai === 'pulsar' && e.t1 > 0 && d < 130) {
       const push = -2400 * (1 - d / 130);
       ax += (dx / d) * push;

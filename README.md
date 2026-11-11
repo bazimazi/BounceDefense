@@ -194,8 +194,9 @@ mark only actions that can be taken now (an affordable unlock, a talent point, a
   Risk Pacts, with Play pinned below) or swipe it to change arena. Daily Seed sits beside Play.
 - **Armory** shows the core as a large orb in a carousel (unlock in place), parts and trails as
   slots that open a bottom sheet to compare, buy and equip, and three build presets.
-- **Forge** holds every permanent upgrade: Workshop (coins), Research (sorted available first) and
-  Talents. Talents apply the moment they are learned; respecs are free between runs, so there is
+- **Forge** holds every permanent upgrade: Workshop (coins, in four sections: Foundations,
+  Blueprints, Refits and Overdrive, with a completion meter across all of them), Research (three
+  branches, Foundations, Advanced and Apex, open studies first, with its own completion meter) and Talents. Talents apply the moment they are learned; respecs are free between runs, so there is
   no draft to apply or discard.
 - **Codex** is a collection grid with a completion ring; each entry opens a detail sheet.
 - **Goals** splits next goals, challenges, badges and mastery into segments.
@@ -297,15 +298,15 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 | Synergies | 25 (known, hidden and legendary), discovered automatically |
 | Evolutions | 13 (Inferno, Tesla Storm, Glacier, Blood Moon, Hydra Swarm, Railgun, Plague Ball, Singularity, Thunderhead, Minefield, Grim Reaper, Aegis, Prism Ball) |
 | Relics | 32 run-long artifacts (common, rare, legendary and cursed) found in relic caches; most are earned through Goals and Pilot Rank |
-| Talents | 4 persistent trees (Kinetics, Conduit, Warden, Havoc), 20 ranked nodes, 4 capstones; 20-point shared budget and free respecs |
+| Talents | 4 persistent trees (Kinetics, Conduit, Warden, Havoc) of 11 nodes each across six tiers (44 nodes, 120 ranks), 4 capstones and 4 apex capstones; deep tiers need wins on Abyss, Singularity and Eternity; a 100-point budget whose later points cost more Mastery XP; free respecs |
 | Elemental reactions | 6 (Steam Burst, Overload, Supercharge, Combustion, Necrosis, Neurotoxin) |
 | Enemies | 22 behaviours (spitters, phantoms, juggernauts, necromancers, aegis drones, pulsars, element-immune golems…) plus fragments, eggs and a golden wisp; composition squads |
 | Elite modifiers | 10, stackable (including Undying, Phasing, Fission and Commander) |
-| Bosses | 6 scripted fights: Fortress, Magnetar, Hydra, Broodmother (eggs and acid), Chronarch (time stop and stasis), Architect (walls and ward pylons) |
+| Bosses | 6 scripted fights: Fortress, Magnetar, Hydra, Broodmother (eggs and acid), Chronarch (time stop and stasis), Architect (walls and ward pylons); plus 4 apex bosses that close Abyss and every tier above it: Colossus (damage budget and quakes), Twin Eclipse (two bound bosses that revive each other), Overmind (shielded by its swarm) and Void Sovereign (three phases, sealed behind void shards) |
 | Arenas | 6 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells, spore pods, tesla pylons, booster pads |
 | Arena events | 12, five of them hostile (the only kind Abyss allows) |
-| Difficulty | 5 tiers, then a 20-step Ascension ladder above Abyss with stacking rules and growing rewards; 10 Risk Pacts |
-| Meta | Coins, Cores and Research; Workshop (capped), 37-node Research tree, Mastery 1–30, Pilot Rank 1–100, 41 achievements, 34 challenges, daily and weekly contracts, Codex, 18 trails, build presets |
+| Difficulty | 10 tiers (Normal to Abyss, then Oblivion, Cataclysm, Singularity, Pandemonium and Eternity), and a 20-step Ascension ladder playable on Abyss and above, with stacking rules and growing rewards; 10 Risk Pacts |
+| Meta | Coins, Cores and Research; Workshop in four sections (14 Foundations, 17 Blueprints, 10 core Refits, 10 Overdrive lines of 50 levels each; 683 levels in all), 54-node Research tree in three branches (Foundations, Advanced, Apex; 657 points in all), Mastery 1–30, Pilot Rank 1–100, 44 achievements, 39 challenges, daily and weekly contracts, Codex, 18 trails, build presets |
 | Modes | Standard run, Endless continuation after a victory, Daily Seed (the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; the day's best is shown on Home) |
 
 ### Long-term progression
@@ -318,8 +319,34 @@ The pause screen includes a flight manual. Run results count power shots, starfa
   Contagion and reacts with the other three: fire ignites it (Combustion), freezing rots armor
   (Necrosis), lightning stuns and carries it down the chain (Neurotoxin). Golems and Insulators are
   immune to one element, so a single-element build has to adapt.
-- **Ascension.** Winning on Abyss opens Ascension 1; each win at the highest open level opens the
-  next, up to 20. Rules stack (tougher enemies, fewer rerolls, faster projectiles, earlier enrages,
+- **Beyond Abyss.** Five more tiers follow Abyss. Each opens close to Abyss and turns into a wall
+  later in the run (`lateHp` ramps enemy health in from minute one to minute seven), and each ends with
+  one or more apex bosses. Abyss itself now closes with the Colossus.
+- **Overdrive.** Ten long Workshop lines (damage, HP, damage taken, boss damage, crit damage, elements,
+  explosions, shards, XP and Surge, coins) with 50 levels each and steep prices. Every difficulty won
+  opens five more levels of every line, so coins farmed on easier tiers become the power that beats the
+  next one, and buying everything takes many hours on the top tiers.
+- **Blueprints.** Seventeen mechanics bought with coins, each level gated by a difficulty won:
+  extra rerolls and banishes, Surge charged at the start, line regeneration, armor pierce, overkill,
+  a barrier, a bigger relic draft, Second Wind (the line holds once per run), execute, a fifth draft
+  card, longer Surge, more opening picks, a seventh ball and the Overdrive Catalyst (Overdrive levels
+  ahead of your wins). Prices run from 1,500 to 450,000 coins, about 2 million in all. The strongest
+  levers (opening picks, Second Wind) open only from Abyss up, so they do not flatten the classic tiers.
+- **Refits.** One ten-level line per ball core (+2% damage and a signature stat such as burn damage,
+  chain damage or lifesteal) that only applies to runs with that core. A level opens every three
+  Mastery levels of the core, so tuning every core means playing every core; about 630,000 coins.
+- **Advanced and Apex Research.** Seventeen studies beyond the founding tree, each opened by a win
+  (Veteran up to Eternity) or an apex kill, priced 8 to 120 Research (543 in all, against 114 for the
+  founding tree). Advanced: Scholarship (wins pay more Research, up to +4 on Eternity), Gilded Elites,
+  Relic Attunement, Aftershock (Surge echoes at half length), Spoils of War (a free pick per boss),
+  Sentinel Drone (a drone on the line fires a shard every 6 s), Midas Protocol, Evolution Catalyst
+  (recipes need one level less) and Cryostasis Failsafe (the field freezes once when the line runs low).
+  Apex: Trophy Hunter, Twin Sentinels, Combat Archive, Signature Mastery (runs open with the core's
+  signature upgrade), Industrial Theory (Workshop prices −15%), Fate Weaving (a rare card in every draft),
+  Core Resonance (half the passive stats of the most-mastered other core) and Grand Unification, which
+  needs every other study and an Eternity win and opens each run with a legendary relic.
+- **Ascension.** Winning on Abyss opens Ascension 1; each win at the highest open level (on Abyss or
+  any tier above it) opens the next, up to 20. Rules stack (tougher enemies, fewer rerolls, faster projectiles, earlier enrages,
   a third boss…) and each level adds 12% to rewards and extra Cores on victory.
 - **Pilot Rank.** Every run's Mastery XP also fills an account-wide rank from 1 to 100. Each rank pays
   coins; every third adds Research, every fourth Cores, and milestones unlock relics and trails.
@@ -350,6 +377,21 @@ dependent nodes. Each run snapshots the allocation, shown in its pause menu.
 The fourth tree, **Havoc**, amplifies explosions, crits and shards, and its capstone sends a
 shockwave from every 25th kill. With 20 points a pilot can complete one tree and most of a second,
 but never two capstones.
+
+**Deep tiers.** Below each capstone, every tree continues for three more tiers (19 more ranks per
+tree): a tier that opens with an Abyss win and 11 points in the tree, one that opens with a Singularity
+win and 16 points, and an apex capstone that needs an Eternity win and 26 points. Points 21 to 100
+cost 800, 900, … 8,700 Mastery XP each (about 390,000 XP for all hundred), so the budget keeps
+growing for hundreds of runs, and 100 points fill three trees but never all four.
+
+| Tree | Abyss tier | Singularity tier | Apex capstone |
+| --- | --- | --- | --- |
+| Kinetics | Long Shot, Momentum Core | Hypervelocity, Deadeye | Perpetual Motion: every 5th wall bounce throws off a full-power shard |
+| Conduit | Venom Lore, Permafrost | Elemental Supremacy, Hemorrhage | Elemental Storm: enemies dying with two or more elements burst |
+| Warden | Fortitude, Aegis Field | Regenerator, Iron Will | Unbreakable: once per run the line holds at 1 HP and ignores damage for 4 s |
+| Havoc | Demolisher, Bladestorm | Carnage, Critical Mass | Armageddon: every 15th kill calls a meteor on the densest group |
+
+The capstone tier also gained a second node in each tree (Ricochet Engine, Overload, Bulwark, Sunder).
 
 Talents spend no Coins, Cores or Research. Their modifiers compose through the existing
 stat pipeline, while capstones use isolated effects: wall bounces charge Surge on a
@@ -458,8 +500,71 @@ flags that shape a run, every relic), and `--asc` runs Abyss at chosen Ascension
 npm run balance -- --runs 8 --core striker,pyro,tesla,cryo,venom,gemini --diff 4 --asc 0,5,10,15,20 --meta end --full
 ```
 
-The bot's Abyss win rate falls steadily up the ladder: about 63% at Ascension 0, 59% at 5, 50% at 10,
-40% at 15 and 21% at 20, where a third boss joins the fight. New upgrades start locked behind
+With the Colossus closing Abyss, `--meta end` wins about 70% there and `--meta max` about 43%
+(about 70% with Overdrive 10). `--od N` sets every Overdrive line to level N, and the endgame tiers
+are tuned against it, each hard at entry and easing as Overdrive grows (win rate, three cores, 8 runs
+per cell):
+
+| Tier | Overdrive 5k−10 | Overdrive 5k (the cap after winning the tier below) |
+| --- | --- | --- |
+| Oblivion (5) | ~70% at 15 | ~88% at 25 |
+| Cataclysm (6) | ~50% at 20 | ~55% at 30 |
+| Singularity (7) | ~20% at 25 | ~55% at 35 |
+| Pandemonium (8) | ~17% at 30 | ~38% at 40 |
+| Eternity (9) | ~17% at 35 | ~25% at 45 |
+
+```bash
+npm run balance -- --runs 8 --core striker,pyro,tesla --diff 7 --meta end --od 35
+```
+
+`--bp K` adds every Blueprint level that opens once difficulty K is won, and `--refit N` sets every
+core's Refit to level N. With them, the journey looks like this (three cores, 8 to 12 runs per cell):
+
+| Profile | Win rate |
+| --- | --- |
+| Abyss, `--meta max` (no Blueprints) | ~38% |
+| Abyss, `--meta max --bp 3` (every Blueprint open after Inferno) | ~53% |
+| Abyss, `--meta end --bp 3` | ~81% |
+| Oblivion, `--meta end --od 25 --bp 4 --refit 4` | ~88% |
+| Cataclysm, `--meta end --od 30 --bp 5 --refit 5` | ~50% |
+| Pandemonium, `--meta end --od 40 --bp 7 --refit 7` | ~50% |
+| Eternity, `--meta end --od 45 --bp 8 --refit 8` | ~46% |
+| Eternity, everything bought (`--od 50 --bp 9 --refit 10`) | ~55% |
+
+Singularity, Pandemonium and Eternity got a steeper late-run HP ramp (`lateHp` 5.6, 6 and 7.8) once
+research landed, so the Overdrive-only table further up reads a little easier than the game now plays.
+
+`--tp N` spends N talent points (Warden, then Havoc, Kinetics and Conduit, deep tiers as if the tier
+below had been won; `--tpwin K` overrides that). With the whole kit, including the talent budget a
+player plausibly holds at each step, the tiers beyond Abyss were stiffened again (late HP 7 / 8 / 12
+and boss HP 34 / 46 / 76 on Singularity, Pandemonium and Eternity):
+
+| Profile (16 runs per core) | Win rate |
+| --- | --- |
+| Singularity, `--od 35 --bp 6 --refit 6 --research 6 --tp 50` | ~73% |
+| Pandemonium, `--od 40 --bp 7 --refit 7 --research 7 --tp 60` | ~48% |
+| Eternity, `--od 45 --bp 8 --refit 8 --research 8 --tp 70` | ~59% |
+| Eternity, everything (`--od 50 --bp 9 --refit 10 --research 9 --tp 100 --tpwin 9`) | ~94%; ~83% at Ascension 10, ~75% at 20 |
+
+`--research K` adds every Advanced and Apex study open after winning difficulty K, and
+`--without a,b` drops research flags to measure one study. With the full kit at each step (Overdrive
+5k, Blueprints and Refits to the tier below, research to the tier below; three cores, 16 runs each):
+
+| Tier | Without research | With research |
+| --- | --- | --- |
+| Abyss (`--meta max --bp 3`) | ~56% | ~67% |
+| Oblivion | | ~90% |
+| Singularity | ~58% | ~73% |
+| Eternity | ~48% | ~44–54% |
+| Eternity, everything bought and studied | | ~73% |
+
+Sentinel Drone was the strongest study (about +20 points on Singularity at a 4 s interval), so it
+fires every 6 s and opens only after an Abyss win, like Spoils of War. Research adds about a fifth to
+top-tier income. The bot never rerolls or banishes, so the drafting Blueprints help a human more than
+these numbers show. Opening picks were the strongest single lever measured: one extra free pick alone lifted Abyss
+from about 38% to 58%, which is why Launch Protocol opens only after an Abyss win.
+
+The output also reports the final boss's median fight time and the average coins a run pays. New upgrades start locked behind
 Research or Goals: every card added to the opening pool dilutes the draft, and 13 unlocked additions
 once dropped Nightmare wins from about 42% to 19%.
 

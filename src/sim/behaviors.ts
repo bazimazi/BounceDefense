@@ -441,5 +441,28 @@ export const BEHAVIORS: Record<string, Behavior> = {
       explode(w, e.x, e.y, 80 * w.build.stats.area, w.build.stats.damage * 1.1, 2, { src: 'quake', color: '#ff8a6b' });
     },
   },
+  // ---- Apex capstones of the deep talent tiers.
+  talent_perpetual: {
+    onWall(w, b) {
+      if (b.kind !== 'main' || b.wallBounces === 0 || b.wallBounces % 5 !== 0) return;
+      shardAt(w, b, b.x, b.y, null, 1 / Math.max(0.01, w.build.stats.shardPower));
+    },
+  },
+  talent_storm: {
+    onKill(w, e, info) {
+      const st = e.st;
+      const statuses = Number(st.burnT > 0) + Number(st.chill > 0 || st.frozenT > 0) + Number(st.bleed > 0) + Number(st.poison > 0);
+      if (statuses < 2 || info.depth >= 3 || !ready(w, w, 'storm', 0.15)) return;
+      const s = w.build.stats;
+      explode(w, e.x, e.y, 70 * s.area, s.damage * 1.2 * s.elementPower, info.depth + 1, { src: 'quake', color: '#c49bff' });
+    },
+  },
+  talent_armageddon: {
+    onKill(w) {
+      if (w.run.kills % 15 !== 0) return;
+      const target = densest(w);
+      if (target) meteor(w, target.x, target.y, w.build.stats.damage * 2.5, 2);
+    },
+  },
 };
 

@@ -144,6 +144,11 @@ try {
     await tab('armory'); await scan('armory'); await shot('armory');
     await ui.locator('.slot-row').first().tap(); await ready(); await scan('part-sheet'); await closeSheet();
     await tab('forge'); await walkSegments('forge'); await shot('forge');
+    for (let i = 1; i < 4; i++) { await ui.locator('.workshop-tabs button').nth(i).tap(); await ready(); await scan(`workshop/${i}`); }
+    await ui.locator('.workshop-tabs button').nth(0).tap(); await ready();
+    await segment(fa['home.nav.research']);
+    for (let i = 1; i < 3; i++) { await ui.locator('.research-tabs button').nth(i).tap(); await ready(); await scan(`research/${i}`); }
+    await ui.locator('.research-tabs button').nth(0).tap(); await ready();
     await segment(fa['home.nav.talents']);
     for (let tree = 0; tree < 3; tree++) {
       await ui.locator('.talent-tabs button').nth(tree).tap(); await ready();

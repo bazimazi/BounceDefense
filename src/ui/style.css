@@ -286,6 +286,11 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .difficulty-options .icon { width: 12px; height: 12px; }
 .difficulty-info { display: flex; align-items: center; gap: 7px; margin: 8px 2px 0; font-size: 12.5px; color: var(--text-2); }
 .difficulty-info .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.difficulty-apex { margin-top: 4px; color: #ff8ac4; }
+.difficulty-apex .icon { width: 13px; height: 13px; flex-shrink: 0; }
+@media (max-width: 360px) {
+  .difficulty-options button { padding: 6px 3px; font-size: 12px; }
+}
 .sheet-foot { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--stroke); }
 .sheet-foot .play-btn { flex: none; width: 100%; }
 .run-total { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 800; color: var(--gold); }
@@ -400,6 +405,22 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .buy-btn { min-width: 80px; min-height: 50px; padding: 6px 10px; border-radius: 13px; font-size: 15px; font-variant-numeric: tabular-nums; }
 .research-btn { background: linear-gradient(180deg, #8de9ff, #2fa8cc); color: #04202b; border-color: #c6f6ff; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #1b6f8a; }
 .max-chip { color: var(--gold); border-color: #ffcf4a44; }
+.level-chip { padding: 2px 8px; font-size: 11px; color: var(--gold); border-color: #ffcf4a33; vertical-align: middle; }
+.overdrive-intro { margin-bottom: 8px; }
+.overdrive-status { display: flex; flex-direction: column; gap: 6px; margin: 0 2px 12px; padding: 10px 12px; background: var(--surface); border: 1px solid #ff3b9a33; border-radius: 14px; }
+.overdrive-status b { font-size: 13px; }
+.overdrive-status small { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-3); }
+.overdrive-status small .icon { width: 12px; height: 12px; flex-shrink: 0; }
+.overdrive-meter > i { background: linear-gradient(90deg, #ff3b9a, #c27dff); }
+.workshop-tabs button, .research-tabs button { position: relative; }
+.workshop-tabs .badge.dot, .research-tabs .badge.dot { top: 4px; inset-inline-end: 6px; }
+.research-meter > i { background: linear-gradient(90deg, #7fd4ff, #c49bff); }
+.research-row.apex:not(.done) { border-color: #ff3b9a2e; }
+.workshop-completion { display: flex; flex-direction: column; gap: 6px; margin: 2px 2px 10px; }
+.workshop-completion > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.workshop-completion b { font-size: 13px; }
+.workshop-completion small { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.workshop-meter > i { background: linear-gradient(90deg, var(--gold), #ff9f43); }
 .done-chip { color: var(--green); border-color: #5ef59a44; padding: 6px; }
 .done-chip .icon { width: 18px; height: 18px; }
 
@@ -419,6 +440,11 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .talent-tree { padding: 18px 10px 16px; border: 1px solid color-mix(in srgb, var(--tree-color) 30%, transparent); border-radius: 18px; background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--tree-color) 15%, transparent), transparent 72%), var(--surface); }
 .talent-tier { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; }
 .talent-tier + .talent-tier { margin-top: 26px; }
+.talent-tier:has(> .talent-slot:only-child) { grid-template-columns: minmax(0, 1fr); }
+.talent-tier-label { margin: 22px 4px -6px; padding-top: 10px; border-top: 1px dashed #46576e; text-align: center; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: var(--text-3); }
+.talent-tier-label.open { color: var(--tree-color); border-top-color: color-mix(in srgb, var(--tree-color) 45%, transparent); }
+.talent-tier-label + .talent-tier { margin-top: 26px; }
+.talent-tier-label + .talent-tier .talent-slot.connected::before { display: none; }
 .talent-slot { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .talent-slot.connected::before { content: ''; position: absolute; top: -27px; width: 2px; height: 24px; background: #3d4c63; }
 .talent-slot.unlocked.connected::before { background: var(--tree-color); box-shadow: 0 0 8px var(--tree-color); }

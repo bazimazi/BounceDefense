@@ -1,6 +1,6 @@
 import { t as i18n } from '../i18n';
 import { HOSTILE_EVENTS } from '../data/arenas';
-import { BOSSES, BOSS_MAP, ELITE_MODS, ENEMY_MAP } from '../data/enemies';
+import { APEX_BOSSES, BOSSES, BOSS_MAP, ELITE_MODS, ENEMY_MAP } from '../data/enemies';
 import type { SquadDef } from '../data/types';
 import { BOSS_SCRIPTS, BOSS_SPAWN_Y } from './bosses';
 import { FIELD_TOP, W, type Enemy } from './types';
@@ -34,8 +34,16 @@ export class Director {
   endlessCycle = 0;
   /** Run time when Endless began. */
   endlessStart = 0;
+  /** This run's boss fights in order: rotation bosses (the arena's own first), then the tier's apex bosses. */
+  readonly queue: string[];
+  /** Endless order: the run's queue, then every other boss, repeating. */
+  readonly cycle: string[];
 
   constructor(private w: World) {
+    const rotation = [w.arena.bossId, ...BOSSES.map((b) => b.id).filter((b) => b !== w.arena.bossId)];
+    const regular = w.diff.bosses + (w.asc.has('thirdBoss') ? 1 : 0);
+    this.queue = [...rotation.slice(0, regular), ...(w.diff.apex ?? [])];
+    this.cycle = [...this.queue, ...[...rotation, ...APEX_BOSSES.map((b) => b.id)].filter((b) => !this.queue.includes(b))];
     const tut = !!w.cfg.tutorial;
     this.bossTime = tut ? 330 : 400 - (w.pacts.has('shortFuse') ? 90 : 0);
     // Even the hardest tiers give the build ~90 seconds to form before the first elite.
@@ -122,7 +130,7 @@ export class Director {
       if (t >= this.eventTime && !w.event && !this.squadsPaused) {
         // Abyss promises hostile events everywhere, even in arenas whose own list has none.
         const own = w.arena.events.filter((e) => HOSTILE_EVENTS.includes(e));
-        const pool = w.cfg.difficulty >= 4 ? (own.length ? own : HOSTILE_EVENTS) : w.arena.events;
+        const pool = w.diff.hostileEvents ? (own.length ? own : HOSTILE_EVENTS) : w.arena.events;
         w.startEvent(w.rng.pick(pool));
         this.eventTime = t + w.rng.range(85, 105);
       }
@@ -169,7 +177,7 @@ export class Director {
   spawnSquad(s: SquadDef): void {
     const w = this.w;
     // Elite traits on ordinary enemies phase in over the first 90 seconds.
-    const base = (w.cfg.difficulty >= 4 ? 0.15 : w.cfg.difficulty >= 3 ? 0.08 : 0) + (w.asc.has('traits') ? 0.1 : 0);
+    const base = w.diff.traitChance + (w.asc.has('traits') ? 0.1 : 0);
     const traitChance = base * Math.min(1, w.time / 90);
     for (const [id, x, y] of this.place(s)) {
       const e = w.spawnEnemy(id, x, y);
@@ -199,9 +207,8 @@ export class Director {
 
   spawnBoss(): void {
     const w = this.w;
-    // The arena's own boss first, then the others in turn; Endless keeps cycling through all of them.
-    const order = [w.arena.bossId, ...BOSSES.map((b) => b.id).filter((b) => b !== w.arena.bossId)];
-    const id = order[this.bossesSpawned % order.length];
+    // The run's queue first (the arena's own boss leads); Endless keeps cycling through every boss.
+    const id = this.cycle[this.bossesSpawned % this.cycle.length];
     const def = BOSS_MAP[id];
     const hpMult = w.diff.bossHpMult * (1 + 0.5 * this.bossesSpawned) * (this.endless ? 1 + this.endlessCycle * 0.8 : 1);
     const e = w.spawnEnemy(def.enemy, W / 2, BOSS_SPAWN_Y, { hpMult });
@@ -244,10 +251,15 @@ export class Director {
     w.emit({ t: 'flash', color: '#ffffff', a: 0.6 });
     w.emit({ t: 'slowmo', dur: 1.4, scale: 0.2 });
     w.emit({ t: 'sfx', name: 'victory' });
-    for (let i = 0; i < 12; i++) w.spawnPickup('coin', e.x, e.y, 12);
+    const trophy = w.flags.has('trophy');
+    for (let i = 0; i < 12; i++) w.spawnPickup('coin', e.x, e.y, trophy ? 24 : 12);
     for (let i = 0; i < 2; i++) w.spawnPickup('core', e.x, e.y, 1);
     for (let i = 0; i < 6; i++) w.spawnPickup('xp', e.x, e.y, 6);
-    w.grantRelic();
+    // Research rewards for a fallen boss: Grand Unification lifts its relic cache, Spoils of War adds a free pick,
+    // Trophy Hunter mends the line after an apex kill.
+    w.grantRelic(true, w.flags.has('unified') ? 1 : 0);
+    if (w.flags.has('spoils')) w.pendingLevels++;
+    if (trophy && BOSS_MAP[this.bossId]?.apex) w.heal(w.maxHp * 0.3, false);
 
     if (this.endless) {
       this.endlessCycle++;
@@ -255,12 +267,13 @@ export class Director {
       this.warned = false;
       return;
     }
-    const bosses = 1 + (w.diff.secondBoss ? 1 : 0) + (w.asc.has('thirdBoss') ? 1 : 0);
-    if (this.bossesSpawned < bosses) {
+    if (this.bossesSpawned < this.queue.length) {
+      const apex = BOSS_MAP[this.queue[this.bossesSpawned]]?.apex;
       this.bossTime = w.time + 80;
       this.warned = false;
       this.eventTime = w.time + 30;
-      w.banner(i18n('fx.assault'), '#ff7b54', i18n('fx.assaultSub'));
+      if (apex) w.banner(i18n('fx.apexAssault'), '#ff3b9a', i18n('fx.apexAssaultSub', { name: BOSS_MAP[this.queue[this.bossesSpawned]].name }));
+      else w.banner(i18n('fx.assault'), '#ff7b54', i18n('fx.assaultSub'));
       return;
     }
     this.bossTime = Infinity;

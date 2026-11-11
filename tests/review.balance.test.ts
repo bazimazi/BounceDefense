@@ -9,7 +9,7 @@ import { STARFALL_BOSS_SHARE } from '../src/sim/resonance';
 import { FLOOR_Y, SIM_DT } from '../src/sim/types';
 import { BALL_MILESTONES, LONE_FOCUS } from '../src/sim/world';
 import { ENDLESS_RAMP } from '../src/sim/director';
-import { BOSSES, ENEMY_MAP } from '../src/data/enemies';
+import { ALL_BOSSES, BOSSES, ENEMY_MAP } from '../src/data/enemies';
 import { emptyWorld, makeWorld, steps } from './helpers';
 
 function summary(over: Partial<RunSummary> = {}): RunSummary {
@@ -143,7 +143,7 @@ describe('offers', () => {
 
 describe('endless', () => {
   it('cycles through every boss instead of repeating one', () => {
-    const n = BOSSES.length;
+    const n = ALL_BOSSES.length;
     for (const [arena, diff] of [['proving', 0], ['foundry', 2], ['rift', 0], ['blight', 1], ['spire', 3], ['citadel', 4]] as const) {
       const w = makeWorld({ arena, difficulty: diff });
       const seen: string[] = [];

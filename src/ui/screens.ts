@@ -2,9 +2,12 @@ import { formatNum, formatTime } from '../core/math';
 import { dailySeed } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS } from '../data/arenas';
 import { CORES, CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
-import { BOSSES, CODEX_ENEMIES } from '../data/enemies';
-import { ACHIEVEMENTS, CHALLENGES, RESEARCH, WORKSHOP, masteryLevel, masteryRewards, rankLevel, rankRewards } from '../data/meta';
-import { ASCENSIONS, ASCENSION_REWARD } from '../data/ascension';
+import { ALL_BOSSES, BOSSES, BOSS_MAP, CODEX_ENEMIES } from '../data/enemies';
+import {
+  ACHIEVEMENTS, ALL_WORKSHOP, BLUEPRINTS, CHALLENGES, OVERDRIVE, OVERDRIVE_MAX, OVERDRIVE_PER_TIER, REFITS, REFIT_MASTERY_STEP, RESEARCH, WORKSHOP,
+  WORKSHOP_MAP, masteryLevel, masteryRewards, rankLevel, rankRewards, type WorkshopDef,
+} from '../data/meta';
+import { ASCENSIONS, ASCENSION_REWARD, ASCENSION_TIER } from '../data/ascension';
 import { CONTRACT_MAP } from '../data/contracts';
 import { RELICS, RELIC_COLOR, RELIC_MAP } from '../data/relics';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
@@ -13,7 +16,8 @@ import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
   buyPart, buyWorkshop, canResearch, canUnlockCore, contractBoard, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
-  isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, partsForSlot, rewardMultiplier, unlockCore, workshopCost, type Goal, type RunReport,
+  isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, overdriveOpen, partsForSlot, researchLock, rewardMultiplier, unlockCore, workshopCap, workshopCost, workshopLock,
+  type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
 import { talentProgress } from '../meta/talents';
@@ -47,6 +51,11 @@ function presetLabel(preset: { core: string; impact: string }): string {
 export type HubTab = 'armory' | 'forge' | 'battle' | 'codex' | 'goals';
 const HUB_TABS: HubTab[] = ['armory', 'forge', 'battle', 'codex', 'goals'];
 type ForgeSegment = 'workshop' | 'research' | 'talents';
+type WorkshopTab = 'classic' | 'blueprints' | 'refits' | 'overdrive';
+type ResearchTab = 'core' | 'advanced' | 'apex';
+const RESEARCH_TABS: ResearchTab[] = ['core', 'advanced', 'apex'];
+const researchBranch = (r: { branch?: 'advanced' | 'apex' }): ResearchTab => r.branch ?? 'core';
+const WORKSHOP_TABS: [WorkshopTab, WorkshopDef[]][] = [['classic', WORKSHOP], ['blueprints', BLUEPRINTS], ['refits', REFITS], ['overdrive', OVERDRIVE]];
 type GoalSegment = 'next' | 'challenges' | 'badges' | 'mastery';
 const DRAFT_ARM_MS = 420;
 
@@ -65,10 +74,10 @@ function arenaThumb(id: string): HTMLCanvasElement {
 interface CodexEntry { id: string; known: boolean; name: string; glyph: Node | string; color?: string; lines: (string | Node)[]; hint: string }
 
 /** Tab-like controls whose selection moves a pill, and the containers whose scroll survives a re-render. */
-const SEGMENTS = '.segmented, .talent-tabs, .codex-tabs';
+const SEGMENTS = '.segmented, .talent-tabs, .codex-tabs, .workshop-tabs, .research-tabs';
 const SELECTED = '[aria-selected="true"], [aria-checked="true"], .on';
 const SCROLLERS = '.scroll, .chip-scroller';
-const segmentKind = (tabs: Element) => ['segmented', 'talent-tabs', 'codex-tabs'].find(c => tabs.classList.contains(c)) ?? '';
+const segmentKind = (tabs: Element) => ['segmented', 'talent-tabs', 'codex-tabs', 'workshop-tabs', 'research-tabs'].find(c => tabs.classList.contains(c)) ?? '';
 interface ViewSnapshot {
   scrolls: [number, number][];
   segments: Record<string, { index: number; rect?: DOMRect }>;
@@ -90,6 +99,8 @@ export class UI {
   private screenEl: HTMLElement | null = null;
   private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>(), ascension: 0 };
   private forgeSegment: ForgeSegment = 'workshop';
+  private workshopTab: WorkshopTab = 'classic';
+  private researchTab: ResearchTab = 'core';
   private goalSegment: GoalSegment = 'next';
   private codexTab = 'balls';
   private armoryIndex = -1;
@@ -284,8 +295,8 @@ export class UI {
     };
   }
 
-  private workshopReady(): boolean {
-    return WORKSHOP.some(wd => { const c = workshopCost(this.p, wd.id); return c !== null && this.p.coins >= c; });
+  private workshopReady(list: WorkshopDef[] = ALL_WORKSHOP): boolean {
+    return list.some(wd => { const c = workshopCost(this.p, wd.id); return c !== null && this.p.coins >= c; });
   }
 
   private openTab(tab: HubTab): void {
@@ -456,10 +467,10 @@ export class UI {
           this.playButton(this.runOptions(), isArenaUnlocked(p, s.arena)))));
   }
 
-  /** The current setup as run options; Ascension only rides along on the hardest tier. */
+  /** The current setup as run options; Ascension only rides along on Abyss and above. */
   private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number } {
     const s = this.setup;
-    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty === DIFFICULTIES.length - 1 ? s.ascension : 0 };
+    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER ? s.ascension : 0 };
   }
 
   private pactAvailable(id: string): boolean {
@@ -600,7 +611,9 @@ export class UI {
           }, ok ? null : icon('lock'), h('span', {}, d.name));
         })),
         h('p', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc),
-        ...(s.difficulty === DIFFICULTIES.length - 1 ? this.ascensionPicker(update) : []),
+        // Apex tiers name the bosses waiting at the end of the run.
+        difficulty.apex?.length ? h('p', { class: 'difficulty-info difficulty-apex' }, icon('skull'), difficulty.rules[0]) : null,
+        ...(s.difficulty >= ASCENSION_TIER ? this.ascensionPicker(update) : []),
       ] : []),
       ...(choice.pacts ? [
         sectionTitle(t('setup.pacts')),
@@ -618,7 +631,7 @@ export class UI {
     ];
   }
 
-  /** Abyss carries the Ascension ladder: a stepper and the rules it adds. */
+  /** Abyss and every tier above it carry the Ascension ladder: a stepper and the rules it adds. */
   private ascensionPicker(update: () => void): (Node | null)[] {
     const p = this.p;
     const s = this.setup;
@@ -784,47 +797,150 @@ export class UI {
         { id: 'research', label: t('home.nav.research'), dot: RESEARCH.some(r => canResearch(p, r.id)) },
         { id: 'talents', label: t('home.nav.talents'), count: available > 0 ? String(available) : undefined },
       ], this.forgeSegment, choose, t('tab.forge')),
-      h('div', { class: 'scroll forge-body', 'data-segment-body': this.forgeSegment }, body));
+      this.forgeSegment === 'workshop' ? this.workshopTabs() : this.forgeSegment === 'research' ? this.researchTabs() : null,
+      h('div', {
+        class: 'scroll forge-body',
+        'data-segment-body': this.forgeSegment === 'workshop' ? `workshop:${this.workshopTab}` : this.forgeSegment === 'research' ? `research:${this.researchTab}` : this.forgeSegment,
+      }, body));
+  }
+
+  /** Three Research branches: the founding tree, then the Advanced and Apex branches that wins open. */
+  private researchTabs(): HTMLElement {
+    const p = this.p;
+    return h('div', { class: 'tabs research-tabs chip-scroller', role: 'tablist', 'aria-label': t('research.tabs') }, RESEARCH_TABS.map((id) => {
+      const list = RESEARCH.filter((r) => researchBranch(r) === id);
+      const done = list.filter((r) => p.researchNodes.includes(r.id)).length;
+      return h('button', {
+        role: 'tab', 'aria-selected': String(this.researchTab === id), class: this.researchTab === id ? 'on' : '', 'data-motion-key': `research-tab:${id}`,
+        onclick: () => { if (this.researchTab === id) return; this.researchTab = id; this.click(); this.renderTab('forge'); },
+      }, h('span', {}, t(`research.tab.${id}` as UiKey)), h('small', {}, `${done}/${list.length}`),
+      list.some((r) => canResearch(p, r.id)) ? h('span', { class: 'badge dot', 'aria-hidden': 'true' }) : null);
+    }));
+  }
+
+  /** Four Workshop sections, from the first coins to the endgame: each chip shows levels bought and a dot when one is affordable. */
+  private workshopTabs(): HTMLElement {
+    const p = this.p;
+    return h('div', { class: 'tabs workshop-tabs chip-scroller', role: 'tablist', 'aria-label': t('workshop.tabs') }, WORKSHOP_TABS.map(([id, list]) => {
+      const bought = list.reduce((a, wd) => a + Math.min(wd.maxLevel, p.workshop[wd.id] ?? 0), 0);
+      const total = list.reduce((a, wd) => a + wd.maxLevel, 0);
+      return h('button', {
+        role: 'tab', 'aria-selected': String(this.workshopTab === id), class: this.workshopTab === id ? 'on' : '', 'data-motion-key': `workshop-tab:${id}`,
+        onclick: () => { if (this.workshopTab === id) return; this.workshopTab = id; this.click(); this.renderTab('forge'); },
+      }, h('span', {}, t(`workshop.tab.${id}` as UiKey)), h('small', {}, `${bought}/${total}`),
+      this.workshopReady(list) ? h('span', { class: 'badge dot', 'aria-hidden': 'true' }) : null);
+    }));
   }
 
   private workshopBody(): HTMLElement[] {
     const p = this.p;
-    return [
-      h('p', { class: 'page-intro' }, t('workshop.intro')),
-      h('div', { class: 'shop-list reveal' }, WORKSHOP.map((wd) => {
-        const lvl = p.workshop[wd.id] ?? 0;
-        const cost = workshopCost(p, wd.id);
-        const affordable = cost !== null && p.coins >= cost;
-        return h('div', { class: `shop-row ${affordable ? 'affordable' : ''} ${cost === null ? 'maxed' : ''}`, 'data-motion-key': `workshop:${wd.id}` },
-          h('span', { class: 'shop-icon' }, wd.icon),
-          h('div', { class: 'shop-copy' },
-            h('div', { class: 'shop-name' }, h('b', {}, wd.name), pips(lvl, wd.maxLevel, cost !== null)),
-            h('div', { class: 'shop-desc' }, richText(lvl > 0 ? t('workshop.now', { text: wd.desc(lvl) }) : wd.desc(1))),
-            cost !== null && lvl > 0 ? h('div', { class: 'shop-next' }, richText(t('workshop.next', { text: wd.desc(lvl + 1) }))) : null),
-          cost === null ? h('span', { class: 'chip max-chip' }, t('common.max')) : h('button', {
-            class: 'gold buy-btn', disabled: !affordable, 'aria-label': t('workshop.buy', { name: wd.name, n: cost }),
-            onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.renderTab('forge'); } },
-          }, icon('coin'), h('b', {}, formatNum(cost))));
-      })),
-    ];
+    const open = overdriveOpen(p);
+    const next = maxDifficulty(p);
+    // What raises the Overdrive cap next: the first win, then a win on the next tier up.
+    const hint = open >= OVERDRIVE_MAX ? '' : open === 0
+      ? t('workshop.overdriveFirst', { n: OVERDRIVE_PER_TIER })
+      : t('workshop.overdriveNext', { name: DIFFICULTIES[next].name, n: OVERDRIVE_PER_TIER });
+    const bought = ALL_WORKSHOP.reduce((a, wd) => a + Math.min(wd.maxLevel, p.workshop[wd.id] ?? 0), 0);
+    const total = ALL_WORKSHOP.reduce((a, wd) => a + wd.maxLevel, 0);
+    const completion = h('div', { class: 'workshop-completion' },
+      h('div', {}, h('b', {}, t('workshop.completion', { pct: Math.floor((bought / total) * 100) })), h('small', {}, t('workshop.completionSub', { n: bought, max: total }))),
+      meter(bought / total, 'workshop-meter'));
+    const rows = (list: WorkshopDef[]) => h('div', { class: 'shop-list reveal' }, list.map((wd) => this.workshopRow(wd, hint)));
+    switch (this.workshopTab) {
+      case 'blueprints':
+        return [completion, h('p', { class: 'page-intro' }, t('workshop.blueprintsIntro')), rows(BLUEPRINTS)];
+      case 'refits': {
+        // Cores in play first: a locked core's refit waits at the bottom.
+        const sorted = [...REFITS].sort((a, b) => Number(p.unlockedCores.includes(b.core!)) - Number(p.unlockedCores.includes(a.core!)));
+        return [completion, h('p', { class: 'page-intro' }, t('workshop.refitsIntro', { n: REFIT_MASTERY_STEP })), rows(sorted)];
+      }
+      case 'overdrive':
+        return [
+          completion,
+          h('p', { class: 'page-intro overdrive-intro' }, t('workshop.overdriveIntro', { n: OVERDRIVE_PER_TIER })),
+          h('div', { class: 'overdrive-status' },
+            h('b', {}, t('workshop.overdriveOpen', { open, max: OVERDRIVE_MAX })),
+            meter(open / OVERDRIVE_MAX, 'overdrive-meter'),
+            hint ? h('small', {}, icon('lock'), hint) : null),
+          rows(OVERDRIVE),
+        ];
+      default:
+        return [completion, h('p', { class: 'page-intro' }, t('workshop.intro')), rows(WORKSHOP)];
+    }
+  }
+
+  /** Why a Workshop line's next level is closed, in words. */
+  private workshopLockText(wd: WorkshopDef, hint: string): string | null {
+    const lock = workshopLock(this.p, wd.id);
+    if (!lock) return null;
+    switch (lock.kind) {
+      case 'overdrive': return t('workshop.overdriveCapped', { hint });
+      case 'win': return t('workshop.lockWin', { name: DIFFICULTIES[lock.difficulty]?.name ?? '' });
+      case 'needs': return t('workshop.lockNeeds', { name: WORKSHOP_MAP[lock.id]?.name ?? lock.id });
+      case 'core': return t('workshop.lockCore', { name: CORE_MAP[lock.core]?.name ?? lock.core });
+      case 'mastery': return t('workshop.lockMastery', { name: CORE_MAP[lock.core]?.name ?? lock.core, level: lock.level });
+    }
+  }
+
+  private workshopRow(wd: WorkshopDef, hint: string): HTMLElement {
+    const p = this.p;
+    const lvl = p.workshop[wd.id] ?? 0;
+    const cost = workshopCost(p, wd.id);
+    const affordable = cost !== null && p.coins >= cost;
+    const maxed = lvl >= wd.maxLevel;
+    const lock = maxed ? null : this.workshopLockText(wd, hint);
+    // Long lines show a level counter instead of a row of pips.
+    const level = wd.maxLevel > 5
+      ? h('span', { class: 'chip level-chip', 'aria-label': t('common.levelOf', { level: lvl, max: wd.maxLevel }) }, t('workshop.level', { level: lvl, max: workshopCap(p, wd.id) }))
+      : pips(lvl, wd.maxLevel, cost !== null);
+    return h('div', { class: `shop-row ${affordable ? 'affordable' : ''} ${maxed ? 'maxed' : ''} ${lock && lvl === 0 ? 'locked' : ''}`, 'data-motion-key': `workshop:${wd.id}` },
+      h('span', { class: 'shop-icon' }, wd.icon),
+      h('div', { class: 'shop-copy' },
+        h('div', { class: 'shop-name' }, h('b', {}, wd.name), level),
+        h('div', { class: 'shop-desc' }, richText(lvl > 0 ? t('workshop.now', { text: wd.desc(lvl) }) : wd.desc(1))),
+        !maxed && lvl > 0 ? h('div', { class: 'shop-next' }, richText(t('workshop.next', { text: wd.desc(lvl + 1) }))) : null,
+        lock ? h('div', { class: 'shop-req' }, icon('lock'), lock) : null),
+      cost === null
+        ? (maxed ? h('span', { class: 'chip max-chip' }, t('common.max')) : h('span', { class: 'chip max-chip' }, icon('lock')))
+        : h('button', {
+          class: 'gold buy-btn', disabled: !affordable, 'aria-label': t('workshop.buy', { name: wd.name, n: cost }),
+          onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.renderTab('forge'); } },
+        }, icon('coin'), h('b', {}, formatNum(cost))));
   }
 
   private researchBody(): HTMLElement[] {
     const p = this.p;
-    const state = (id: string) => p.researchNodes.includes(id) ? 2 : RESEARCH.find(r => r.id === id)!.requires.every(x => p.researchNodes.includes(x)) ? 0 : 1;
-    const sorted = [...RESEARCH].sort((a, b) => state(a.id) - state(b.id));
+    const name = (id: string) => RESEARCH.find((y) => y.id === id)?.name ?? id;
+    // Open first, then closed, then studied.
+    const state = (id: string) => p.researchNodes.includes(id) ? 2 : researchLock(p, id) ? 1 : 0;
+    const list = RESEARCH.filter((r) => researchBranch(r) === this.researchTab);
+    const sorted = [...list].sort((a, b) => state(a.id) - state(b.id));
+    const done = RESEARCH.filter((r) => p.researchNodes.includes(r.id)).length;
+    const spent = RESEARCH.filter((r) => p.researchNodes.includes(r.id)).reduce((a, r) => a + r.cost, 0);
+    const total = RESEARCH.reduce((a, r) => a + r.cost, 0);
+    const lockText = (id: string): string | null => {
+      const lock = researchLock(p, id);
+      if (!lock) return null;
+      if (lock.kind === 'win') return t('research.lockWin', { name: DIFFICULTIES[lock.difficulty]?.name ?? '' });
+      if (lock.kind === 'apex') return t('research.lockApex');
+      return lock.ids.length > 3 ? t('research.requiresMany', { n: lock.ids.length }) : t('research.requires', { list: lock.ids.map(name).join(', ') });
+    };
+    const intro = this.researchTab === 'core' ? t('research.intro') : t(this.researchTab === 'advanced' ? 'research.advancedIntro' : 'research.apexIntro');
     return [
-      h('p', { class: 'page-intro' }, h('span', { class: 'intro-amount' }, amount('research', p.research)), t('research.intro')),
+      h('div', { class: 'workshop-completion' },
+        h('div', {}, h('b', {}, t('research.completion', { pct: Math.floor((spent / total) * 100) })), h('small', {}, t('research.completionSub', { n: done, max: RESEARCH.length }))),
+        meter(spent / total, 'research-meter')),
+      h('p', { class: 'page-intro' }, h('span', { class: 'intro-amount' }, amount('research', p.research)), intro),
       h('div', { class: 'shop-list reveal' }, sorted.map((r) => {
-        const done = p.researchNodes.includes(r.id);
-        const reqOk = r.requires.every((x) => p.researchNodes.includes(x));
-        return h('div', { class: `shop-row research-row ${done ? 'done' : ''} ${reqOk ? '' : 'locked'} ${canResearch(p, r.id) ? 'affordable' : ''}`, 'data-motion-key': `research:${r.id}` },
+        const studied = p.researchNodes.includes(r.id);
+        const lock = studied ? null : lockText(r.id);
+        return h('div', { class: `shop-row research-row ${studied ? 'done' : ''} ${lock ? 'locked' : ''} ${canResearch(p, r.id) ? 'affordable' : ''} ${r.branch ?? ''}`, 'data-motion-key': `research:${r.id}` },
           h('span', { class: 'shop-icon' }, r.icon),
           h('div', { class: 'shop-copy' },
             h('div', { class: 'shop-name' }, h('b', {}, r.name)),
             h('div', { class: 'shop-desc' }, richText(r.desc)),
-            !reqOk ? h('div', { class: 'shop-req' }, icon('lock'), t('research.requires', { list: r.requires.map((x) => RESEARCH.find((y) => y.id === x)?.name).join(', ') })) : null),
-          done ? h('span', { class: 'chip done-chip' }, icon('check')) : h('button', {
+            lock ? h('div', { class: 'shop-req' }, icon('lock'), lock) : null),
+          studied ? h('span', { class: 'chip done-chip' }, icon('check')) : h('button', {
             class: 'buy-btn research-btn', disabled: !canResearch(p, r.id), 'aria-label': t('research.buy', { name: r.name, n: r.cost }),
             onclick: () => {
               const got = doResearch(p, r.id);
@@ -869,7 +985,7 @@ export class UI {
         lines: [richText(r.desc), `${t(`relic.${r.rarity}` as UiKey)}${r.cursed ? ` · ${t('relic.cursed')}` : ''}`],
         hint: isRelicUnlocked(p, r.id) ? t('codex.relicFind') : t('codex.relicLocked'),
       }));
-      case 'bosses': return BOSSES.map(b => ({ id: b.id, known: d.bosses.includes(b.id), name: b.name, glyph: icon('skull'), color: '#ff5d73', lines: [b.title, b.desc, t('codex.defeated', { n: p.bossKills[b.id] ?? 0 })], hint: t('codex.bossUnknown') }));
+      case 'bosses': return ALL_BOSSES.map(b => ({ id: b.id, known: d.bosses.includes(b.id), name: b.name, glyph: icon('skull'), color: b.apex ? '#ff3b9a' : '#ff5d73', lines: [b.apex ? `${t('codex.apex')} · ${b.title}` : b.title, b.desc, t('codex.defeated', { n: p.bossKills[b.id] ?? 0 })], hint: t('codex.bossUnknown') }));
       default: return ARENAS.map(a => ({ id: a.id, known: d.arenas.includes(a.id), name: a.name, glyph: icon('flag'), color: a.theme.accent, lines: [a.desc, t('codex.events', { list: a.events.map((e) => EVENT_MAP[e].name).join(', ') })], hint: a.unlockReq?.text ?? '' }));
     }
   }
@@ -885,7 +1001,7 @@ export class UI {
       ['reactions', t('codex.reactions'), d.reactions.length, REACTIONS.length],
       ['relics', t('codex.relics'), d.relics?.length ?? 0, RELICS.length],
       ['enemies', t('codex.enemies'), d.enemies.length, CODEX_ENEMIES.length],
-      ['bosses', t('codex.bosses'), d.bosses.length, BOSSES.length],
+      ['bosses', t('codex.bosses'), d.bosses.length, ALL_BOSSES.length],
       ['arenas', t('codex.arenas'), d.arenas.length, ARENAS.length],
     ];
     const total = tabs.reduce((a, tab) => a + Math.min(tab[2], tab[3]), 0);
@@ -1209,7 +1325,7 @@ export class UI {
         combo: `${formatNum(w.combo.count)}×`, signal,
         level: t('hud.level', { level: w.level, kills: formatNum(w.run.kills) }),
         event: w.event ? t('hud.eventTimer', { name: EVENT_MAP[w.event.id].name, n: Math.ceil(w.event.dur - w.event.t) }) : t('hud.clear'),
-        boss: w.director.bossActive ? t('hud.bossHp', { name: BOSSES.find(b => b.id === w.director.bossId)?.name ?? t('hud.boss'), pct: Math.ceil(bossHp / (bossMax || 1) * 100) }) :
+        boss: w.director.bossActive ? t('hud.bossHp', { name: BOSS_MAP[w.director.bossId]?.name ?? t('hud.boss'), pct: Math.ceil(bossHp / (bossMax || 1) * 100) }) :
           t('hud.bossIn', { time: formatTime(Math.max(0, w.director.bossTime - w.time)) }),
       };
       for (const [key, raw] of Object.entries(labels)) {
@@ -1331,7 +1447,8 @@ export class UI {
       if (codex) for (const f of feeds) {
         const e = EVOLUTION_MAP[f];
         const r = e.recipe.find((x) => x.id === o.id)!;
-        hints.push(h('span', { class: 'ohint evolution-hint' }, `${t('levelup.ingredient', { name: e.name })}${r.level > 1 ? t('levelup.needsLevel', { n: r.level }) : ''}`));
+        const need = w.build.recipeLevel(r.level);
+        hints.push(h('span', { class: 'ohint evolution-hint' }, `${t('levelup.ingredient', { name: e.name })}${need > 1 ? t('levelup.needsLevel', { n: need }) : ''}`));
       }
       const max = w.build.maxLevel(o.id);
       return h('button', {

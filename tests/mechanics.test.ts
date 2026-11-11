@@ -236,7 +236,7 @@ describe('pacts, Ascension finale and run setup', () => {
     expect(runConfig(p, { arena: 'proving', difficulty: 0, pacts: ['ironclad', 'haste'], seed: 1 }).pacts).toEqual(['ironclad', 'haste']);
   });
 
-  it('Ascension 20 brings a third boss before the victory', () => {
+  it('Ascension 20 brings a third rotation boss before the Abyss apex boss', () => {
     const w = makeWorld({ difficulty: 4, ascension: 20, seed: 3 });
     const kill = () => {
       w.director.spawnBoss();
@@ -249,8 +249,12 @@ describe('pacts, Ascension finale and run setup', () => {
     kill();
     expect(w.endTimer).toBeLessThan(0);
     kill();
+    expect(w.endTimer).toBeLessThan(0);
+    kill();
     expect(w.endTimer).toBeGreaterThanOrEqual(0);
-    expect(w.run.bossesDefeated.length).toBe(3);
+    expect(w.run.bossesDefeated).toEqual([...w.director.queue]);
+    expect(w.run.bossesDefeated.length).toBe(4);
+    expect(w.run.bossesDefeated[3]).toBe('colossus');
   });
 
   it('the Relic Cache workshop opens a relic choice at the start; Chaos Die adds rerolls and a card', () => {

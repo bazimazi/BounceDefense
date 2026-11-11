@@ -191,6 +191,8 @@ export interface BossDef {
   title: string;
   desc: string;
   enemy: string;
+  /** Apex bosses close the hardest tiers; they never appear as an arena's own boss. */
+  apex?: boolean;
 }
 
 export interface DifficultyDef {
@@ -208,7 +210,19 @@ export interface DifficultyDef {
   growth: number;
   /** Multiplier on damage that reaches the defense line, before armor. */
   dmgMult: number;
-  secondBoss: boolean;
+  /**
+   * Extra enemy health that ramps in between minute one and minute seven (defaults to 1). The tiers
+   * beyond Abyss open close to Abyss and turn into a wall later, where long-term power decides the run.
+   */
+  lateHp?: number;
+  /** Bosses from the arena rotation fought before any apex boss (the arena's own boss first). */
+  bosses: number;
+  /** Apex bosses that close the run, in order, after the rotation bosses. */
+  apex?: string[];
+  /** Share of ordinary enemies that spawn with an elite trait (phased in over the first 90 seconds). */
+  traitChance: number;
+  /** Arena events are always hostile anomalies. */
+  hostileEvents?: boolean;
   rewardMult: number;
   rules: string[];
 }

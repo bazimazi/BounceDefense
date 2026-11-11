@@ -1,7 +1,8 @@
 import { DEFAULT_LANGUAGE, isLanguage } from '../i18n';
 import type { DiscoveryCat, Profile } from './types';
 import { normalizeTalents } from '../data/talents';
-import { talentProgress } from './talents';
+import { MAX_ASCENSION } from '../data/ascension';
+import { talentProgress, talentWins } from './talents';
 
 export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'bounce-defense-save';
@@ -94,10 +95,10 @@ export function migrate(raw: unknown): Profile {
   }
   if (!isLanguage(p.settings.language)) p.settings.language = DEFAULT_LANGUAGE;
   p.version = SAVE_VERSION;
-  p.talents = normalizeTalents(p.talents, talentProgress(p).total);
+  p.talents = normalizeTalents(p.talents, talentProgress(p).total, talentWins(p));
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');
   if (!p.cosmetics.includes('classic')) p.cosmetics.unshift('classic');
-  p.ascension = Math.max(0, Math.min(20, Math.floor(p.ascension) || 0));
+  p.ascension = Math.max(0, Math.min(MAX_ASCENSION, Math.floor(p.ascension) || 0));
   if (!Array.isArray(p.contracts.daily)) p.contracts.daily = [];
   return p;
 }

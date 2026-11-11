@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { TALENTS, normalizeTalents, talentSpent } from '../src/data/talents';
+import { TALENTS, TALENT_POINT_CAP, TALENT_TREES, normalizeTalents, talentPointCost, talentRequirement, talentSpent } from '../src/data/talents';
 import { applyTalents, changeTalent, talentProgress } from '../src/meta/talents';
+import { ENEMY_MAP } from '../src/data/enemies';
+import { killEnemy } from '../src/sim/combat';
 import { defaultProfile, loadProfile, migrate, saveProfile, SAVE_VERSION } from '../src/meta/profile';
 import { applyRun, runConfig } from '../src/meta/progress';
 import { BEHAVIORS } from '../src/sim/behaviors';
@@ -16,15 +18,20 @@ const havoc = { blasting: 3, keen: 3, shrapnel: 2, swarmcraft: 2, cascade: 1 };
 const opts = { seed: 1, arena: 'proving', difficulty: 0, pacts: [] };
 
 describe('talent progression and save safety', () => {
-  it('grants 3 starter points and counts mastery across cores, capped at 20', () => {
+  it('grants 3 starter points, counts mastery across cores, and makes every point after the twentieth dearer', () => {
     const p = defaultProfile();
-    expect(talentProgress(p)).toEqual({ total: 3, xp: 0, next: 500 });
+    expect(talentProgress(p)).toEqual({ total: 3, xp: 0, next: 500, need: 500 });
     p.mastery = { striker: 250, pyro: 249, unknown: 9999 };
     expect(talentProgress(p).next).toBe(1);
     p.mastery.pyro++;
     expect(talentProgress(p).total).toBe(4);
-    p.mastery.striker = 99999;
+    p.mastery = { striker: 17 * 500 };
     expect(talentProgress(p).total).toBe(20);
+    expect(talentProgress(p).need).toBe(talentPointCost(21));
+    expect(talentPointCost(21)).toBeGreaterThan(talentPointCost(20));
+    expect(talentPointCost(TALENT_POINT_CAP)).toBeGreaterThan(talentPointCost(21) * 5);
+    p.mastery.striker = 1e8;
+    expect(talentProgress(p).total).toBe(TALENT_POINT_CAP);
     expect(talentProgress(p).next).toBe(0);
   });
 
@@ -43,8 +50,8 @@ describe('talent progression and save safety', () => {
     expect(normalizeTalents({ precision: 2, banked_power: 1 })).toEqual({});
     expect(normalizeTalents({ bankcraft: 3, precision: 2, banked_power: 1 }).banked_power).toBeUndefined();
     // 20 points buy one full tree and most of a second, never two capstones.
-    expect(talentSpent(normalizeTalents({ ...kinetics, ...conduit, ...warden }))).toBe(20);
-    expect(normalizeTalents({ ...kinetics, ...conduit }).convergence).toBeUndefined();
+    expect(talentSpent(normalizeTalents({ ...kinetics, ...conduit, ...warden }, 20))).toBe(20);
+    expect(normalizeTalents({ ...kinetics, ...conduit }, 20).convergence).toBeUndefined();
     expect(migrate({ talents: { ...kinetics, ...warden } }).talents).toEqual({ bankcraft: 3 });
   });
 
@@ -133,7 +140,7 @@ describe('talents compose with existing power systems', () => {
       expect(Object.values(w.build.stats).every(Number.isFinite)).toBe(true);
       expect(talentSpent(w.talents)).toBe(11);
     }
-    expect(TALENTS).toHaveLength(20);
+    expect(TALENTS).toHaveLength(44);
   });
 
   it('preserves Glass Heart, Bloodless, Lone Ball and Fate Sealed', () => {
@@ -221,5 +228,79 @@ describe('talents compose with existing power systems', () => {
     expect(w.barrier.charges).toBe(0);
     w.hurt(10000, 200);
     expect(w.hp).toBe(0);
+  });
+});
+
+describe('deep talent tiers', () => {
+  const full = Object.fromEntries(TALENTS.map((t) => [t.id, t.maxRank]));
+
+  it('every tree reaches an apex capstone through tiers that need wins on Abyss, Singularity and Eternity', () => {
+    for (const tree of TALENT_TREES) {
+      const nodes = TALENTS.filter((t) => t.tree === tree.id);
+      expect(nodes).toHaveLength(11);
+      const apex = nodes.find((t) => t.tier === 5)!;
+      expect(apex.capstone).toBe(true);
+      expect(apex.minWin).toBe(9);
+      for (const n of nodes) {
+        if (n.tier >= 3) expect(n.minWin, n.id).toBeDefined();
+        const below = nodes.filter((x) => x.tier < n.tier).reduce((a, x) => a + x.maxRank, 0);
+        expect(n.gate, n.id).toBeLessThanOrEqual(below);
+        if (n.requires) expect(TALENTS.indexOf(TALENTS.find((x) => x.id === n.requires)!)).toBeLessThan(TALENTS.indexOf(n));
+      }
+    }
+    // A hundred points fill three trees, never all four.
+    const ranks = TALENTS.reduce((a, t) => a + t.maxRank, 0);
+    expect(ranks).toBeGreaterThan(TALENT_POINT_CAP);
+    expect(Object.values(normalizeTalents(full, TALENT_POINT_CAP, 9)).reduce((a, b) => a + b, 0)).toBe(TALENT_POINT_CAP);
+  });
+
+  it('deep tiers stay shut without the win, and a lost win refunds them', () => {
+    const deep = TALENTS.find((t) => t.id === 'fortitude')!;
+    const ranks = normalizeTalents(full, TALENT_POINT_CAP, 3);
+    expect(ranks.fortitude).toBeUndefined();
+    expect(ranks.bulwark).toBe(2);
+    expect(talentRequirement(ranks, deep, 3)).toContain('Abyss');
+    expect(normalizeTalents(full, TALENT_POINT_CAP, 4).fortitude).toBe(3);
+    expect(changeTalent(normalizeTalents({ ...warden, bulwark: 2 }, 50, 9), 'fortitude', 1, 50, 3)).toBeNull();
+    const p = defaultProfile();
+    p.mastery.striker = 1e8;
+    p.cleared.proving = 4;
+    applyTalents(p, full);
+    expect(p.talents.fortitude).toBe(3);
+    expect(p.talents.regenerator).toBeUndefined();
+  });
+
+  it('Unbreakable turns the first lethal hit into 1 HP and a moment of grace', () => {
+    const w = emptyWorld({ talents: normalizeTalents({ ...warden, bulwark: 2, fortitude: 3, aegis_field: 3, regenerator: 5, iron_will: 5, unbreakable: 1 }, 40, 9) });
+    expect(w.talents.unbreakable).toBe(1);
+    w.hurt(w.maxHp * 9, 270);
+    expect(w.hp).toBe(1);
+    expect(w.endTimer).toBeLessThan(0);
+    w.hurt(w.maxHp * 9, 270);
+    expect(w.hp).toBe(1);
+    steps(w, 4.2);
+    w.hurt(w.maxHp * 9, 270);
+    expect(w.endTimer).toBeGreaterThanOrEqual(0);
+  });
+
+  it('Perpetual Motion, Elemental Storm and Armageddon fire from their hooks', () => {
+    const talents = { ...normalizeTalents(full, TALENT_POINT_CAP, 9) };
+    const w = emptyWorld({ talents });
+    expect(w.build.has('talent_perpetual') || w.build.has('talent_armageddon') || w.build.has('talent_storm')).toBe(true);
+    const k = emptyWorld({ talents: normalizeTalents({ ...kinetics, ricochet_engine: 2, long_shot: 3, momentum_core: 3, hypervelocity: 5, deadeye: 5, perpetual_motion: 1 }, 40, 9) });
+    expect(k.talents.perpetual_motion).toBe(1);
+    const ball = k.spawnBall('main', 270, 500, 0, -1)!;
+    ball.wallBounces = 5;
+    const before = k.balls.length;
+    BEHAVIORS.talent_perpetual.onWall!(k, ball, 1, 'wall');
+    expect(k.balls.length).toBe(before + 1);
+    expect(k.balls.at(-1)!.dmgMult).toBeCloseTo(1);
+    const h = emptyWorld({ talents: normalizeTalents({ ...havoc, sunder: 2, demolisher: 3, bladestorm: 3, carnage: 5, critical_mass: 5, armageddon: 1 }, 40, 9) });
+    expect(h.talents.armageddon).toBe(1);
+    for (let i = 0; i < 16; i++) h.enemies.push(h.makeEnemy(ENEMY_MAP.grunt, 100 + (i % 8) * 40, 300 + Math.floor(i / 8) * 40));
+    const fx = () => h.fx.filter((f) => f.t === 'beam').length;
+    h.run.kills = 14;
+    killEnemy(h, h.enemies[0], { src: 'ball', crit: false, depth: 0 }, 0);
+    expect(fx()).toBeGreaterThan(0);
   });
 });

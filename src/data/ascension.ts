@@ -1,8 +1,9 @@
 import { localize } from '../i18n/content';
 
 /**
- * Ascension: an endgame ladder above Abyss. Winning on Abyss opens Ascension 1; every win at the
- * highest level opens the next. Rules stack: Ascension 7 plays with rules 1 through 7.
+ * Ascension: an endgame ladder on Abyss and every tier above it. Winning on Abyss opens Ascension 1;
+ * every win at the highest open level (on Abyss or harder) opens the next. Rules stack: Ascension 7
+ * plays with rules 1 through 7.
  */
 export type AscensionRule =
   | 'hp10' | 'eliteMod' | 'speed8' | 'heal30' | 'boss20' | 'reroll' | 'breach15' | 'spawn10' | 'hull15' | 'miniboss'
@@ -38,6 +39,8 @@ export const ASCENSIONS: AscensionDef[] = [
 ];
 
 export const MAX_ASCENSION = ASCENSIONS.length;
+/** Difficulty index (Abyss) from which Ascension can be played. */
+export const ASCENSION_TIER = 4;
 /** Reward multiplier added per Ascension level. */
 export const ASCENSION_REWARD = 0.12;
 

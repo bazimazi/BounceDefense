@@ -198,28 +198,54 @@ export const ARENA_MAP: Record<string, ArenaDef> = Object.fromEntries(ARENAS.map
 export const DIFFICULTIES: DifficultyDef[] = [
   {
     id: 'normal', name: 'Normal', color: '#8fe3a0', desc: 'The intended first experience.',
-    hpMult: 1.25, speedMult: 1, spawnMult: 1.5, eliteEvery: 150, eliteModCount: 1, bossHpMult: 1, growth: 2.4, dmgMult: 1.15, secondBoss: false, rewardMult: 1,
+    hpMult: 1.25, speedMult: 1, spawnMult: 1.5, eliteEvery: 150, eliteModCount: 1, bossHpMult: 1, growth: 2.4, dmgMult: 1.15, bosses: 1, traitChance: 0, rewardMult: 1,
     rules: [],
   },
   {
     id: 'veteran', name: 'Veteran', color: '#ffd166', desc: 'Tougher squads for a confident pilot.',
-    hpMult: 1.75, speedMult: 1.08, spawnMult: 1.8, eliteEvery: 110, eliteModCount: 1, bossHpMult: 1.3, growth: 3.4, dmgMult: 1.27, secondBoss: false, rewardMult: 1.4,
+    hpMult: 1.75, speedMult: 1.08, spawnMult: 1.8, eliteEvery: 110, eliteModCount: 1, bossHpMult: 1.3, growth: 3.4, dmgMult: 1.27, bosses: 1, traitChance: 0, rewardMult: 1.4,
     rules: ['Elites appear more often', 'Advanced squads unlocked', 'Enemies are tougher and hit harder'],
   },
   {
     id: 'nightmare', name: 'Nightmare', color: '#ff7b54', desc: 'A real test of your build.',
-    hpMult: 2.1, speedMult: 1.12, spawnMult: 1.95, eliteEvery: 90, eliteModCount: 2, bossHpMult: 1.5, growth: 3.8, dmgMult: 1.44, secondBoss: true, rewardMult: 1.9,
+    hpMult: 2.1, speedMult: 1.12, spawnMult: 1.95, eliteEvery: 90, eliteModCount: 2, bossHpMult: 1.5, growth: 3.8, dmgMult: 1.44, bosses: 2, traitChance: 0, rewardMult: 1.9,
     rules: ['A second boss arrives', 'Elites have 2 modifiers', 'Enemies toughen faster and hit harder'],
   },
   {
     id: 'inferno', name: 'Inferno', color: '#ff3d3d', desc: 'Even ordinary enemies turn dangerous.',
-    hpMult: 2.6, speedMult: 1.16, spawnMult: 2.18, eliteEvery: 75, eliteModCount: 2, bossHpMult: 2, growth: 5.2, dmgMult: 1.73, secondBoss: true, rewardMult: 2.5,
+    hpMult: 2.6, speedMult: 1.16, spawnMult: 2.18, eliteEvery: 75, eliteModCount: 2, bossHpMult: 2, growth: 5.2, dmgMult: 1.73, bosses: 2, traitChance: 0.08, rewardMult: 2.5,
     rules: ['A second boss arrives', '8% of enemies spawn with an elite trait', 'Enemies toughen faster and hit harder'],
   },
   {
-    id: 'abyss', name: 'Abyss', color: '#c77dff', desc: 'Everything at once.',
-    hpMult: 3.3, speedMult: 1.2, spawnMult: 2.4, eliteEvery: 60, eliteModCount: 3, bossHpMult: 2.8, growth: 7.2, dmgMult: 2.3, secondBoss: true, rewardMult: 3.2,
-    rules: ['A second boss arrives', '15% of enemies spawn with an elite trait', 'Elites have 3 modifiers', 'Enemies toughen much faster and hit much harder', 'Arena events are always hostile'],
+    id: 'abyss', name: 'Abyss', color: '#c77dff', desc: 'Everything at once, and something worse at the end.',
+    hpMult: 3.3, speedMult: 1.2, spawnMult: 2.4, eliteEvery: 60, eliteModCount: 3, bossHpMult: 3.6, growth: 7.2, dmgMult: 2.3, bosses: 2, apex: ['colossus'], traitChance: 0.15, hostileEvents: true, rewardMult: 3.2,
+    rules: ['Two bosses, then the apex boss The Colossus', '15% of enemies spawn with an elite trait', 'Elites have 3 modifiers', 'Enemies toughen much faster and hit much harder', 'Arena events are always hostile'],
+  },
+  // Beyond Abyss: each tier is built to be lost until the Overdrive Workshop has caught up with it.
+  {
+    id: 'oblivion', name: 'Oblivion', color: '#8f9bff', desc: 'Where finished builds go to be tested again.',
+    hpMult: 3.6, speedMult: 1.23, spawnMult: 2.55, eliteEvery: 55, eliteModCount: 3, bossHpMult: 9, growth: 8, lateHp: 2.5, dmgMult: 2.8, bosses: 2, apex: ['overmind'], traitChance: 0.2, hostileEvents: true, rewardMult: 4.2,
+    rules: ['Two bosses, then the apex boss The Overmind', '20% of enemies spawn with an elite trait', 'Elites arrive every 55 seconds', 'Arena events are always hostile'],
+  },
+  {
+    id: 'cataclysm', name: 'Cataclysm', color: '#ff5fa2', desc: 'The arena itself wants you gone.',
+    hpMult: 3.9, speedMult: 1.26, spawnMult: 2.7, eliteEvery: 50, eliteModCount: 4, bossHpMult: 18, growth: 8.8, lateHp: 4, dmgMult: 3.3, bosses: 2, apex: ['twins'], traitChance: 0.25, hostileEvents: true, rewardMult: 5.4,
+    rules: ['Two bosses, then the apex bosses The Twin Eclipse', '25% of enemies spawn with an elite trait', 'Elites have 4 modifiers', 'Arena events are always hostile'],
+  },
+  {
+    id: 'singularity', name: 'Singularity', color: '#4de8ff', desc: 'All of it, pulled into one point.',
+    hpMult: 4.2, speedMult: 1.29, spawnMult: 2.85, eliteEvery: 46, eliteModCount: 4, bossHpMult: 34, growth: 9.6, lateHp: 7, dmgMult: 3.9, bosses: 2, apex: ['sovereign'], traitChance: 0.3, hostileEvents: true, rewardMult: 6.8,
+    rules: ['Two bosses, then the apex boss The Void Sovereign', '30% of enemies spawn with an elite trait', 'Elites have 4 modifiers', 'Arena events are always hostile'],
+  },
+  {
+    id: 'pandemonium', name: 'Pandemonium', color: '#b6ff5c', desc: 'Two apex bosses. No rest between them.',
+    hpMult: 4.5, speedMult: 1.32, spawnMult: 3, eliteEvery: 42, eliteModCount: 5, bossHpMult: 46, growth: 10.4, lateHp: 8, dmgMult: 4.6, bosses: 1, apex: ['twins', 'sovereign'], traitChance: 0.35, hostileEvents: true, rewardMult: 8.5,
+    rules: ['One boss, then The Twin Eclipse and The Void Sovereign', '35% of enemies spawn with an elite trait', 'Elites have 5 modifiers', 'Arena events are always hostile'],
+  },
+  {
+    id: 'eternity', name: 'Eternity', color: '#ffe9a8', desc: 'The last tier. Every apex boss is waiting.',
+    hpMult: 4.8, speedMult: 1.35, spawnMult: 3.15, eliteEvery: 38, eliteModCount: 5, bossHpMult: 76, growth: 11.2, lateHp: 12, dmgMult: 5.4, bosses: 1, apex: ['colossus', 'overmind', 'sovereign'], traitChance: 0.4, hostileEvents: true, rewardMult: 10.5,
+    rules: ['One boss, then The Colossus, The Overmind and The Void Sovereign', '40% of enemies spawn with an elite trait', 'Elites have 5 modifiers', 'Arena events are always hostile'],
   },
 ];
 

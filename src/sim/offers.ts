@@ -17,6 +17,8 @@ export interface OfferContext {
   /** Upgrades unlocked for this profile (pool). */
   pool: ReadonlySet<string>;
   banished: ReadonlySet<string>;
+  /** Fate Weaving: at least one rare or better card in every draft. */
+  guaranteeRare?: boolean;
   count: number;
   /** 0-based index of this level-up in the run. */
   levelIndex: number;
@@ -94,6 +96,13 @@ export function makeOffers(ctx: OfferContext): Offer[] {
     if (!pick) break;
     candidates.splice(candidates.indexOf(pick), 1);
     out.push({ kind: 'upgrade', id: pick, level: ctx.build.level(pick) + 1 });
+  }
+  // Fate Weaving swaps the last common card for a rarer one when the draw had none.
+  if (ctx.guaranteeRare && !out.some((o) => o.kind === 'evolution' || (o.kind === 'upgrade' && UPGRADE_MAP[o.id].rarity !== 'common'))) {
+    const rare = candidates.filter((id) => UPGRADE_MAP[id].rarity !== 'common');
+    const pick = rare.length ? ctx.rng.weighted(rare, (id) => upgradeWeight(id, ctx)) : null;
+    const slot = out.map((o) => o.kind).lastIndexOf('upgrade');
+    if (pick && slot >= 0) out[slot] = { kind: 'upgrade', id: pick, level: ctx.build.level(pick) + 1 };
   }
   if (out.length === 0) out.push(...(ctx.noHeal ? [] : [{ kind: 'heal' } as const]), { kind: 'coins' });
   return out;

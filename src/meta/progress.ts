@@ -5,9 +5,10 @@ import { ARENAS, ARENA_MAP, DIFFICULTIES, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../data/balls';
 import { BOSS_MAP, ENEMY_MAP } from '../data/enemies';
 import {
-  ACHIEVEMENTS, CHALLENGES, RESEARCH, RESEARCH_MAP, WORKSHOP_MAP, masteryLevel, masteryRewards, rankLevel, rankRewards,
+  ACHIEVEMENTS, CATALYST_LEVELS, CHALLENGES, INDUSTRY_DISCOUNT, SIGNATURE_UPGRADE, apexKills, type ResearchDef, OVERDRIVE_MAX, OVERDRIVE_PER_TIER, REFIT_MASTERY_STEP, RESEARCH, RESEARCH_MAP, WORKSHOP_MAP, masteryLevel, masteryRewards,
+  rankLevel, rankRewards,
 } from '../data/meta';
-import { ASCENSION_REWARD, MAX_ASCENSION } from '../data/ascension';
+import { ASCENSION_REWARD, ASCENSION_TIER, MAX_ASCENSION } from '../data/ascension';
 import { CONTRACTS, CONTRACT_MAP, DAILY_CONTRACTS, DAILY_REWARDS, WEEKLY_REWARD } from '../data/contracts';
 import { DEFAULT_UNLOCKED_RELICS, RELIC_MAP } from '../data/relics';
 import { EVENT_MAP } from '../data/arenas';
@@ -16,7 +17,7 @@ import { DEFAULT_UNLOCKED_UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import type { RunConfig } from '../sim/world';
 import type { ContractSlot, DiscoveryCat, Profile, RunSummary, Unlock } from './types';
 import { normalizeTalents } from '../data/talents';
-import { talentProgress } from './talents';
+import { talentProgress, talentWins } from './talents';
 
 // ------------------------------------------------------------------ queries
 export function researchFlags(p: Profile): string[] {
@@ -46,8 +47,7 @@ export function isArenaUnlocked(p: Profile, arenaId: string): boolean {
 }
 
 export function maxDifficulty(p: Profile): number {
-  const best = Math.max(-1, ...Object.values(p.cleared));
-  return Math.min(DIFFICULTIES.length - 1, best + 1);
+  return Math.min(DIFFICULTIES.length - 1, bestCleared(p) + 1);
 }
 
 export function isPartUnlocked(p: Profile, id: string): boolean {
@@ -86,9 +86,28 @@ export function buyPart(p: Profile, id: string): boolean {
   return true;
 }
 
+/** Advanced and Apex research open with wins and apex kills, not only with points. */
+export function researchGateMet(p: Profile, r: ResearchDef): boolean {
+  if (r.gate?.win !== undefined && bestCleared(p) < r.gate.win) return false;
+  if (r.gate?.apex && apexKills(p) <= 0) return false;
+  return true;
+}
+
+/** Why a research node cannot be studied yet, apart from its price: a win, an apex kill or missing prerequisites. */
+export type ResearchLock = { kind: 'win'; difficulty: number } | { kind: 'apex' } | { kind: 'requires'; ids: string[] };
+
+export function researchLock(p: Profile, id: string): ResearchLock | null {
+  const r = RESEARCH_MAP[id];
+  if (!r || p.researchNodes.includes(id)) return null;
+  if (r.gate?.win !== undefined && bestCleared(p) < r.gate.win) return { kind: 'win', difficulty: r.gate.win };
+  if (r.gate?.apex && apexKills(p) <= 0) return { kind: 'apex' };
+  const missing = r.requires.filter((x) => !p.researchNodes.includes(x));
+  return missing.length ? { kind: 'requires', ids: missing } : null;
+}
+
 export function canResearch(p: Profile, id: string): boolean {
   const r = RESEARCH_MAP[id];
-  return !!r && !p.researchNodes.includes(id) && r.requires.every((x) => p.researchNodes.includes(x)) && p.research >= r.cost;
+  return !!r && !p.researchNodes.includes(id) && researchLock(p, id) === null && p.research >= r.cost;
 }
 
 export function doResearch(p: Profile, id: string): string[] {
@@ -100,11 +119,66 @@ export function doResearch(p: Profile, id: string): string[] {
   return r.grants.map((g) => applyUnlock(p, g)).filter(Boolean) as string[];
 }
 
+/** Highest difficulty index won in any arena, -1 before the first win. */
+export function bestCleared(p: Profile): number {
+  return Math.max(-1, ...Object.values(p.cleared));
+}
+
+/** Overdrive levels open on every line: OVERDRIVE_PER_TIER for each difficulty won, plus the Catalyst. */
+export function overdriveOpen(p: Profile): number {
+  return Math.min(OVERDRIVE_MAX, OVERDRIVE_PER_TIER * (bestCleared(p) + 1) + CATALYST_LEVELS * (p.workshop.bp_catalyst ?? 0));
+}
+
+/** Refit levels open for a core: one per REFIT_MASTERY_STEP Mastery levels, none while it is locked. */
+export function refitOpen(p: Profile, core: string): number {
+  if (!p.unlockedCores.includes(core)) return 0;
+  return Math.ceil(masteryLevel(p.mastery[core] ?? 0).level / REFIT_MASTERY_STEP);
+}
+
+/** The level a Workshop line can be bought up to right now. */
+export function workshopCap(p: Profile, id: string): number {
+  const w = WORKSHOP_MAP[id];
+  if (!w) return 0;
+  if (w.overdrive) return Math.min(w.maxLevel, overdriveOpen(p));
+  if (w.core) return Math.min(w.maxLevel, refitOpen(p, w.core));
+  if (w.tiers) {
+    if (w.needs && !(p.workshop[w.needs] ?? 0)) return 0;
+    const won = bestCleared(p);
+    let cap = 0;
+    while (cap < w.maxLevel && w.tiers[cap] <= won) cap++;
+    return cap;
+  }
+  return w.maxLevel;
+}
+
+/** Why the next level of a Workshop line cannot be bought yet, or null when nothing but coins stands in the way. */
+export type WorkshopLock =
+  | { kind: 'win'; difficulty: number }
+  | { kind: 'needs'; id: string }
+  | { kind: 'core'; core: string }
+  | { kind: 'mastery'; core: string; level: number }
+  | { kind: 'overdrive' };
+
+export function workshopLock(p: Profile, id: string): WorkshopLock | null {
+  const w = WORKSHOP_MAP[id];
+  const lvl = p.workshop[id] ?? 0;
+  if (!w || lvl >= w.maxLevel || lvl < workshopCap(p, id)) return null;
+  if (w.overdrive) return { kind: 'overdrive' };
+  if (w.core) {
+    if (!p.unlockedCores.includes(w.core)) return { kind: 'core', core: w.core };
+    return { kind: 'mastery', core: w.core, level: lvl * REFIT_MASTERY_STEP + 1 };
+  }
+  if (w.needs && !(p.workshop[w.needs] ?? 0)) return { kind: 'needs', id: w.needs };
+  if (w.tiers) return { kind: 'win', difficulty: w.tiers[lvl] };
+  return null;
+}
+
 export function workshopCost(p: Profile, id: string): number | null {
   const w = WORKSHOP_MAP[id];
   const lvl = p.workshop[id] ?? 0;
-  if (!w || lvl >= w.maxLevel) return null;
-  return w.cost(lvl);
+  if (!w || lvl >= workshopCap(p, id)) return null;
+  // Industrial Theory takes a share off every price, rounded to tidy tens.
+  return p.researchNodes.includes('industrial_theory') ? Math.max(10, Math.round((w.cost(lvl) * (1 - INDUSTRY_DISCOUNT)) / 10) * 10) : w.cost(lvl);
 }
 
 export function buyWorkshop(p: Profile, id: string): boolean {
@@ -114,6 +188,17 @@ export function buyWorkshop(p: Profile, id: string): boolean {
   p.workshop[id] = (p.workshop[id] ?? 0) + 1;
   analytics.emit('WorkshopPurchased', { id, level: p.workshop[id] });
   return true;
+}
+
+/** Core Resonance's partner: the most-mastered other unlocked core. */
+export function echoCore(p: Profile, core: string): string | undefined {
+  let best: string | undefined;
+  let xp = 0;
+  for (const id of p.unlockedCores) {
+    const v = p.mastery[id] ?? 0;
+    if (id !== core && v > xp) { best = id; xp = v; }
+  }
+  return best;
 }
 
 export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean; ascension?: number }): RunConfig {
@@ -127,15 +212,17 @@ export function runConfig(p: Profile, opts: { arena: string; difficulty: number;
     parts: [l.shell, l.impact, l.momentum].filter((id) => isPartUnlocked(p, id)),
     pacts: opts.pacts.filter((id) => PACT_MAP[id] && (!PACT_MAP[id].flag || flags.includes(PACT_MAP[id].flag!))),
     workshop: { ...p.workshop },
-    talents: normalizeTalents(p.talents, talentProgress(p).total),
+    talents: normalizeTalents(p.talents, talentProgress(p).total, talentWins(p)),
     pool: upgradePool(p),
     flags,
     trail: p.cosmetics.includes(l.trail) ? l.trail : 'classic',
     known: Object.fromEntries(Object.entries(p.discoveries).map(([k, v]) => [k, [...v]])),
     tutorial: !p.tutorialDone,
     daily: opts.daily,
-    ascension: opts.difficulty >= DIFFICULTIES.length - 1 ? Math.max(0, Math.min(p.ascension, Math.floor(opts.ascension ?? 0))) : 0,
+    ascension: opts.difficulty >= ASCENSION_TIER ? Math.max(0, Math.min(p.ascension, Math.floor(opts.ascension ?? 0))) : 0,
     relicPool: relicPool(p),
+    bossLore: Object.values(p.bossKills).filter((n) => n > 0).length,
+    echoCore: echoCore(p, p.unlockedCores.includes(l.core) ? l.core : 'striker'),
   };
 }
 
@@ -205,15 +292,18 @@ export function rewardMultiplier(s: Pick<RunSummary, 'difficulty' | 'pacts'> & {
 }
 
 /** Every run pays out, win or lose. Victories and harder settings pay more. */
-export function computeRewards(s: RunSummary, newDiscoveries: number, flags: string[] = []): RunRewards {
-  const mult = rewardMultiplier(s) * (s.victory ? 1.3 : 1);
+export function computeRewards(s: RunSummary, newDiscoveries: number, flags: string[] = [], workshop: Record<string, number> = {}): RunRewards {
+  // The War Chest blueprint pays on victories only; the Mentor Program speeds Mastery and Rank.
+  // Midas Protocol pays on Abyss and above, win or lose.
+  const midas = flags.includes('midas') && s.difficulty >= ASCENSION_TIER ? 1.15 : 1;
+  const mult = rewardMultiplier(s) * (s.victory ? 1.3 * (1 + 0.1 * (workshop.bp_war_chest ?? 0)) : 1) * midas;
   const base = s.coinsCollected + s.kills * 0.5 + s.eliteKills * 8 + s.bossesDefeated.length * 120 + Math.floor(s.time / 6);
   const asc = s.ascension ?? 0;
-  const study = flags.includes('mastery') ? 1.15 : 1;
+  const study = (flags.includes('mastery') ? 1.15 : 1) * (1 + 0.1 * (workshop.bp_mentor ?? 0));
   return {
     coins: Math.round(base * mult),
     cores: s.coresCollected + (s.victory ? 1 + s.difficulty + Math.floor(asc / 2) + (flags.includes('salvage') ? 1 : 0) : 0),
-    research: newDiscoveries + (s.victory ? 1 : 0),
+    research: newDiscoveries + (s.victory ? 1 + (flags.includes('scholar') ? 1 + Math.floor(s.difficulty / 3) : 0) : 0),
     masteryXp: Math.round((s.kills * 0.6 + s.level * 10 + s.bossesDefeated.length * 80 + (s.victory ? 100 : 0)) * (1 + s.difficulty * 0.25 + asc * 0.05) * study),
   };
 }
@@ -417,8 +507,8 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   if (s.victory) {
     p.cleared[s.arena] = Math.max(p.cleared[s.arena] ?? -1, s.difficulty);
     analytics.emit('ArenaCompleted', { arena: s.arena, difficulty: s.difficulty });
-    // Abyss opens Ascension 1; winning at the highest open level opens the next.
-    if (s.difficulty >= DIFFICULTIES.length - 1) {
+    // Abyss opens Ascension 1; winning at the highest open level (Abyss or harder) opens the next.
+    if (s.difficulty >= ASCENSION_TIER) {
       const asc = s.ascension ?? 0;
       st.maxAscension = Math.max(st.maxAscension, asc);
       if (asc >= p.ascension && p.ascension < MAX_ASCENSION) {
@@ -446,7 +536,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   }
 
   // ---- currencies
-  const rewards = computeRewards(s, researchFromDiscovery, researchFlags(p));
+  const rewards = computeRewards(s, researchFromDiscovery, researchFlags(p), p.workshop);
   let daily: RunReport['daily'] = null;
   if (s.daily) {
     const rec = dailyRecord(p, today);

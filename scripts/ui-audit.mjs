@@ -4,11 +4,11 @@ import { chromium, firefox, webkit } from 'playwright-core';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { CORES, PARTS, TRAILS } from '../src/data/balls.ts';
-import { ACHIEVEMENTS, CHALLENGES, RESEARCH } from '../src/data/meta.ts';
+import { ACHIEVEMENTS, BLUEPRINTS, CHALLENGES, OVERDRIVE, REFITS, RESEARCH } from '../src/data/meta.ts';
 import { UPGRADES } from '../src/data/upgrades.ts';
 import { SYNERGIES, EVOLUTIONS, REACTIONS } from '../src/data/synergies.ts';
-import { BOSSES, CODEX_ENEMIES } from '../src/data/enemies.ts';
-import { ARENAS } from '../src/data/arenas.ts';
+import { ALL_BOSSES, CODEX_ENEMIES } from '../src/data/enemies.ts';
+import { ARENAS, DIFFICULTIES } from '../src/data/arenas.ts';
 
 const engine = process.env.ENGINE ?? 'chromium';
 const browserType = { chromium, firefox, webkit }[engine];
@@ -43,10 +43,14 @@ try {
     unlockedCores: CORES.map(x => x.id), unlockedParts: PARTS.map(x => x.id), cosmetics: TRAILS.map(x => x.id),
     unlockedUpgrades: UPGRADES.map(x => x.id), researchNodes: RESEARCH.map(x => x.id),
     achievements: ACHIEVEMENTS.map(x => x.id), challenges: CHALLENGES.map(x => x.id),
-    talents: { bankcraft: 3, flow: 3, precision: 2, banked_power: 1, voltage: 2, hull: 2, plating: 2 },
-    cleared: Object.fromEntries(ARENAS.map(x => [x.id, 2])),
+    talents: { bankcraft: 3, flow: 3, precision: 2, banked_power: 1, voltage: 2, hull: 3, plating: 3, recovery: 2, repulsion: 2, last_bastion: 1, bulwark: 2, fortitude: 3, aegis_field: 2, regenerator: 1 },
+    // Every tier won once in one arena: the full ten-tier difficulty grid and the Overdrive cap at its end.
+    cleared: { ...Object.fromEntries(ARENAS.map(x => [x.id, 2])), proving: DIFFICULTIES.length - 1 },
+    // Every Workshop section part-way: some lines empty, some mid-way, some maxed.
+    workshop: Object.fromEntries([...OVERDRIVE.map((x, i) => [x.id, i * 5]), ...BLUEPRINTS.map((x, i) => [x.id, i % (x.maxLevel + 1)]), ...REFITS.map((x, i) => [x.id, i])]),
+    mastery: Object.fromEntries(CORES.map((x, i) => [x.id, i * 4000])),
     discoveries: { upgrades: UPGRADES.map(x => x.id), synergies: SYNERGIES.map(x => x.id), evolutions: EVOLUTIONS.map(x => x.id),
-      reactions: REACTIONS.map(x => x.id), enemies: CODEX_ENEMIES.map(x => x.id), bosses: BOSSES.map(x => x.id), arenas: ARENAS.map(x => x.id), events: [] },
+      reactions: REACTIONS.map(x => x.id), enemies: CODEX_ENEMIES.map(x => x.id), bosses: ALL_BOSSES.map(x => x.id), arenas: ARENAS.map(x => x.id), events: [] },
   };
   const partialProfile = await page.evaluate(() => structuredClone(window.game.profile));
   partialProfile.talents = fullProfile.talents;
@@ -213,6 +217,12 @@ try {
         for (const slot of ['shell', 'impact', 'momentum']) await at(`${label}-sheet-${slot}`, width, height, slot => window.game.ui.partSheet(slot), slot);
         await at(`${label}-trail-sheet`, width, height, () => window.game.ui.trailSheet());
         for (const screen of ['workshop', 'research', 'talents']) await at(`${label}-${screen}`, width, height, screen => window.game.ui[screen](), screen);
+        for (const tab of ['blueprints', 'refits', 'overdrive'])
+          await at(`${label}-workshop-${tab}`, width, height, tab => { window.game.ui.workshopTab = tab; window.game.ui.workshop(); }, tab);
+        await page.evaluate(() => { window.game.ui.workshopTab = 'classic'; });
+        for (const tab of ['advanced', 'apex'])
+          await at(`${label}-research-${tab}`, width, height, tab => { window.game.ui.researchTab = tab; window.game.ui.research(); }, tab);
+        await page.evaluate(() => { window.game.ui.researchTab = 'core'; });
         for (const segment of ['next', 'challenges', 'badges', 'mastery'])
           await at(`${label}-goals-${segment}`, width, height, segment => { window.game.ui.goalSegment = segment; window.game.ui.goals(); }, segment);
       }

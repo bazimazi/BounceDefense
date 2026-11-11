@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { REACTION_MAP } from '../data/synergies';
 import type { Element } from '../data/types';
+import { bossMitigation } from './bosses';
 import { ballSpeed, effectiveTier } from './physics';
 import { DEFENSE_Y, H, type Ball, type Enemy } from './types';
 import { TIER_CRIT, TIER_DMG, type World } from './world';
@@ -213,8 +214,14 @@ export function damageEnemy(w: World, e: Enemy, amount: number, info: HitInfo): 
     const arm = Math.max(0, e.armor - pen);
     amount = Math.max(amount * 0.15, amount - arm);
   }
-  // The Architect hides behind its ward pylons.
-  if (e.def.id === 'boss_architect' && e.t3 > 0) amount *= 0.25;
+  // Boss rules: the Architect's pylons, the Colossus's damage budget, the Overmind's ward, the Sovereign's seals.
+  if (e.boss) {
+    amount = bossMitigation(e, amount);
+    if (amount <= 0) {
+      e.flash = 0.06;
+      return 0;
+    }
+  }
   if (e.shieldHp > 0) {
     const a = Math.min(e.shieldHp, amount);
     e.shieldHp -= a;
@@ -304,7 +311,7 @@ export function killEnemy(w: World, e: Enemy, info: HitInfo, overflow: number): 
     for (let i = 0; i < 8; i++) w.spawnPickup('coin', e.x, e.y, Math.ceil(e.def.coins / 8));
     w.banner(t('fx.golden'), '#ffd84a');
   } else if (e.def.coins > 0 && w.rng.chance(e.elite.length ? 1 : 0.3)) {
-    w.spawnPickup('coin', e.x, e.y, e.def.coins * eliteMult * bounty);
+    w.spawnPickup('coin', e.x, e.y, e.def.coins * eliteMult * bounty * (e.elite.length && w.flags.has('gilded') ? 1.25 : 1));
   }
   if (e.elite.length) {
     if (w.rng.chance(w.flags.has('bounty') ? 0.4 : 0.25)) w.spawnPickup('core', e.x, e.y, 1);

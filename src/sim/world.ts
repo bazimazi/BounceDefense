@@ -6,9 +6,9 @@ import { SpatialHash } from '../core/spatial';
 import { ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACT_MAP } from '../data/arenas';
 import { CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
 import { ENEMY_MAP, INTERNAL_ENEMIES } from '../data/enemies';
-import { ascensionRules, type AscensionRule } from '../data/ascension';
+import { ASCENSION_TIER, MAX_ASCENSION, ascensionRules, type AscensionRule } from '../data/ascension';
 import { DEFAULT_UNLOCKED_RELICS, RELICS, RELIC_MAP, RELIC_WEIGHT } from '../data/relics';
-import { WORKSHOP_MAP } from '../data/meta';
+import { MAX_DRAFT_CARDS, SECOND_WIND, SENTINEL_INTERVAL, SIGNATURE_UPGRADE, WORKSHOP_MAP } from '../data/meta';
 import { normalizeTalents, TALENTS, talentModifiers, type TalentRanks } from '../data/talents';
 import { EVOLUTION_MAP, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADE_MAP } from '../data/upgrades';
@@ -51,7 +51,14 @@ export interface RunConfig {
   ascension?: number;
   /** Relics this profile can find (defaults to the starting set). */
   relicPool?: string[];
+  /** Different bosses this profile has defeated (Combat Archive). */
+  bossLore?: number;
+  /** Core Resonance's partner core: half its passive stats join the run. */
+  echoCore?: string;
 }
+
+/** Where the Sentinel drones hover above the line. */
+export const SENTINEL_POS: [number, number][] = [[118, DEFENSE_Y - 26], [422, DEFENSE_Y - 26]];
 
 export interface WorldEvents {
   levelUp: { offers: Offer[] };
@@ -78,6 +85,9 @@ export const POWER_START = 0.55;
 export const POWER_END = 0.95;
 /** Default Tactical Recall cooldown; builds change it through the `recallCooldown` stat. */
 export const RECALL_COOLDOWN = 10;
+/** A tier's `lateHp` ramps in from this run time over LATE_HP_RAMP seconds. */
+export const LATE_HP_START = 60;
+export const LATE_HP_RAMP = 360;
 /** Seconds for Kinetic Barrier charges to refill after one is spent. */
 export const BARRIER_RECHARGE = 12;
 /**
@@ -159,6 +169,21 @@ export class World {
   vortexCounter = 0;
   lanternStacks = 0;
   phoenixUsed = false;
+  /** The Second Wind blueprint has already held the line this run. */
+  secondWindUsed = false;
+  /** Unbreakable (talent capstone) has already held the line this run; the line ignores damage until this time. */
+  unbreakableUsed = false;
+  invulnUntil = -1;
+  /** Cryostasis Failsafe has already frozen the field this run. */
+  cryostasisUsed = false;
+  /** The Surge now running is Aftershock's echo, which never echoes again. */
+  aftershockLive = false;
+  /** Seconds until the Sentinel drones fire. */
+  sentinelT = 2;
+  /** Rarity floor of each pending relic cache (0 any, 1 rare or better, 2 legendary). */
+  relicFloors: number[] = [];
+  /** Relic Attunement has already lifted a cache this run. */
+  attuned = false;
   /** Seconds survived since Endless began. */
   endlessTime = 0;
   private xpScale = 1;
@@ -249,7 +274,7 @@ export class World {
     const pacts = cfg.pacts.map((p) => PACT_MAP[p]).filter(Boolean);
     this.pacts = new Set(pacts.map((p) => p.rule ?? p.id));
     // Ascension only applies on the hardest tier.
-    this.asc = ascensionRules(this.diff === DIFFICULTIES[DIFFICULTIES.length - 1] ? clamp(Math.floor(cfg.ascension ?? 0), 0, 20) : 0);
+    this.asc = ascensionRules(DIFFICULTIES.indexOf(this.diff) >= ASCENSION_TIER ? clamp(Math.floor(cfg.ascension ?? 0), 0, MAX_ASCENSION) : 0);
     const asc = this.asc;
     this.noHeal = pacts.some((p) => p.rule === 'noHeal');
     this.loneBall = pacts.some((p) => p.rule === 'loneBall');
@@ -257,8 +282,9 @@ export class World {
     this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) *
       (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
-    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) - (asc.has('reroll') ? 1 : 0));
-    this.banishes = noReroll || !this.flags.has('banish') ? 0 : 2 + (this.flags.has('banish2') ? 1 : 0);
+    const ws = (id: string) => cfg.workshop[id] ?? 0;
+    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) + ws('bp_draft') - (asc.has('reroll') ? 1 : 0));
+    this.banishes = noReroll ? 0 : (this.flags.has('banish') ? 2 + (this.flags.has('banish2') ? 1 : 0) : 0) + ws('bp_exile');
     this.xpScale = asc.has('xp10') ? 1.1 : 1;
     this.xpNext = Math.ceil(xpForLevel(1) * this.xpScale);
     this.trailColors = (TRAILS.find((t) => t.id === cfg.trail) ?? TRAILS[0]).colors;
@@ -280,19 +306,28 @@ export class World {
     }
     for (const [id, lvl] of Object.entries(cfg.workshop)) {
       const wdef = WORKSHOP_MAP[id];
-      if (wdef && lvl > 0) mods.push(...wdef.mods(lvl));
+      // A refit only tunes its own core.
+      if (wdef && lvl > 0 && (!wdef.core || wdef.core === core.id)) mods.push(...wdef.mods(lvl));
     }
     for (const p of pacts) if (p.mods) mods.push(...p.mods);
     mods.push(...talentModifiers(this.talents));
+    // Research: Combat Archive rewards a wide boss record, Core Resonance lends half of another core's passive stats.
+    if (this.flags.has('archive')) mods.push({ stat: 'eliteDamage', add: 0.02 * Math.min(10, cfg.bossLore ?? 0) });
+    const echo = this.flags.has('echocore') && cfg.echoCore && cfg.echoCore !== core.id ? CORE_MAP[cfg.echoCore] : undefined;
+    if (echo) for (const m of echo.mods) mods.push({ stat: m.stat, ...(m.add ? { add: m.add / 2 } : {}), ...(m.mult ? { mult: m.mult / 2 } : {}) });
     if (asc.has('hull15')) mods.push({ stat: 'maxHp', mult: -0.15 });
     if (asc.has('heal30')) mods.push({ stat: 'healMult', mult: -0.3 });
     if (this.flags.has('tactics')) mods.push({ stat: 'recallCooldown', add: -2 });
     if (this.flags.has('surge1')) mods.push({ stat: 'surgeGain', mult: 0.15 });
     for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
     // Workshop Spare Ball raises Extra Ball's ceiling: more balls late, no early power spike.
-    const caps: Record<string, number> = (cfg.workshop.spare_ball ?? 0) > 0 ? { extra_ball: 1 } : {};
+    const spare = (ws('spare_ball') > 0 ? 1 : 0) + (ws('spare_ball') > 0 && ws('bp_magazine') > 0 ? 1 : 0);
+    const caps: Record<string, number> = spare ? { extra_ball: spare } : {};
     this.build = new Build(core.id, mods, behaviors, [], caps);
     for (const u of core.startUpgrades) this.build.addUpgrade(u);
+    if (this.flags.has('evocat')) this.build.evoDiscount = 1;
+    const sig = SIGNATURE_UPGRADE[core.id];
+    if (this.flags.has('signature') && sig && cfg.pool.includes(sig) && this.build.level(sig) === 0) this.build.addUpgrade(sig);
     this.refreshBehaviors();
     this.maxHp = this.build.stats.maxHp;
     this.hp = this.maxHp;
@@ -303,8 +338,11 @@ export class World {
     this.resonance = new ResonanceCircuit(this);
     this.director = new Director(this);
     this.discover('arenas', this.arena.id);
-    if ((cfg.workshop.head_start ?? 0) > 0) this.pendingLevels++;
-    if ((cfg.workshop.relic_cache ?? 0) > 0 && !cfg.tutorial) this.grantRelic(false);
+    if (ws('head_start') > 0) this.pendingLevels++;
+    if (ws('head_start') > 0) this.pendingLevels += ws('bp_launch');
+    if (ws('relic_cache') > 0 && !cfg.tutorial) this.grantRelic(false);
+    if (this.flags.has('unified') && !cfg.tutorial) this.grantRelic(false, 2);
+    if (ws('bp_primed') > 0) this.surge.charge = this.surge.max * Math.min(1, ws('bp_primed') / 3);
   }
 
   // ------------------------------------------------------------------ setup
@@ -415,7 +453,8 @@ export class World {
     const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
     const crown = this.build.has('relic_cursed_crown') ? 1.25 : 1;
     const bossAsc = def.boss && this.asc.has('boss20') ? 1.2 : 1;
-    const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown;
+    const late = 1 + ((this.diff.lateHp ?? 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
+    const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown * late;
     return {
       id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed,
       armor: def.armor + (this.pacts.has('ironclad') ? 3 : 0),
@@ -497,9 +536,10 @@ export class World {
   }
 
   /** A relic cache: opens a relic draft as soon as the arena is calm (between level-ups). */
-  grantRelic(announce = true): void {
+  grantRelic(announce = true, floor = 0): void {
     if (!this.relicsAllowed() || !this.relicChoices().length) return;
     this.pendingRelics++;
+    this.relicFloors.push(floor);
     if (announce) {
       this.banner(t('fx.relicCache'), '#ffb300', t('fx.relicCacheSub'));
       this.emit({ t: 'sfx', name: 'relic' });
@@ -514,10 +554,17 @@ export class World {
   }
 
   openRelicDraft(): void {
-    const count = Math.max(1, (this.flags.has('relic4') ? 4 : 3) - (this.asc.has('relic2') ? 1 : 0));
-    const candidates = this.relicChoices();
+    const count = Math.max(1, (this.flags.has('relic4') ? 4 : 3) + ((this.cfg.workshop.bp_relic_vault ?? 0) > 0 ? 1 : 0) - (this.asc.has('relic2') ? 1 : 0));
+    let candidates = this.relicChoices();
     const luck = this.build.stats.luck;
     const tier = { common: 0, rare: 1, legendary: 2 };
+    // A lifted cache offers only the rarer relics, stepping down when none of that rarity are left.
+    let floor = this.relicFloors[0] ?? 0;
+    if (this.flags.has('attune') && !this.attuned) { floor = Math.max(floor, 1); this.attuned = true; }
+    for (; floor > 0; floor--) {
+      const lifted = candidates.filter((id) => tier[RELIC_MAP[id].rarity] >= floor);
+      if (lifted.length) { candidates = lifted; break; }
+    }
     this.offers = [];
     while (this.offers.length < count && candidates.length) {
       const pick = this.rng.weighted(candidates, (id) => RELIC_WEIGHT[RELIC_MAP[id].rarity] * (1 + luck * 0.3 * tier[RELIC_MAP[id].rarity]));
@@ -527,6 +574,7 @@ export class World {
     }
     if (!this.offers.length) {
       this.pendingRelics = 0;
+      this.relicFloors.length = 0;
       return;
     }
     this.draft = 'relic';
@@ -569,7 +617,7 @@ export class World {
 
   // ------------------------------------------------------------------ player
   hurt(dmg: number, x: number): void {
-    if (this.state === 'over') return;
+    if (this.state === 'over' || this.time < this.invulnUntil) return;
     const st = this.build.stats;
     if (this.barrier.charges > 0) {
       this.barrier.charges--;
@@ -589,6 +637,15 @@ export class World {
     if (st.comboGuard > 0 && this.combo.count >= 30) amount *= 1 - Math.min(0.6, st.comboGuard);
     this.hp -= amount;
     this.run.damageTaken += amount;
+    // Cryostasis Failsafe: the first time the line runs low, the whole field freezes.
+    if (this.flags.has('cryostasis') && !this.cryostasisUsed && this.hp > 0 && this.hp < this.maxHp * 0.25) {
+      this.cryostasisUsed = true;
+      for (const e of this.enemies) if (e.alive) e.st.frozenT = Math.max(e.st.frozenT, e.boss ? 1 : 3);
+      this.banner(t('fx.cryostasis'), '#9fdcff', t('fx.cryostasisSub'), true);
+      this.emit({ t: 'flash', color: '#9fdcff', a: 0.4 });
+      this.emit({ t: 'ring', x: 270, y: DEFENSE_Y, r: 420, color: '#9fdcff', dur: 0.6 });
+      this.emit({ t: 'sfx', name: 'freeze' });
+    }
     if (this.director.bossActive) this.run.bossNoDamage = false;
     this.emit({ t: 'hurt', x, dmg: amount });
     this.emit({ t: 'shake', amt: Math.min(14, 4 + amount * 0.4) });
@@ -604,10 +661,51 @@ export class World {
       this.emit({ t: 'slowmo', dur: 0.8, scale: 0.3 });
       this.emit({ t: 'sfx', name: 'evolve' });
     }
+    // Unbreakable: the talent capstone turns the first lethal hit of a run into 1 HP and four seconds of grace.
+    if (this.hp <= 0 && this.talents.unbreakable && !this.unbreakableUsed) {
+      this.unbreakableUsed = true;
+      this.hp = 1;
+      this.invulnUntil = this.time + 4;
+      this.banner(t('fx.unbreakable'), '#7be0cb', t('fx.unbreakableSub'), true);
+      this.emit({ t: 'flash', color: '#7be0cb', a: 0.4 });
+      this.emit({ t: 'ring', x: 270, y: DEFENSE_Y, r: 360, color: '#7be0cb', dur: 0.6 });
+      this.emit({ t: 'sfx', name: 'shield' });
+    }
+    const wind = this.cfg.workshop.bp_second_wind ?? 0;
+    if (this.hp <= 0 && wind > 0 && !this.secondWindUsed && !this.noHeal) {
+      // Second Wind: the line holds once, recovers and clears the enemies pressing on it.
+      this.secondWindUsed = true;
+      this.hp = this.maxHp * SECOND_WIND[Math.min(wind, SECOND_WIND.length) - 1];
+      for (const e of [...this.enemies]) {
+        if (e.alive && e.y > DEFENSE_Y - 220) explode(this, e.x, e.y, 40, st.damage * 3, 1, { src: 'quake', color: '#ff6b8b' });
+      }
+      this.banner(t('fx.secondWind'), '#ff6b8b', t('fx.secondWindSub'), true);
+      this.emit({ t: 'flash', color: '#ff6b8b', a: 0.45 });
+      this.emit({ t: 'slowmo', dur: 0.7, scale: 0.35 });
+      this.emit({ t: 'sfx', name: 'evolve' });
+    }
     if (this.hp <= 0) {
       this.hp = 0;
       this.finish(false);
     }
+  }
+
+  /** Sentinel drones: each fires a short-lived shard at the enemy closest to the line. */
+  private updateSentinels(dt: number): void {
+    this.sentinelT -= dt;
+    if (this.sentinelT > 0 || this.endTimer >= 0) return;
+    const twin = this.flags.has('sentinel2');
+    this.sentinelT = SENTINEL_INTERVAL[twin ? 1 : 0];
+    let target: Enemy | null = null;
+    for (const e of this.enemies) if (e.alive && e.y > FIELD_TOP + 20 && (!target || e.y > target.y)) target = e;
+    if (!target) return;
+    for (const [x, y] of twin ? SENTINEL_POS : SENTINEL_POS.slice(0, 1)) {
+      const b = this.spawnBall('shard', x, y, target.x - x, target.y - y);
+      if (!b) continue;
+      b.life = 5;
+      this.emit({ t: 'ring', x, y, r: 16, color: '#7ef0ff' });
+    }
+    this.emit({ t: 'sfx', name: 'launch' });
   }
 
   heal(amount: number, budgeted = true): void {
@@ -750,8 +848,12 @@ export class World {
 
   activateSurge(): void {
     if (!this.canSurge()) return;
-    const dur = this.build.stats.surgeDuration;
     this.surge.charge = 0;
+    this.surgeBurst(this.build.stats.surgeDuration);
+  }
+
+  /** The Surge itself: a damage and speed window opened by a blast from every ball in flight. */
+  private surgeBurst(dur: number): void {
     this.surge.active = dur;
     this.addBuff('surge', dur, [{ stat: 'speed', mult: 0.25 }, { stat: 'damage', mult: 0.3 }]);
     const st = this.build.stats;
@@ -787,10 +889,11 @@ export class World {
   openLevelUp(): void {
     // Pacts make some upgrades inert; never offer a card that cannot do anything.
     const inert = [...(this.loneBall ? ['extra_ball'] : []), ...(this.noHeal ? ['vampiric', 'regen'] : [])];
-    const count = (this.flags.has('fourth_card') ? 4 : 3) + (this.build.has('relic_chaos_die') ? 1 : 0);
+    const wide = (this.cfg.workshop.bp_wide_draft ?? 0) > 0 ? 1 : 0;
+    const count = Math.min(MAX_DRAFT_CARDS, (this.flags.has('fourth_card') ? 4 : 3) + wide + (this.build.has('relic_chaos_die') ? 1 : 0));
     this.offers = makeOffers({
       build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
-      count, levelIndex: this.levelUps, noHeal: this.noHeal,
+      count, levelIndex: this.levelUps, noHeal: this.noHeal, guaranteeRare: this.flags.has('fate'),
     });
     this.draft = 'upgrade';
     this.state = 'levelup';
@@ -815,7 +918,10 @@ export class World {
   choose(offer: Offer): void {
     if (this.state !== 'levelup') return;
     const relicDraft = this.draft === 'relic';
-    if (relicDraft) this.pendingRelics = Math.max(0, this.pendingRelics - 1);
+    if (relicDraft) {
+      this.pendingRelics = Math.max(0, this.pendingRelics - 1);
+      this.relicFloors.shift();
+    }
     else {
       this.levelUps++;
       this.pendingLevels = Math.max(0, this.pendingLevels - 1);
@@ -981,7 +1087,18 @@ export class World {
       this.buffs = this.buffs.filter((b) => b.t > 0);
       this.syncTempMods();
     }
-    if (this.surge.active > 0) this.surge.active -= dt;
+    if (this.surge.active > 0) {
+      this.surge.active -= dt;
+      // Aftershock: a finished Surge fires once more at half length; the echo itself never echoes.
+      if (this.surge.active <= 0) {
+        if (this.flags.has('aftershock') && !this.aftershockLive && this.endTimer < 0) {
+          this.aftershockLive = true;
+          this.surgeBurst(this.build.stats.surgeDuration / 2);
+          this.banner(t('fx.aftershock'), '#ffb347');
+        } else this.aftershockLive = false;
+      }
+    }
+    if (this.flags.has('sentinel')) this.updateSentinels(dt);
     this.recallCooldown = Math.max(0, this.recallCooldown - dt);
     this.resonance.update(dt);
 
@@ -1047,7 +1164,7 @@ export class World {
       if (!e.alive) continue;
       // Phased enemies are out of reach: nothing collides with or targets them.
       if (!e.phased) this.grid.insert(e);
-      if (e.def.ai === 'magnet' || e.def.ai === 'warden' || e.def.ai === 'pulsar' || e.def.id === 'boss_magnetar') this.fieldEnemies.push(e);
+      if (e.def.ai === 'magnet' || e.def.ai === 'warden' || e.def.ai === 'pulsar' || e.def.id === 'boss_magnetar' || e.def.id === 'boss_sovereign') this.fieldEnemies.push(e);
       if (e.elite.includes('commander')) this.commanders.push(e);
     }
 

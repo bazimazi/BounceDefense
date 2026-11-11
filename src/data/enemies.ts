@@ -179,12 +179,43 @@ export const ENEMIES: EnemyDef[] = [
     hp: 2300, speed: 0, radius: 42, armor: 4, damage: 40, xp: 90, coins: 220, threat: 0,
     shape: 'pentagon', color: '#e8eef8', material: 'stone', ai: 'boss', boss: true,
   },
+  // ---- apex bosses: they close Abyss and the tiers above it
+  {
+    id: 'boss_colossus', name: 'The Colossus', desc: 'A walking mountain. Its stride shakes the whole line forward.', tip: 'It shrugs off burst damage: keep up steady pressure, and clear the field before each quake.',
+    hp: 5200, speed: 0, radius: 54, armor: 6, damage: 40, xp: 120, coins: 300, threat: 0,
+    shape: 'square', color: '#d2a679', material: 'stone', ai: 'boss', boss: true,
+  },
+  {
+    id: 'boss_sol', name: 'Sol', desc: 'The burning twin. Immune to fire.', tip: 'Kill both twins within a few seconds of each other, or the fallen one rises again.',
+    hp: 5000, speed: 0, radius: 40, armor: 3, damage: 40, xp: 70, coins: 160, threat: 0,
+    shape: 'star', color: '#ffb347', material: 'energy', ai: 'boss', boss: true, immune: ['fire'],
+  },
+  {
+    id: 'boss_luna', name: 'Luna', desc: 'The frozen twin. Immune to ice.', tip: 'Kill both twins within a few seconds of each other, or the fallen one rises again.',
+    hp: 5000, speed: 0, radius: 40, armor: 3, damage: 40, xp: 70, coins: 160, threat: 0,
+    shape: 'crescent', color: '#9fd8ff', material: 'crystal', ai: 'boss', boss: true, immune: ['ice'],
+  },
+  {
+    id: 'boss_overmind', name: 'The Overmind', desc: 'A hive intelligence that hides behind every mind it commands.', tip: 'Every enemy on the field shields it. Clear the swarm, then strike.',
+    hp: 6000, speed: 0, radius: 46, armor: 3, damage: 40, xp: 110, coins: 280, threat: 0,
+    shape: 'spike', color: '#ff6bd6', material: 'energy', ai: 'boss', boss: true, immune: ['poison'],
+  },
+  {
+    id: 'boss_sovereign', name: 'The Void Sovereign', desc: 'The throne at the bottom of everything. It borrows the tricks of every other boss.', tip: 'At 70% and 35% health it seals itself behind void shards: break them to wound it again.',
+    hp: 7200, speed: 0, radius: 50, armor: 5, damage: 40, xp: 160, coins: 400, threat: 0,
+    shape: 'star', color: '#9d4dff', material: 'energy', ai: 'boss', boss: true,
+  },
+  {
+    id: 'void_shard', name: 'Void Shard', desc: 'Seals the Void Sovereign while it stands.', tip: '',
+    hp: 160, speed: 0, radius: 17, armor: 3, damage: 0, xp: 4, coins: 3, threat: 0,
+    shape: 'diamond', color: '#c9a2ff', material: 'crystal', ai: 'pylon',
+  },
 ];
 
 export const ENEMY_MAP: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));
 
 /** Enemies shown in the codex (excludes internal fragments). */
-export const INTERNAL_ENEMIES = ['splitling', 'swarmling', 'minion', 'revenant', 'brood_egg', 'ward_pylon'];
+export const INTERNAL_ENEMIES = ['splitling', 'swarmling', 'minion', 'revenant', 'brood_egg', 'ward_pylon', 'void_shard'];
 export const CODEX_ENEMIES = ENEMIES.filter((e) => !e.boss && !INTERNAL_ENEMIES.includes(e.id));
 
 export const ELITE_MODS: EliteModDef[] = [
@@ -209,8 +240,16 @@ export const BOSSES: BossDef[] = [
   { id: 'chronarch', name: 'The Chronarch', title: 'Lord of Hours', enemy: 'boss_chronarch', desc: 'Stops time to freeze your balls in mid-air and fills the arena with stasis bubbles.' },
   { id: 'architect', name: 'The Architect', title: 'Builder of Walls', enemy: 'boss_architect', desc: 'Raises walls to block your shots and hides behind ward pylons.' },
 ];
-export const BOSS_MAP: Record<string, BossDef> = Object.fromEntries(BOSSES.map((b) => [b.id, b]));
+/** Apex bosses close Abyss and every tier above it, and join the Endless rotation. */
+export const APEX_BOSSES: BossDef[] = [
+  { id: 'colossus', name: 'The Colossus', title: 'Titan of Ruin', enemy: 'boss_colossus', apex: true, desc: 'Unyielding: it takes only a sliver of any burst beyond a steady trickle. Its quakes drive every enemy toward your line.' },
+  { id: 'twins', name: 'The Twin Eclipse', title: 'Sol and Luna', enemy: 'boss_sol', apex: true, desc: 'Two bosses bound together: each takes less damage while both stand, and a fallen twin rises again unless the other falls soon after.' },
+  { id: 'overmind', name: 'The Overmind', title: 'Hive Intelligence', enemy: 'boss_overmind', apex: true, desc: 'Every enemy on the field shields it, and it keeps calling elite thralls to its side.' },
+  { id: 'sovereign', name: 'The Void Sovereign', title: 'Throne of Nothing', enemy: 'boss_sovereign', apex: true, desc: 'Three phases. It bends your shots, seals itself behind void shards, and finally stops time.' },
+];
+export const ALL_BOSSES: BossDef[] = [...BOSSES, ...APEX_BOSSES];
+export const BOSS_MAP: Record<string, BossDef> = Object.fromEntries(ALL_BOSSES.map((b) => [b.id, b]));
 
 localize('enemy', ENEMIES, ['name', 'desc', 'tip']);
 localize('elite', ELITE_MODS, ['name', 'desc']);
-localize('boss', BOSSES, ['name', 'title', 'desc']);
+localize('boss', ALL_BOSSES, ['name', 'title', 'desc']);

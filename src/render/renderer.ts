@@ -4,15 +4,16 @@ import { EVENT_MAP } from '../data/arenas';
 import { CORE_MAP } from '../data/balls';
 import { BOSS_MAP, ELITE_MAP } from '../data/enemies';
 import { EVOLUTION_MAP } from '../data/synergies';
+import { SENTINEL_INTERVAL } from '../data/meta';
 import { UPGRADE_MAP } from '../data/upgrades';
-import { ARCHITECT_WALL, FORTRESS_HALF_ARC, FORTRESS_RING } from '../sim/bosses';
+import { ARCHITECT_WALL, COLOSSUS_CAP, FORTRESS_HALF_ARC, FORTRESS_RING, OVERMIND_WARD_MAX, TWIN_REVIVE } from '../sim/bosses';
 import { RELIC_MAP } from '../data/relics';
 import { traceAim } from '../sim/physics';
 import {
   DEFENSE_Y, FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, W,
   type Ball, type Enemy, type Fx,
 } from '../sim/types';
-import { MOMENTUM_COLORS, momentumName, POWER_START, POWER_END, type World } from '../sim/world';
+import { MOMENTUM_COLORS, momentumName, POWER_START, POWER_END, SENTINEL_POS, type World } from '../sim/world';
 import { effectiveTier } from '../sim/physics';
 import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
@@ -307,6 +308,7 @@ export class Renderer {
     this.particles.draw(ctx);
     this.drawAim(w);
     this.drawLauncher(w);
+    if (w.flags.has('sentinel')) this.drawSentinels(w);
     for (const b of w.balls) this.drawBall(w, b);
     if (w.event?.id === 'blackout') this.drawBlackout(w);
     if (w.timeStop > 0 || w.event?.id === 'time_warp') {
@@ -1002,16 +1004,77 @@ export class Renderer {
         ctx.stroke();
       }
     }
+    if (e.def.id === 'boss_colossus') {
+      // Stone plates, and a gauge of the damage budget: when it runs dry, extra hits barely land.
+      ctx.strokeStyle = '#5a3f26'; ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) {
+        const a = i * TAU / 4 + Math.PI / 4;
+        ctx.beginPath(); ctx.moveTo(e.x + Math.cos(a) * e.r * 0.35, e.y + Math.sin(a) * e.r * 0.35);
+        ctx.lineTo(e.x + Math.cos(a + 0.25) * e.r * 0.85, e.y + Math.sin(a + 0.25) * e.r * 0.85); ctx.stroke();
+      }
+      const k = Math.max(0, Math.min(1, e.t3 / (e.maxHp * COLOSSUS_CAP)));
+      ctx.strokeStyle = k > 0.15 ? '#ffd9a8' : '#ff5d3b'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 16, -Math.PI / 2, -Math.PI / 2 + TAU * k); ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+    if (e.def.id === 'boss_sol' || e.def.id === 'boss_luna') {
+      const sol = e.def.id === 'boss_sol';
+      ctx.strokeStyle = sol ? '#ffd27a99' : '#d8f1ff99'; ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const a = i * TAU / 8 + this.time * (sol ? 0.6 : -0.4);
+        ctx.beginPath(); ctx.moveTo(e.x + Math.cos(a) * (e.r + 4), e.y + Math.sin(a) * (e.r + 4));
+        ctx.lineTo(e.x + Math.cos(a) * (e.r + 14), e.y + Math.sin(a) * (e.r + 14)); ctx.stroke();
+      }
+      if (e.t1 > 0) {
+        // The partner is rising: a closing ring counts down the revive.
+        ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 20, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, e.t1 / TWIN_REVIVE)); ctx.stroke();
+        ctx.lineCap = 'butt';
+      }
+    }
+    if (e.def.id === 'boss_overmind') {
+      ctx.globalAlpha = 0.25 + 0.6 * Math.min(1, e.t3 / OVERMIND_WARD_MAX);
+      ctx.strokeStyle = '#ff9be6'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 12 + Math.sin(this.time * 4) * 2, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (e.def.id === 'boss_sovereign') {
+      ctx.strokeStyle = '#c9a2ff66'; ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const rr = 280 - ((this.time * 70 + i * 93) % 230);
+        ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(e.r, rr), 0, TAU); ctx.stroke();
+      }
+      if (e.t3 > 0) {
+        ctx.strokeStyle = '#e0ccff'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 9, 0, TAU); ctx.stroke();
+      }
+    }
     void w;
   }
 
   private drawBossExtras(w: World): void {
     const ctx = this.ctx;
     for (const e of w.enemies) {
+      if (!e.alive || (e.def.id !== 'boss_overmind' && e.def.id !== 'boss_sovereign')) continue;
+      // Tethers: the minds feeding the Overmind's ward, the shards sealing the Sovereign.
+      const sov = e.def.id === 'boss_sovereign';
+      ctx.strokeStyle = sov ? 'rgba(201,162,255,0.55)' : 'rgba(255,107,214,0.22)';
+      ctx.lineWidth = sov ? 2 : 1;
+      ctx.setLineDash(sov ? [6, 4] : [3, 5]);
+      let n = 0;
+      for (const o of w.enemies) {
+        if (!o.alive || o.boss) continue;
+        if (sov ? o.def.id !== 'void_shard' : o.def.ai === 'golden' || o.def.ai === 'pylon') continue;
+        if (++n > 16) break;
+        ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(o.x, o.y); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+    for (const e of w.enemies) {
       if (!e.alive || e.def.id !== 'boss_architect') continue;
       // Tethers to the ward pylons that shield it.
       for (const p of w.enemies) {
-        if (!p.alive || p.def.ai !== 'pylon') continue;
+        if (!p.alive || p.def.id !== 'ward_pylon') continue;
         ctx.strokeStyle = 'rgba(154,216,255,0.45)'; ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(p.x, p.y); ctx.stroke();
@@ -1184,6 +1247,21 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(res.enemy.x, res.enemy.y, res.enemy.r + 6 + Math.sin(this.time * 10) * 2, 0, TAU);
       ctx.stroke();
+    }
+  }
+
+  /** Sentinel drones: a hovering diamond whose ring fills as the next shot charges. */
+  private drawSentinels(w: World): void {
+    const ctx = this.ctx;
+    const twin = w.flags.has('sentinel2');
+    const charge = 1 - clamp(w.sentinelT / SENTINEL_INTERVAL[twin ? 1 : 0], 0, 1);
+    for (const [x, y0] of twin ? SENTINEL_POS : SENTINEL_POS.slice(0, 1)) {
+      const y = y0 + Math.sin(this.time * 2.4 + x) * 3;
+      this.drawGlow(x, y, 22, '#7ef0ff', 0.35 + charge * 0.3);
+      ctx.fillStyle = '#0b1a24'; ctx.strokeStyle = '#7ef0ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x + 8, y); ctx.lineTo(x, y + 9); ctx.lineTo(x - 8, y); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#7ef0ff80'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 14, -Math.PI / 2, -Math.PI / 2 + TAU * charge); ctx.stroke();
     }
   }
 
