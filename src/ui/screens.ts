@@ -379,6 +379,7 @@ export class UI {
 
   private confirmAction(title: string, message: string, label: string, proceed: () => void, cancel: () => void, cancelLabel = t('pause.keepPlaying'), relevant = () => true): void {
     const world = this.game.world;
+    if (world && !this.game.paused) this.game.pause();
     this.navigation.view(`confirm:${title}`, () => this.confirmAction(title, message, label, proceed, cancel, cancelLabel, relevant), {
       cancel, valid: () => (!world || this.game.world === world) && relevant(),
     });
@@ -1126,6 +1127,8 @@ export class UI {
   // ------------------------------------------------------------------ settings
   settings(): void {
     const world = this.game.world;
+    // Forward can return here from the live run: the run beneath a page is always paused.
+    if (world && !this.game.paused) this.game.pause();
     this.navigation.view('settings', () => this.settings(), { valid: () => !world || this.game.world === world });
     const s = this.p.settings;
     const apply = () => { this.game.applySettings(); this.game.save(); };
@@ -1231,24 +1234,33 @@ export class UI {
 
   // ------------------------------------------------------------------ in-run HUD
   beginRun(w: World): void {
+    // Returning to the run from a page above it (Settings, the end-run prompt) finds it paused.
+    const restore = () => {
+      if (!this.game.paused) { this.game.resume(); return; }
+      this.clearScreen();
+      this.game.pause();
+    };
     const options = {
       valid: () => this.game.world === w,
       guard: {
         when: () => this.game.world === w,
+        // Pause is a mode of the run entry, not a page: Back pauses and Back resumes, and
+        // neither adds history (an entry added in answer to Back would be skippable in Chromium).
         // Banish targeting is a sub-mode of the upgrade choice: Back leaves it before pausing.
-        act: () => {
+        act: (direct: boolean) => {
           if (this.banishMode && w.state === 'levelup' && this.overlay?.dataset.view === 'upgrade') {
             this.banishMode = false;
             this.click();
             this.levelUp(w);
-          } else this.game.pause();
+          } else if (direct && this.game.paused) this.game.resume();
+          else this.game.pause();
         },
       },
     };
     // Keep two guarded entries even for First Contact/Daily, which start from Home.
     // Two queued browser Back presses must stay in this document until popstate runs.
-    this.navigation.view('run-boundary', () => this.game.resume(), options);
-    this.navigation.view('run', () => this.game.resume(), options);
+    this.navigation.view('run-boundary', restore, options);
+    this.navigation.view('run', restore, options);
     this.hud();
   }
 
@@ -1257,7 +1269,7 @@ export class UI {
     this.clearScreen();
     cancelWithin(this.hudEl); this.hudEl?.remove();
     this.root.toggleAttribute('data-left-handed', this.p.settings.leftHanded);
-    const pause = h('button', { class: 'hudbtn pause-btn', 'aria-label': t('hud.pause'), onclick: () => { this.click(); this.game.pause(); } }, icon('pause'));
+    const pause = h('button', { class: 'hudbtn pause-btn', 'aria-label': t('hud.pause'), onclick: () => { this.click(); this.navigation.hold(); this.game.pause(); } }, icon('pause'));
     const surge = h('button', { class: 'surge', 'aria-label': t('hud.surge'), title: t('hud.surgeTitle'), onclick: () => this.game.world?.activateSurge() },
       h('span', { class: 'surge-face' }, icon('bolt'), h('b', { class: 'surge-text' }, t('hud.surgeLabel')))) as HTMLButtonElement;
     const recall = h('button', { class: 'recall', 'aria-label': t('hud.recall'), title: t('hud.recallTitle'), onclick: () => this.game.world?.activateRecall() },
@@ -1528,10 +1540,6 @@ export class UI {
 
   // ------------------------------------------------------------------ pause
   pauseMenu(w: World): void {
-    this.navigation.view('pause', () => {
-      this.clearScreen();
-      this.game.pause();
-    }, { valid: () => this.game.world === w });
     // Balls include milestone balls, which are not an upgrade stat.
     const st = { ...w.build.stats, maxBalls: w.maxBallsAllowed() };
     const keys: StatKey[] = ['damage', 'critChance', 'critMult', 'speed', 'maxBalls', 'pierce', 'burnChance', 'chillChance', 'chainChance', 'explosionChance', 'splitChance', 'bleedChance', 'lifesteal', 'maxHp', 'armor'];
@@ -1559,7 +1567,7 @@ export class UI {
           guide(t('pause.resonance'), t('pause.resonanceDesc')),
           guide(t('pause.recallSurge'), t('pause.recallSurgeDesc')))),
       h('div', { class: 'col overlay-actions' },
-        h('button', { class: 'primary big', onclick: () => { this.click(); this.navigation.dismiss(); } }, icon('play'), t('pause.resume')),
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.resume(); } }, icon('play'), t('pause.resume')),
         h('div', { class: 'row' },
           h('button', { style: 'flex:1', onclick: () => { this.click(); this.settings(); } }, icon('gear'), t('pause.settings')),
           // Returning to the Pause entry already re-renders the menu; cancelling only restores focus.

@@ -1,6 +1,7 @@
 interface BackGuard {
   when: () => boolean;
-  act: () => void;
+  /** `direct`: Back left this entry itself, rather than passing through it from a page above. */
+  act: (direct: boolean) => void;
 }
 
 interface View {
@@ -23,7 +24,14 @@ interface NavigationState {
   depth: number;
 }
 
-/** One history entry per page; browser, touch and keyboard Back share the same guards. */
+/**
+ * One history entry per page; browser, touch, keyboard and Android Back share the same guards.
+ *
+ * Entries are only ever added for a tap (with user activation). A guard that stops a Back
+ * returns to its entry by traversing forward, never by pushing it again: Chromium marks
+ * entries added without user activation as skippable, so a re-pushed run would let the next
+ * browser or Android WebView Back jump straight past the game and out of it.
+ */
 export class Navigation {
   direction: 'forward' | 'back' | 'replace' = 'forward';
   private session = '';
@@ -36,13 +44,19 @@ export class Navigation {
   private inputLocked = false;
   private unlockTimer = 0;
   private operation: { root: Entry; children: Entry[] } | null = null;
-  /** A history step we issued to undo a Forward onto a retired dialog; its popstate is ignored. */
+  /**
+   * A history step we issued to return to an entry (a guard re-arming its run, or undoing a
+   * Forward onto a retired dialog); its popstate is ignored.
+   */
   private bounce: { session: string; id: number; depth: number } | null = null;
+  /** Entries opened while a bounce is in flight; pushing then would prune the entries ahead. */
+  private deferred: Entry[] = [];
   private watchdog = 0;
 
   constructor() {
     window.addEventListener('popstate', e => this.pop(e.state));
-    // Optional embedding bridge: forward native Back as a cancelable DOM event.
+    // Native bridge (the Android shell): Back arrives as a cancelable DOM event; leaving it
+    // uncancelled lets the host do its default (leave the app from Home).
     document.addEventListener('backbutton', e => {
       if (this.back()) { e.preventDefault(); e.stopPropagation(); }
     });
@@ -71,7 +85,22 @@ export class Navigation {
     for (const [id, old] of this.entries) if (old.depth >= entry.depth) this.entries.delete(id);
     this.entries.set(entry.id, entry);
     this.current = entry;
-    history.pushState(this.state(entry), '');
+    this.push(entry);
+  }
+
+  private push(entry: Entry): void {
+    if (this.bounce) {
+      this.deferred = this.deferred.filter(e => e.depth < entry.depth);
+      this.deferred.push(entry);
+    } else history.pushState(this.state(entry), '');
+  }
+
+  /** The bounce landed (or was abandoned): open the entries tapped meanwhile. */
+  private settleBounce(): void {
+    this.bounce = null;
+    const deferred = this.deferred;
+    this.deferred = [];
+    for (const entry of deferred) if (this.entries.get(entry.id) === entry) history.pushState(this.state(entry), '');
   }
 
   /**
@@ -107,6 +136,7 @@ export class Navigation {
     const depth = this.bounce?.depth ?? this.read(history.state)?.depth ?? this.current?.depth ?? 0;
     this.session = `${Date.now()}-${++this.serial}`;
     this.entries.clear();
+    this.deferred = [];
     const root: Entry = { key: 'home', restore: restoreHome, id: ++this.serial, depth: 0 };
     const children: Entry[] = child ? [{ ...child, id: ++this.serial, depth: 1 }] : [];
     this.current = children[0] ?? root;
@@ -132,7 +162,7 @@ export class Navigation {
     if (!this.current || this.current.key === 'home') return false;
     this.lockInput();
     if (steps === 1 && this.current.guard?.when()) {
-      this.current.guard.act();
+      this.current.guard.act(true);
     } else {
       this.pending = true;
       this.traverse(-Math.min(steps, this.current.depth));
@@ -149,7 +179,8 @@ export class Navigation {
   private traverse(delta: number): void {
     window.clearTimeout(this.watchdog);
     this.watchdog = window.setTimeout(() => this.recover(), 800);
-    history.go(delta);
+    // go(0) would reload the page; recover() settles whatever was waiting on the step.
+    if (delta) history.go(delta);
   }
 
   private recover(): void {
@@ -158,12 +189,12 @@ export class Navigation {
       // Still above the root of the retired stack: walk down again. At the root, commit.
       if (state && state.depth > 0) this.traverse(-state.depth);
       else this.pop(history.state);
-    } else if (this.bounce && state && state.id !== this.bounce.id) {
+    } else if (this.bounce && state && state.session === this.bounce.session && state.id !== this.bounce.id && state.depth !== this.bounce.depth) {
       this.traverse(this.bounce.depth - state.depth);
     } else {
       // A dropped Back simply did not happen; the player can press it again.
       this.pending = false;
-      this.bounce = null;
+      this.settleBounce();
     }
   }
 
@@ -189,19 +220,29 @@ export class Navigation {
     this.pending = false;
   }
 
+  /** A tap that changes the page (Pause) is not undone by a Back already on its way. */
+  hold(): void {
+    this.lockInput();
+  }
+
   private lockInput(): void {
     this.inputLocked = true;
     window.clearTimeout(this.unlockTimer);
     this.unlockTimer = window.setTimeout(() => { this.inputLocked = false; }, 180);
   }
 
-  private rearm(from: Entry, depth: number): void {
-    // Rebuild any skipped parents synchronously. An asynchronous history.forward()
-    // can be cancelled by another hardware Back press and leave input stuck.
-    const parents = [...this.entries.values()].filter(e => e.depth > depth && e.depth <= from.depth).sort((a, b) => a.depth - b.depth);
-    for (const entry of parents) history.pushState(this.state(entry), '');
-    this.current = from;
+  /**
+   * Return to `target` after a Back landed at depth `landing` below it. The entries in between
+   * are still ahead in the session history, so traverse forward to them. A Back pressed while the
+   * step is in flight is absorbed (history is corrected once it is quiet), and the watchdog
+   * retries a dropped step.
+   */
+  private rearm(target: Entry, landing: number): void {
+    this.current = target;
     this.pending = false;
+    if (target.depth <= landing) return;
+    this.bounce = { session: this.session, id: target.id, depth: target.depth };
+    this.traverse(target.depth - landing);
   }
 
   private pop(value: unknown): void {
@@ -209,8 +250,13 @@ export class Navigation {
     const state = this.read(value);
     const bounce = this.bounce;
     if (bounce) {
-      this.bounce = null;
-      if (state?.session === bounce.session && state.id === bounce.id) return;
+      if (state?.session === bounce.session && state.id === bounce.id) { this.settleBounce(); return; }
+      // Another traversal moved history elsewhere: a quick second Back, or one of our own steps
+      // queued behind it. Steps are relative, so one issued now could overshoot once the queue
+      // drains (onto a page left ahead, like Settings above the run). Wait until history is
+      // quiet, then step to the entry once more from wherever it really is.
+      this.watchdog = window.setTimeout(() => this.recover(), 60);
+      return;
     }
     const operation = this.operation;
     if (operation) {
@@ -228,7 +274,7 @@ export class Navigation {
     // popstate arrives AFTER history has moved. Restore the guarded entry before
     // opening Pause or a discard dialog, so the new layer has the correct parent.
     // One traversal can skip several entries (a long-press history menu, engines that merge
-    // queued steps, or a Back computed before Pause pushed its entry). Entries are left
+    // queued steps, or Chromium skipping entries it considers unactivated). Entries are left
     // deepest-first, so the first active guard stops the traversal: a live run is never
     // dropped by landing on Home, and a draft is never left without its prompt.
     const landing = state?.depth ?? 0;
@@ -242,7 +288,7 @@ export class Navigation {
         this.restoring = true;
         try { stop.restore(); from.cancel?.(); } finally { this.restoring = false; }
       }
-      stop.guard!.act();
+      stop.guard!.act(stop === from);
       return;
     }
     const target = state?.session === this.session ? this.entries.get(state.id) : undefined;

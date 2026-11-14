@@ -120,12 +120,13 @@ try {
     mark('held Escape, pointer release, paused Settings and abandon cancellation; browser Back pauses live run');
 
     // One traversal can skip several entries. Each must stop at the run's guard, never drop the run.
+    // Pause is a mode of the run entry, so a paused run shows the Pause menu or a page above it.
     const synced = () => page.evaluate(() => {
       const n = window.game.ui.navigation;
-      return n.current.depth === history.state.depth && (n.key === 'pause') === window.game.paused;
+      return n.current.depth === history.state.depth && window.game.paused === !!document.querySelector('.pause-overlay, .settings-screen');
     });
     const world = await page.evaluate(() => (window.__run = window.game.world, true));
-    // A Back computed before Pause pushed its entry lands two levels up.
+    // A Back already on its way does not undo a Pause tap.
     await page.evaluate(() => { history.back(); document.querySelector('.game-hud .hudbtn').click(); }); await ready();
     assert.equal(await ui.locator('.pause-overlay').count(), 1); assert.equal(await synced(), true);
     await back('hardware'); assert.equal(await page.evaluate(() => window.game.controlsEnabled), true);
@@ -137,9 +138,11 @@ try {
     assert.equal(await ui.locator('.pause-overlay').count(), 1, 'A multi-step jump pauses instead of discarding the run');
     assert.equal(await page.evaluate(() => window.game.world === window.__run && window.game.paused), world);
     assert.equal(await synced(), true);
-    // Engines may drop a scripted step when another lands in the same task; Back must recover.
+    // Forward from the live run onto the Settings page above it pauses the run again.
+    // Engines may also drop a scripted step that lands in the same task; Back must recover.
     await page.evaluate(() => { document.querySelector('.pause-overlay .primary').click(); history.forward(); }); await ready();
     assert.equal(await synced(), true);
+    if (await ui.locator('.settings-screen').count()) { await back('hardware'); assert.equal(await ui.locator('.pause-overlay').count(), 1); }
     if (await page.evaluate(() => window.game.paused)) { await back('hardware'); }
     assert.equal(await page.evaluate(() => window.game.controlsEnabled), true, 'Back responds after a dropped traversal');
     await back('hardware'); assert.equal(await ui.locator('.pause-overlay').count(), 1);

@@ -40,7 +40,8 @@ export class Game {
   private demoArena: string | null = null;
   private demoRng = new Rng(99);
   private mode: 'menu' | 'run' = 'menu';
-  private paused = false;
+  /** Read by the UI; test fixtures also set it to freeze a frame without the pause overlay. */
+  paused = false;
   private acc = 0;
   private last = 0;
   private slow = { t: 0, scale: 1 };

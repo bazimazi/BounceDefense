@@ -15,6 +15,7 @@ const results = await Promise.allSettled(engines.map(async engine => {
   await run('ui-audit', engine);
   await run('game-flow', engine);
   await run('back-check', engine);
+  await run('back-race', engine);
   await run('motion-check', engine);
   await run('aim-check', engine);
   // Persian: the same layout audit right-to-left, then the language flow itself.

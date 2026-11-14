@@ -27,6 +27,8 @@
     "test:ui:layout": "node --import tsx scripts/ui-audit.mjs",
     "test:ui:flow": "node scripts/game-flow.mjs",
     "test:ui:back": "node scripts/back-check.mjs",
+    "test:ui:back-race": "node scripts/back-race.mjs",
+    "test:android:back": "node scripts/back-android.mjs",
     "test:ui:motion": "node scripts/motion-check.mjs",
     "test:ui:aim": "node scripts/aim-check.mjs",
     "test:ui:i18n": "node --import tsx scripts/i18n-check.mjs",
