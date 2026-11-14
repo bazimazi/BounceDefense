@@ -163,6 +163,8 @@ export interface Zone {
   dps: number;
   tick: number;
   alive: boolean;
+  /** Skill that placed the zone, credited with its damage on the damage meter. */
+  by: string;
 }
 
 export type Obstacle =

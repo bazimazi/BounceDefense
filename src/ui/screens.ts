@@ -35,6 +35,7 @@ import { icon, type IconName } from './icons';
 import { Navigation } from './navigation';
 import { cancelWithin, enter, feedback, retire, revealItems, revealView, tabFeedback, type MotionDirection } from './motion';
 import { newTalentState, talentPanel } from './talents';
+import { damageReport, LiveDamageMeter } from './damage-meter';
 
 const rarityLabel = (r: Rarity) => t(`rarity.${r}` as UiKey);
 const tierLabel = (tier: 'known' | 'hidden' | 'legendary') => t(`tier.${tier}` as UiKey);
@@ -93,6 +94,8 @@ export class UI {
   private surgeBtn: HTMLButtonElement | null = null;
   private recallBtn: HTMLButtonElement | null = null;
   private compactTelemetry: HTMLElement | null = null;
+  private meterBtn: HTMLButtonElement | null = null;
+  private readonly liveMeter = new LiveDamageMeter();
   private hintEl: HTMLElement | null = null;
   private handEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
@@ -1133,7 +1136,7 @@ export class UI {
     const s = this.p.settings;
     const apply = () => { this.game.applySettings(); this.game.save(); };
     const switchState = (on: boolean) => (on ? t('settings.on') : t('settings.off'));
-    type ToggleKey = 'shake' | 'damageNumbers' | 'debug' | 'haptics' | 'leftHanded' | 'reduceFlashes';
+    type ToggleKey = 'shake' | 'damageNumbers' | 'damageMeter' | 'debug' | 'haptics' | 'leftHanded' | 'reduceFlashes';
     const toggle = (glyph: IconName, label: string, desc: string, key: ToggleKey) =>
       h('button', {
         type: 'button', class: 'setting-switch', role: 'switch', 'aria-label': label, 'aria-checked': String(s[key]), 'data-setting': key,
@@ -1210,6 +1213,7 @@ export class UI {
         section(t('settings.combat'),
           toggle('shake', t('settings.shake'), t('settings.shakeDesc'), 'shake'),
           toggle('number', t('settings.damageNumbers'), t('settings.damageNumbersDesc'), 'damageNumbers'),
+          toggle('chart', t('settings.damageMeter'), t('settings.damageMeterDesc'), 'damageMeter'),
           toggle('eye', t('settings.reduceFlashes'), t('settings.reduceFlashesDesc'), 'reduceFlashes'),
           canVibrate ? toggle('vibrate', t('settings.haptics'), t('settings.hapticsDesc'), 'haptics') : null),
         section(t('settings.system'), toggle('bug', t('settings.debug'), t('settings.debugDesc'), 'debug')),
@@ -1288,7 +1292,13 @@ export class UI {
         h('div', {}, h('small', {}, t('hud.boss')), h('b', { class: 'compact-boss' })),
         h('div', {}, h('small', {}, t('hud.nextUpgrade')), h('div', { class: 'compact-xp' }, h('span')))));
     this.compactTelemetry = telemetry;
-    this.hudEl = h('div', { class: 'game-hud' }, pause, surge, recall, telemetry);
+    this.meterBtn = h('button', {
+      class: 'hudbtn meter-btn', 'aria-label': t('hud.damageMeter'), title: t('hud.damageMeter'), 'aria-pressed': String(this.p.settings.damageMeter),
+      onclick: () => { this.click(); this.toggleDamageMeter(); },
+    }, icon('chart')) as HTMLButtonElement;
+    this.liveMeter.el.hidden = !this.p.settings.damageMeter;
+    this.liveMeter.refresh(this.game.world);
+    this.hudEl =h('div', { class: 'game-hud' }, this.liveMeter.el, pause, this.meterBtn, surge, recall, telemetry);
     this.root.append(this.hudEl);
     enter(this.hudEl, 'hud', 0);
     revealItems(this.hudEl);
@@ -1302,12 +1312,24 @@ export class UI {
     this.surgeBtn = null;
     this.recallBtn = null;
     this.compactTelemetry = null;
+    this.meterBtn = null;
     this.hint(null);
     this.guideHand(false);
   }
 
+  /** Shows or hides the live damage meter; the choice is saved with the other settings. */
+  toggleDamageMeter(): void {
+    const s = this.p.settings;
+    s.damageMeter = !s.damageMeter;
+    this.game.save();
+    this.meterBtn?.setAttribute('aria-pressed', String(s.damageMeter));
+    this.liveMeter.el.hidden = !s.damageMeter;
+    if (s.damageMeter) this.liveMeter.refresh(this.game.world);
+  }
+
   updateHud(w: World): void {
     if (!this.surgeBtn) return;
+    if (this.p.settings.damageMeter) this.liveMeter.update(w);
     const frac = w.surge.charge / w.surge.max;
     this.surgeBtn.style.setProperty('--p', `${Math.round(frac * 100)}%`);
     const ready = w.canSurge();
@@ -1559,6 +1581,8 @@ export class UI {
           w.build.relics.length ? h('div', { class: 'build-tags relics-line' }, w.build.relics.map(id =>
             h('span', { class: `tag relic ${RELIC_MAP[id].cursed ? 'cursed' : ''}`, style: `--c:${RELIC_COLOR[RELIC_MAP[id].rarity]}`, title: RELIC_MAP[id].desc }, `${RELIC_MAP[id].icon} ${RELIC_MAP[id].name}`))) : null),
         h('div', { class: 'stat-grid' }, keys.filter((k) => st[k] > 0 && STAT_FORMATS[k]).map((k) => statTile(statLabel(k), STAT_FORMATS[k]!(st[k])))),
+        sectionTitle(t('pause.damage')),
+        damageReport(w.damageReport(), w.time),
         talentSpent(w.talents) ? h('div', { class: 'build-tags talents-line' }, TALENTS.filter(tl => w.talents[tl.id]).map(tl =>
           h('span', { class: 'tag', title: tl.desc(w.talents[tl.id]) }, t('pause.talentChip', { icon: tl.icon, name: tl.name, rank: w.talents[tl.id], max: tl.maxRank })))) : null,
         h('details', { class: 'manual' },
@@ -1649,6 +1673,7 @@ export class UI {
           statTile(t('results.powerShots'), s.powerShots ?? 0),
           statTile(t('results.starfalls'), s.starfalls ?? 0),
           statTile(t('results.recalls'), s.recalls ?? 0)),
+        s.damageBy?.length ? [sectionTitle(t('results.damageReport')), damageReport(s.damageBy, s.time)] : null,
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('results.yourBuild')), h('div', { class: 'buildname' }, s.buildName))),
           h('div', { class: 'build-strip wrap' }, s.upgrades.map(u => UPGRADE_MAP[u.id] ? h('span', { class: `build-chip ${UPGRADE_MAP[u.id].rarity}`, title: UPGRADE_MAP[u.id].name }, h('span', { class: 'build-chip-icon' }, UPGRADE_MAP[u.id].icon), h('b', {}, String(u.level))) : null),

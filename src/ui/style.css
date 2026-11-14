@@ -45,6 +45,7 @@ html[dir='rtl'] { --flip: -1; }
 /* Arabic-script letters join; tracking would tear words apart. */
 html[lang='fa'] * { letter-spacing: 0 !important; }
 html[lang='fa'] .compact-telemetry b { font-family: var(--font); }
+html[lang='fa'] :is(.dm-head b, .dm-value, .dm-total b) { font-family: var(--font); }
 /* Directional glyphs point the reading way; media glyphs (play, skip) never mirror. */
 html[dir='rtl'] .icon-back, html[dir='rtl'] .icon-forward { transform: scaleX(-1); }
 /* Signed numbers (+15%, -10) stay one left-to-right island inside Persian sentences. */
@@ -792,6 +793,40 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .compact-xp > span { display: block; height: 100%; background: var(--accent); transition: width .15s linear; }
 #ui[data-compact-hud] .hudbtn { position: fixed; top: 12px; right: 12px; }
 #ui[data-compact-hud] .recall, #ui[data-compact-hud] .surge { position: fixed; }
+
+/* Damage meter: a toggle under Pause, a quiet panel over the top-left of the field, and the full report. */
+.meter-btn { top: 62px; }
+.meter-btn[aria-pressed='true'] { color: var(--accent); border-color: #7ef0d277; background: #0f2a2ccc; }
+#ui[data-compact-hud] .meter-btn { position: fixed; top: 12px; right: 64px; }
+.damage-meter {
+  position: absolute; left: 8px; top: calc(var(--s) * 134px); width: min(210px, 44%); padding: 6px 7px 7px;
+  border-radius: 12px; background: #08101ebd; border: 1px solid #97cedb2e; box-shadow: 0 6px 18px #0006;
+  font-size: 11px; line-height: 1.2; pointer-events: none !important;
+}
+.damage-meter[hidden] { display: none; }
+#ui[data-compact-hud] .damage-meter { position: fixed; left: 16px; top: 200px; width: min(210px, calc(50vw - var(--s) * 270px - 32px)); max-height: calc(100% - 320px); overflow: hidden; }
+.dm-head { display: flex; align-items: baseline; gap: 5px; margin: 0 2px 4px; white-space: nowrap; }
+.dm-title { margin-inline-end: auto; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-3); }
+.dm-head b { font: 800 11px/1 Consolas, monospace; color: var(--text); }
+.dm-dps-label { font-size: 9px; font-weight: 700; color: var(--text-3); }
+.dm-head .dm-dps-value { color: var(--gold); }
+.dm-rows { display: grid; gap: 2px; }
+.dm-row { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto 32px; align-items: center; gap: 5px; padding: 2px 4px; border-radius: 5px; overflow: hidden; isolation: isolate; }
+.dm-row::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: var(--w); background: var(--c); opacity: .22; z-index: -1; }
+.dm-row::after { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 2px; background: var(--c); }
+.dm-icon { font-size: 12px; line-height: 1; text-align: center; }
+.dm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text); }
+.dm-value { font: 700 11px/1 Consolas, monospace; color: var(--text); }
+.dm-pct { font-size: 10px; color: var(--text-2); text-align: end; }
+.dm-empty { padding: 2px 4px; color: var(--text-3); }
+.damage-report { display: grid; gap: 4px; padding: 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--stroke); }
+.damage-report.empty { color: var(--text-3); font-size: 13px; }
+.damage-report .dm-row { grid-template-columns: 22px minmax(0, 1fr) auto 44px; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.damage-report .dm-icon { font-size: 15px; }
+.damage-report .dm-value { font-size: 13px; }
+.damage-report .dm-pct { font-size: 12px; }
+.dm-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 0 4px 8px; margin-bottom: 2px; border-bottom: 1px solid var(--stroke); font-size: 12px; color: var(--text-3); }
+.dm-total b { margin-inline-end: 14px; font: 800 14px/1 Consolas, monospace; color: var(--text); }
 
 /* First Contact: a ghost finger shows the drag-and-release gesture from the launcher. */
 .guide-hand { position: absolute; left: 50%; top: 88.5%; width: 0; height: 0; z-index: 4; pointer-events: none; }

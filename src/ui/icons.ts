@@ -45,6 +45,7 @@ const STROKE: Record<string, string> = {
   arrowUp: 'M12 19V5m-6 6 6-6 6 6',
   fire: 'M12 21.5a6.5 6.5 0 0 0 6.5-6.5c0-4-3-6-4-9.5-1.5 2-2 3.5-2 5-1-1-2-2.5-2-4.5C8 8.5 5.5 11 5.5 15a6.5 6.5 0 0 0 6.5 6.5Z',
   ball: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm-4 6a4 4 0 0 1 4-3',
+  chart: 'M4 20.5h16M7 16.5v-5m5 5v-11m5 11v-8',
 };
 
 /** Solid currency glyphs: legible at 14px and on gold or dark buttons alike. */

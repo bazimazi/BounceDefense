@@ -323,6 +323,7 @@ export class Game {
         w.activateSurge();
       }
       if (e.code === 'KeyR' && w && !this.paused && !e.repeat && w.state === 'playing') w.activateRecall();
+      if (e.code === 'KeyM' && w && !this.paused && !e.repeat) this.ui.toggleDamageMeter();
       if (e.code === 'Backquote') {
         this.profile.settings.debug = !this.profile.settings.debug;
         this.applySettings();

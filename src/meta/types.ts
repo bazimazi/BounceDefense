@@ -14,6 +14,8 @@ export interface Settings {
   music: number;
   shake: boolean;
   damageNumbers: boolean;
+  /** Live damage-by-skill panel over the arena. */
+  damageMeter: boolean;
   aimMode: 'direct' | 'slingshot';
   debug: boolean;
   /** Short vibrations for hits taken, level-ups and big moments (devices with the Vibration API). */
@@ -117,6 +119,8 @@ export interface DailyRecord {
 }
 
 export interface RunSummary {
+  /** Damage meter: [skill, damage] pairs, largest first (see `World.damageBy`). */
+  damageBy?: [string, number][];
   powerShots?: number;
   starfalls?: number;
   recalls?: number;

@@ -238,6 +238,8 @@ export function damageEnemy(w: World, e: Enemy, amount: number, info: HitInfo): 
   e.hp -= amount;
   e.flash = 0.1;
   w.run.damageDealt += amount;
+  const skill = w.dmgSkill || info.src;
+  w.damageBy.set(skill, (w.damageBy.get(skill) ?? 0) + amount);
   if (st.lifesteal > 0) {
     const boost = (w.build.has('blood_harvest') && e.st.bleed > 0) || (w.build.has('venom_leech') && e.st.poison > 0) ? 2 : 1;
     w.heal(amount * st.lifesteal * boost);
@@ -253,7 +255,7 @@ export function damageEnemy(w: World, e: Enemy, amount: number, info: HitInfo): 
   if (e.hp <= 0) {
     killEnemy(w, e, info, -e.hp);
     if (executed && w.build.has('evo_reaper') && info.depth < MAX_DEPTH) {
-      for (let i = 0; i < 2; i++) sparkNearest(w, e.x, e.y, st.damage * 1.2, '#d0c4ff');
+      w.credit('evo_reaper', () => { for (let i = 0; i < 2; i++) sparkNearest(w, e.x, e.y, st.damage * 1.2, '#d0c4ff'); });
     }
   }
   return amount;
@@ -269,6 +271,18 @@ export function flushDamageNumber(w: World, e: Enemy): void {
 
 export function killEnemy(w: World, e: Enemy, info: HitInfo, overflow: number): void {
   if (!e.alive) return;
+  // Death effects (on-kill procs, death blasts) are their own skills, not the killer's;
+  // behavior hooks re-credit themselves.
+  const prevSkill = w.dmgSkill;
+  w.dmgSkill = '';
+  try {
+    killEnemyInner(w, e, info, overflow);
+  } finally {
+    w.dmgSkill = prevSkill;
+  }
+}
+
+function killEnemyInner(w: World, e: Enemy, info: HitInfo, overflow: number): void {
   // Undying elites rise once more, before any rewards are paid.
   if (e.lives > 0 && !e.boss) {
     e.lives--;
@@ -380,7 +394,7 @@ export function killEnemy(w: World, e: Enemy, info: HitInfo, overflow: number): 
     const tgt = nearestEnemy(w, e.x, e.y, 220, e);
     if (tgt) {
       w.emit({ t: 'beam', x0: e.x, y0: e.y, x1: tgt.x, y1: tgt.y, color: '#ffffff' });
-      damageEnemy(w, tgt, overflow * st.overkill, { src: 'spark', crit: false, depth: info.depth + 1 });
+      w.credit('overkill', () => damageEnemy(w, tgt, overflow * st.overkill, { src: 'spark', crit: false, depth: info.depth + 1 }));
     }
   }
   if (e.elite.includes('volatile')) {

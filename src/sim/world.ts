@@ -242,6 +242,14 @@ export class World {
   explosionsThisStep = 0;
   staticCounter = 0;
   bh: [Behavior, number][] = [];
+  /**
+   * Damage meter: total damage per skill. A skill is the behavior whose hook dealt the damage
+   * (an upgrade, synergy, evolution, relic, core or talent), or otherwise the damage type.
+   */
+  damageBy = new Map<string, number>();
+  /** The behavior currently running a hook; damage dealt meanwhile is credited to it. */
+  dmgSkill = '';
+  private attributedBh = new Map<string, Behavior>();
   noHeal: boolean;
   loneBall: boolean;
   enemySpeedMult: number;
@@ -387,7 +395,10 @@ export class World {
     this.bh = [];
     for (const [id, p] of this.build.behaviors) {
       const b = BEHAVIORS[id];
-      if (b) this.bh.push([b, p]);
+      if (!b) continue;
+      let wrapped = this.attributedBh.get(id);
+      if (!wrapped) this.attributedBh.set(id, (wrapped = attributed(this, id, b)));
+      this.bh.push([wrapped, p]);
     }
   }
 
@@ -526,7 +537,18 @@ export class World {
 
   addZone(kind: Zone['kind'], x: number, y: number, r: number, dur: number, dps: number): void {
     if (this.zones.length > 60) return;
-    this.zones.push({ kind, x, y, r, t: 0, dur, dps, tick: 0, alive: true });
+    this.zones.push({ kind, x, y, r, t: 0, dur, dps, tick: 0, alive: true, by: this.dmgSkill });
+  }
+
+  /** Runs `fn` with its damage credited to `skill` on the damage meter. */
+  credit<T>(skill: string, fn: () => T): T {
+    const prev = this.dmgSkill;
+    this.dmgSkill = skill;
+    try {
+      return fn();
+    } finally {
+      this.dmgSkill = prev;
+    }
   }
 
   // ------------------------------------------------------------------ relics
@@ -610,9 +632,11 @@ export class World {
     if (!first) return;
     const dmg = st.damage * 0.8 * st.elementPower;
     this.emit({ t: 'lightning', pts: [o.x, o.y, first.x, first.y], color: '#ffe38a' });
-    damageEnemy(this, first, dmg, { src: 'chain', crit: false, depth: 1 });
-    // The arc carries on to two more enemies from wherever the first one stood.
-    if (first.alive) chainLightning(this, first, dmg, 2, 1);
+    this.credit('pylon', () => {
+      damageEnemy(this, first, dmg, { src: 'chain', crit: false, depth: 1 });
+      // The arc carries on to two more enemies from wherever the first one stood.
+      if (first.alive) chainLightning(this, first, dmg, 2, 1);
+    });
   }
 
   // ------------------------------------------------------------------ player
@@ -625,9 +649,11 @@ export class World {
       this.emit({ t: 'ring', x, y: DEFENSE_Y, r: 40, color: '#5ad7ff' });
       this.emit({ t: 'sfx', name: 'shield' });
       if (this.build.has('evo_aegis')) {
-        for (const e of [...this.enemies]) {
-          if (e.alive && e.y > DEFENSE_Y - 160) explode(this, e.x, e.y, 30, st.damage * 1.5, 2, { src: 'quake', color: '#7ef0ff' });
-        }
+        this.credit('evo_aegis', () => {
+          for (const e of [...this.enemies]) {
+            if (e.alive && e.y > DEFENSE_Y - 160) explode(this, e.x, e.y, 30, st.damage * 1.5, 2, { src: 'quake', color: '#7ef0ff' });
+          }
+        });
         this.emit({ t: 'ring', x: 270, y: DEFENSE_Y, r: 300, color: '#7ef0ff', dur: 0.5 });
       }
       return;
@@ -653,9 +679,11 @@ export class World {
     if (this.hp <= 0 && this.build.has('relic_phoenix') && !this.phoenixUsed && !this.noHeal) {
       this.phoenixUsed = true;
       this.hp = this.maxHp * 0.4;
-      for (const e of [...this.enemies]) {
-        if (e.alive && e.y > DEFENSE_Y - 260) explode(this, e.x, e.y, 40, st.damage * 4, 1, { src: 'quake', color: '#ffb36b' });
-      }
+      this.credit('relic_phoenix', () => {
+        for (const e of [...this.enemies]) {
+          if (e.alive && e.y > DEFENSE_Y - 260) explode(this, e.x, e.y, 40, st.damage * 4, 1, { src: 'quake', color: '#ffb36b' });
+        }
+      });
       this.banner(t('fx.phoenix'), '#ffb36b', t('fx.phoenixSub'), true);
       this.emit({ t: 'flash', color: '#ffb36b', a: 0.5 });
       this.emit({ t: 'slowmo', dur: 0.8, scale: 0.3 });
@@ -676,9 +704,11 @@ export class World {
       // Second Wind: the line holds once, recovers and clears the enemies pressing on it.
       this.secondWindUsed = true;
       this.hp = this.maxHp * SECOND_WIND[Math.min(wind, SECOND_WIND.length) - 1];
-      for (const e of [...this.enemies]) {
-        if (e.alive && e.y > DEFENSE_Y - 220) explode(this, e.x, e.y, 40, st.damage * 3, 1, { src: 'quake', color: '#ff6b8b' });
-      }
+      this.credit('bp_second_wind', () => {
+        for (const e of [...this.enemies]) {
+          if (e.alive && e.y > DEFENSE_Y - 220) explode(this, e.x, e.y, 40, st.damage * 3, 1, { src: 'quake', color: '#ff6b8b' });
+        }
+      });
       this.banner(t('fx.secondWind'), '#ff6b8b', t('fx.secondWindSub'), true);
       this.emit({ t: 'flash', color: '#ff6b8b', a: 0.45 });
       this.emit({ t: 'slowmo', dur: 0.7, scale: 0.35 });
@@ -841,7 +871,7 @@ export class World {
       b.trail.length = 0;
       this.emit({ t: 'ring', x: b.x, y: b.y, r: 42, color: '#8debdc' });
       this.emit({ t: 'beam', x0: b.x, y0: b.y, x1: LAUNCHER_X, y1: LAUNCHER_Y, color: '#8debdc' });
-      if (spark) sparkNearest(this, b.x, b.y, this.build.stats.damage * 1.5, '#8debdc');
+      if (spark) this.credit('quick_recall', () => sparkNearest(this, b.x, b.y, this.build.stats.damage * 1.5, '#8debdc'));
     }
     this.emit({ t: 'sfx', name: 'recall' });
   }
@@ -860,7 +890,7 @@ export class World {
     for (const b of this.balls) {
       if (b.state !== 'flight') continue;
       b.momentum += 12;
-      explode(this, b.x, b.y, 90, st.damage * 1.5, 1, { color: '#ffe066', src: 'surge' });
+      this.credit('surge', () => explode(this, b.x, b.y, 90, st.damage * 1.5, 1, { color: '#ffe066', src: 'surge' }));
     }
     this.emit({ t: 'flash', color: '#ffe066', a: 0.25 });
     this.emit({ t: 'sfx', name: 'surge' });
@@ -1231,7 +1261,7 @@ export class World {
         if (z.tick <= 0) {
           z.tick = 0.5;
           this.grid.query(z.x, z.y, z.r, this.q2);
-          for (const e of [...this.q2]) applyPoison(this, e, z.dps, 1, 2);
+          this.credit(z.by, () => { for (const e of [...this.q2]) applyPoison(this, e, z.dps, 1, 2); });
         }
       } else if (z.kind === 'vortex') {
         this.grid.query(z.x, z.y, z.r, this.q2);
@@ -1241,7 +1271,7 @@ export class World {
           e.ky += (z.y - e.y) * 4 * dt * 6;
         }
         if (z.t + dt >= z.dur && this.build.has('implosion')) {
-          explode(this, z.x, z.y, z.r * 0.8 * this.build.stats.area, z.dps, 1, { color: '#b48cff' });
+          this.credit(z.by, () => explode(this, z.x, z.y, z.r * 0.8 * this.build.stats.area, z.dps, 1, { color: '#b48cff' }));
         }
       } else if (z.kind === 'mine') {
         // Armed after a moment; any enemy touching it (or a nearby blast) sets it off.
@@ -1253,7 +1283,7 @@ export class World {
           }
           if (hit) {
             z.alive = false;
-            explode(this, z.x, z.y, 70 * this.build.stats.area, z.dps, 1, { src: 'mine', color: '#ffb13b' });
+            this.credit(z.by, () => explode(this, z.x, z.y, 70 * this.build.stats.area, z.dps, 1, { src: 'mine', color: '#ffb13b' }));
           }
         }
       }
@@ -1424,6 +1454,11 @@ export class World {
     this.banner(t('fx.endless'), '#c77dff', t('fx.endlessSub'), true);
   }
 
+  /** Damage per skill, largest first. */
+  damageReport(): [string, number][] {
+    return [...this.damageBy].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  }
+
   summary(): RunSummary {
     const r = this.run;
     const st = this.build.stats;
@@ -1440,6 +1475,7 @@ export class World {
       frozenCount: r.frozenCount, barrelsExploded: r.barrelsExploded, goldenCaught: r.goldenCaught,
       coinsCollected: Math.round(r.coinsCollected), coresCollected: r.coresCollected,
       poisonKills: r.poisonKills, relics: [...this.build.relics], endlessTime: this.endlessTime,
+      damageBy: this.damageReport(),
       ascension: this.asc.size,
       reactions: [...this.reactionsRun], synergies: [...this.build.synergies], evolutions: [...this.build.evolutions],
       upgrades: [...this.build.upgrades.entries()].map(([id, level]) => ({ id, level })),
@@ -1451,6 +1487,26 @@ export class World {
       },
     };
   }
+}
+
+/**
+ * Wraps a behavior so every hook it runs credits its damage to `id`. Hooks nest (a hook's chain
+ * lightning can kill, which runs onKill hooks), so the previous skill is restored afterwards.
+ */
+function attributed(w: World, id: string, b: Behavior): Behavior {
+  const out: Record<string, unknown> = {};
+  for (const [key, hook] of Object.entries(b) as [string, (...args: unknown[]) => unknown][]) {
+    out[key] = (...args: unknown[]) => {
+      const prev = w.dmgSkill;
+      w.dmgSkill = id;
+      try {
+        return hook.apply(b, args);
+      } finally {
+        w.dmgSkill = prev;
+      }
+    };
+  }
+  return out as Behavior;
 }
 
 export function upgradeName(id: string): string {
