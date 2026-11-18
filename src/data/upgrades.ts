@@ -199,7 +199,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'serrated', name: 'Serrated', icon: '🦷', category: 'offense', rarity: 'common', maxLevel: 4, locked: true,
     tags: ['bleed', 'vampire'],
-    desc: () => `+20% chance to Bleed. Bleed stacks up to 10 times.`,
+    desc: () => `+20% chance to Bleed: every stack deals 16% of the hit's damage per second, through armor.`,
     mods: (l) => [{ stat: 'bleedChance', add: 0.2 * l }],
   },
   {
@@ -269,8 +269,8 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'virulence', name: 'Virulence', icon: '🦠', category: 'element', rarity: 'rare', maxLevel: 3, locked: true,
     tags: ['poison'],
-    desc: () => `Poison deals +25% damage and stacks 4 higher.`,
-    mods: (l) => [{ stat: 'poisonPower', mult: 0.25 * l }, { stat: 'poisonCap', add: 4 * l }],
+    desc: () => `Poison deals +20% damage and stacks 3 higher.`,
+    mods: (l) => [{ stat: 'poisonPower', mult: 0.2 * l }, { stat: 'poisonCap', add: 3 * l }],
   },
   {
     id: 'contagion', name: 'Contagion', icon: '☣️', category: 'element', rarity: 'rare', maxLevel: 3, locked: true,
@@ -363,8 +363,8 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'bloodletting', name: 'Bloodletting', icon: '🩹', category: 'offense', rarity: 'rare', maxLevel: 3, locked: true,
     tags: ['bleed'],
-    desc: () => `Bleed stacks 5 higher. Bleeding enemies take +10% hit damage.`,
-    mods: (l) => [{ stat: 'bleedCap', add: 5 * l }, { stat: 'bleedVuln', add: 0.1 * l }],
+    desc: () => `Bleeds deal +20% damage and stack 5 higher. Bleeding enemies take +10% hit damage.`,
+    mods: (l) => [{ stat: 'bleedPower', mult: 0.2 * l }, { stat: 'bleedCap', add: 5 * l }, { stat: 'bleedVuln', add: 0.1 * l }],
   },
   {
     id: 'chrono_shot', name: 'Time Shot', icon: '⏱️', category: 'physics', rarity: 'epic', maxLevel: 2, locked: true,
@@ -389,8 +389,8 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'pandemic', name: 'Pandemic', icon: '🧫', category: 'element', rarity: 'epic', maxLevel: 2, locked: true, core: 'venom',
     tags: ['poison', 'chain'],
-    desc: () => `Poison stacks 8 higher, and every tick may jump a stack to a neighbour.`,
-    mods: (l) => [{ stat: 'poisonCap', add: 8 * l }],
+    desc: () => `Poison stacks 4 higher, and every tick may jump a stack to a neighbour.`,
+    mods: (l) => [{ stat: 'poisonCap', add: 4 * l }],
     behavior: 'pandemic',
   },
   {
@@ -402,7 +402,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'mirror_image', name: 'Mirror Image', icon: '🪞', category: 'multiply', rarity: 'epic', maxLevel: 2, locked: true, core: 'gemini',
     tags: ['swarm'],
-    desc: () => `Twin balls strike at 80% power and pierce one more enemy.`,
+    desc: () => `Twin balls strike at 100% power and pierce one more enemy.`,
     behavior: 'mirror_image',
   },
   {
@@ -427,8 +427,8 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'kinetic_lens', name: 'Kinetic Lens', icon: '🔭', category: 'offense', rarity: 'epic', maxLevel: 2, locked: true, core: 'striker',
     tags: ['crit', 'ricochet'],
-    desc: () => `+0.6 crit damage. Crits after 3+ wall bounces pierce.`,
-    mods: (l) => [{ stat: 'critMult', add: 0.6 * l }],
+    desc: () => `+5% crit chance and +0.6 crit damage. Crits after 3+ wall bounces pierce.`,
+    mods: (l) => [{ stat: 'critChance', add: 0.05 * l }, { stat: 'critMult', add: 0.6 * l }],
     behavior: 'kinetic_lens',
   },
   {
@@ -442,6 +442,12 @@ export const UPGRADES: UpgradeDef[] = [
     tags: ['vampire', 'bleed'],
     desc: () => `Deal +10% damage per missing 10% HP.`,
     behavior: 'sanguine',
+  },
+  {
+    id: 'cluster_charge', name: 'Cluster Charge', icon: '🎇', category: 'offense', rarity: 'epic', maxLevel: 2, locked: true, core: 'blast',
+    tags: ['explosion'],
+    desc: (l) => `Your explosions scatter ${l + 1} bomblets that blast for 40% damage.`,
+    behavior: 'cluster_charge',
   },
   {
     id: 'event_horizon', name: 'Event Horizon', icon: '🕳️', category: 'physics', rarity: 'epic', maxLevel: 2, locked: true, core: 'void',

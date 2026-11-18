@@ -12,6 +12,7 @@ export const STAT_DEFAULTS = {
   armorPen: 0,
   execute: 0, // kill non-boss enemies below this HP fraction
   overkill: 0, // fraction of excess kill damage carried to a nearby enemy
+  hitPower: 1, // multiplier on direct ball, shard and clone hits only (procs scale from the hit before it)
   // ---- physics
   speed: 780,
   radius: 9,
@@ -41,11 +42,12 @@ export const STAT_DEFAULTS = {
   burnSpread: 0, // chance a burning enemy spreads burn on death
   burnShred: 0, // armor ignored by hits on burning enemies
   poisonChance: 0,
-  poisonPower: 0.07, // poison dps per stack as a fraction of hit damage
+  poisonPower: 0.08, // poison dps per stack as a fraction of hit damage
   poisonCap: 12, // maximum poison stacks on one enemy
   poisonSpread: 0, // chance a poisoned enemy passes its stacks on at death
   freezeDuration: 1, // multiplier on freeze time
   bleedCap: 10,
+  bleedPower: 0.16, // bleed dps per stack as a fraction of hit damage
   bleedVuln: 0, // bonus hit damage against bleeding enemies
   // ---- explosion
   explosionChance: 0,

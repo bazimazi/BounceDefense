@@ -103,7 +103,7 @@ export const TALENTS: TalentDef[] = [
   { id: 'supremacy', tree: 'conduit', name: 'Elemental Supremacy', icon: '✷', tier: 4, maxRank: 5, gate: 16, requires: 'venom_lore', minWin: 7,
     desc: r => `+${r * 5}% elemental power. Grants no new effects.`, mods: r => [{ stat: 'elementPower', mult: r * 0.05 }] },
   { id: 'hemorrhage', tree: 'conduit', name: 'Hemorrhage', icon: '♦', tier: 4, maxRank: 5, gate: 16, requires: 'permafrost', minWin: 7,
-    desc: r => `Bleeding enemies take ${r * 4}% more hit damage, and bleeds stack ${r} higher. Requires a bleed source.`, mods: r => [{ stat: 'bleedVuln', add: r * 0.04 }, { stat: 'bleedCap', add: r }] },
+    desc: r => `Bleeds deal ${r * 6}% more damage and stack ${r} higher, and bleeding enemies take ${r * 4}% more hit damage. Requires a bleed source.`, mods: r => [{ stat: 'bleedPower', mult: r * 0.06 }, { stat: 'bleedVuln', add: r * 0.04 }, { stat: 'bleedCap', add: r }] },
   { id: 'elemental_storm', tree: 'conduit', capstone: true, name: 'Elemental Storm', icon: '❂', tier: 5, maxRank: 1, gate: 26, requires: 'supremacy', minWin: 9,
     desc: () => 'Enemies that die carrying two or more of burn, chill or freeze, bleed and poison burst for 120% damage (scaled by elemental power).', behavior: 'talent_storm' },
 

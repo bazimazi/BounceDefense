@@ -316,7 +316,7 @@ describe('upgrade and core mechanics', () => {
     g.beginAim(); g.setAim(0, -1); g.release();
     g.step(SIM_DT);
     const twin = g.balls.find((b) => b.kind === 'clone')!;
-    expect(twin.dmgMult).toBeCloseTo(0.45);
+    expect(twin.dmgMult).toBeCloseTo(g.build.stats.shardPower);
 
     const c = makeWorld({ core: 'chrono', seed: 9 });
     c.director.update = () => {};

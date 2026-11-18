@@ -23,8 +23,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'tesla', name: 'Tesla Core', icon: '⚡', color: '#5ee7ff', element: 'lightning',
     desc: 'Fast and conductive. Lightning leaps between targets.',
-    passive: 'Conductor: +10% chain chance, +1 jump, +8% speed.',
-    mods: [{ stat: 'chainChance', add: 0.1 }, { stat: 'chainCount', add: 1 }, { stat: 'speed', mult: 0.08 }],
+    passive: 'Conductor: +10% chain chance, +1 jump, +20% chain damage, +8% speed.',
+    mods: [{ stat: 'chainChance', add: 0.1 }, { stat: 'chainCount', add: 1 }, { stat: 'chainDamage', mult: 0.2 }, { stat: 'speed', mult: 0.08 }],
     startUpgrades: ['chain_lightning'],
     unlockCost: 3,
   },
@@ -39,9 +39,9 @@ export const CORES: CoreDef[] = [
   },
   {
     id: 'blood', name: 'Blood Core', icon: '🩸', color: '#ff2a55',
-    desc: 'Drains life with every hit. Trades hull for sustain.',
-    passive: 'Thirst: +3% lifesteal and +20% bleed chance, but -20 max HP.',
-    mods: [{ stat: 'lifesteal', add: 0.03 }, { stat: 'bleedChance', add: 0.2 }, { stat: 'maxHp', add: -20 }],
+    desc: 'Opens wounds that never close. Trades hull for sustain.',
+    passive: 'Thirst: +20% bleed chance, bleeds deal +40% damage and stack 5 higher, +3% lifesteal, but -20 max HP.',
+    mods: [{ stat: 'lifesteal', add: 0.03 }, { stat: 'bleedChance', add: 0.2 }, { stat: 'bleedPower', mult: 0.4 }, { stat: 'bleedCap', add: 5 }, { stat: 'maxHp', add: -20 }],
     startUpgrades: ['vampiric'],
     unlockCost: 6,
     unlockReq: { achievement: 'blood_bank', text: 'Heal 300 HP total' },
@@ -78,12 +78,22 @@ export const CORES: CoreDef[] = [
   {
     id: 'gemini', name: 'Gemini Core', icon: '♊', color: '#ffc2f4',
     desc: 'Never flies alone. Two balls, one mind.',
-    passive: 'Twin Star: every launch also fires a twin at 45% power. −15% damage.',
-    mods: [{ stat: 'damage', mult: -0.15 }],
+    passive: 'Twin Star: every launch also fires a twin at 45% power, raised by every shard and clone power bonus. −10% damage.',
+    mods: [{ stat: 'damage', mult: -0.1 }],
     startUpgrades: ['shard_forge'],
     behavior: 'gemini_core',
     unlockCost: 7,
     unlockReq: { achievement: 'swarm_protocol', text: 'Have 6 balls in flight at once' },
+  },
+  {
+    id: 'blast', name: 'Blast Core', icon: '💣', color: '#ffb13b',
+    desc: 'Loud and unstable. Every hit is a fuse.',
+    passive: 'Payload: +15% explosion chance, +30% explosion damage and +15% blast area. Your explosions can critically strike.',
+    mods: [{ stat: 'explosionChance', add: 0.15 }, { stat: 'explosionDamage', mult: 0.3 }, { stat: 'area', mult: 0.15 }],
+    startUpgrades: ['volatile'],
+    behavior: 'blast_core',
+    unlockCost: 6,
+    unlockReq: { achievement: 'demolition', text: 'Kill 50 enemies with explosions' },
   },
   {
     id: 'chrono', name: 'Chrono Core', icon: '⌛', color: '#ffd27a',
@@ -244,6 +254,10 @@ export const TRAILS = [
   { id: 'abyssal', name: 'Abyssal', colors: ['#c77dff', '#1a0040'] },
   { id: 'celestial', name: 'Celestial', colors: ['#fffbe6', '#bca7ff'] },
   { id: 'ascendant', name: 'Ascendant', colors: ['#ffffff', '#ffd451'] },
+  { id: 'gladiator', name: 'Gladiator', colors: ['#ffe1b0', '#d43a2f'] },
+  { id: 'zenith', name: 'Zenith', colors: ['#ffffff', '#7af0ff'] },
+  { id: 'radiant', name: 'Radiant', colors: ['#fff8d6', '#ff9de2'] },
+  { id: 'fuse', name: 'Fuse', colors: ['#fff0b0', '#ff6a00'] },
 ];
 
 localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);

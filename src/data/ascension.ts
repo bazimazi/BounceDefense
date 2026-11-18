@@ -7,7 +7,8 @@ import { localize } from '../i18n/content';
  */
 export type AscensionRule =
   | 'hp10' | 'eliteMod' | 'speed8' | 'heal30' | 'boss20' | 'reroll' | 'breach15' | 'spawn10' | 'hull15' | 'miniboss'
-  | 'traits' | 'starfall' | 'hp15' | 'xp10' | 'enrage' | 'projectiles' | 'eliteRegen' | 'relic2' | 'hp20' | 'thirdBoss';
+  | 'traits' | 'starfall' | 'hp15' | 'xp10' | 'enrage' | 'projectiles' | 'eliteRegen' | 'relic2' | 'hp20' | 'thirdBoss'
+  | 'armor3' | 'speed10' | 'boss40' | 'regen50' | 'traits2' | 'surgeSlow' | 'breach40' | 'hp50' | 'late25' | 'apexPlus';
 
 export interface AscensionDef {
   id: AscensionRule;
@@ -36,6 +37,17 @@ export const ASCENSIONS: AscensionDef[] = [
   { id: 'relic2', level: 18, desc: 'Relic caches offer one fewer choice.' },
   { id: 'hp20', level: 19, desc: 'Enemies have 20% more health.' },
   { id: 'thirdBoss', level: 20, desc: 'A third boss joins the assault.' },
+  // Ascension II: past the twentieth step the ladder keeps going for players who have bought everything.
+  { id: 'armor3', level: 21, desc: 'Every enemy except bosses gains +3 armor.' },
+  { id: 'speed10', level: 22, desc: 'Enemies move 10% faster.' },
+  { id: 'boss40', level: 23, desc: 'Bosses have 40% more health.' },
+  { id: 'regen50', level: 24, desc: 'Line regeneration is halved.' },
+  { id: 'traits2', level: 25, desc: 'Another 15% of ordinary enemies carry elite traits.' },
+  { id: 'surgeSlow', level: 26, desc: 'Surge charges 25% slower.' },
+  { id: 'breach40', level: 27, desc: 'Breaches hit your line 40% harder.' },
+  { id: 'hp50', level: 28, desc: 'Enemies have 50% more health.' },
+  { id: 'late25', level: 29, desc: 'Enemies toughen 25% more as the run goes on.' },
+  { id: 'apexPlus', level: 30, desc: 'One more apex boss waits at the end of the run.' },
 ];
 
 export const MAX_ASCENSION = ASCENSIONS.length;

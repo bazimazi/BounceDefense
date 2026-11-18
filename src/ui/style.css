@@ -324,6 +324,22 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .core-unlock { margin-top: 10px; display: flex; align-items: center; gap: 10px; text-align: start; background: var(--surface); border: 1px solid var(--stroke); border-radius: 14px; padding: 8px; padding-inline-start: 12px; }
 .core-unlock small { flex: 1; font-size: 12px; color: var(--text-2); line-height: 1.35; }
 .core-unlock .amount .icon { width: 16px; height: 16px; }
+.awaken-row { margin-top: 4px; display: flex; flex-direction: column; gap: 6px; padding: 9px 12px; border-radius: 14px; background: linear-gradient(115deg, color-mix(in srgb, var(--core) 12%, #111a2d), var(--surface) 70%); border: 1px solid color-mix(in srgb, var(--core) 30%, var(--stroke)); }
+.awaken-row .row { display: flex; align-items: center; gap: 8px; }
+.awaken-title { display: inline-flex; align-items: center; gap: 5px; }
+.awaken-title .icon { width: 14px; height: 14px; color: var(--gold); }
+.awaken-row.maxed { border-color: #ffcf4a66; box-shadow: 0 0 16px #ffcf4a1f; }
+.awaken-text { font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+.awaken-btn { align-self: stretch; min-height: 44px; gap: 8px; }
+.awaken-row .shop-req { margin: 0; }
+/* Run setup: Standard or Gauntlet. */
+.mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.mode-option { flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; min-height: 64px; padding: 8px 10px; text-align: start; border-radius: 13px; background: var(--surface); box-shadow: none; }
+.mode-option b { font-size: 14px; }
+.mode-option small { font-size: 11.5px; line-height: 1.3; color: var(--text-2); font-weight: 600; }
+.mode-option.on { border-color: #ff7b54; background: linear-gradient(120deg, #ff7b5426, var(--surface) 75%); }
+.mode-hint { display: flex; align-items: center; gap: 8px; }
+.mode-hint .icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-3); }
 .slot-list { display: flex; flex-direction: column; gap: 8px; }
 .slot-row { position: relative; justify-content: flex-start; gap: 12px; width: 100%; text-align: start; padding: 9px 12px; min-height: 66px; border-radius: 16px; }
 .slot-icon { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; font-size: 22px; background: #ffffff0b; border: 1px solid var(--stroke); }
@@ -460,17 +476,27 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .learned .talent-rank { color: var(--tree-color); border-color: var(--tree-color); }
 .talent-node-name { margin-top: 13px; max-width: 130px; font-size: 11.5px; font-weight: 700; line-height: 1.2; }
 .talent-cap-label { margin-top: 2px; font-size: 10px; font-weight: 800; color: var(--tree-color); white-space: nowrap; }
-.talent-detail { padding: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--tree-color) 40%, var(--stroke)); border-radius: 16px; }
+.talent-layout { display: flex; flex-direction: column; gap: 10px; }
+/* The selected talent docks to the bottom of the scrolling page: always in reach while the tree scrolls beneath. */
+.talent-detail {
+  position: sticky; bottom: 8px; z-index: 3; padding: 10px 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tree-color) 9%, #111a2d), #0d1527);
+  border: 1px solid color-mix(in srgb, var(--tree-color) 45%, var(--stroke)); border-radius: 16px;
+  box-shadow: 0 -12px 26px #070b16e0, 0 4px 0 #02050b;
+}
 .talent-detail-head { display: flex; align-items: center; gap: 10px; }
-.talent-detail-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border-radius: 12px; font-size: 24px; color: var(--tree-color); background: color-mix(in srgb, var(--tree-color) 12%, #0a1222); }
-.talent-detail-head strong { display: block; font-size: 15px; margin-bottom: 4px; }
-.talent-line { margin: 8px 0 0; font-size: 13px; line-height: 1.42; color: var(--text-2); }
+.talent-detail-icon { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; font-size: 22px; color: var(--tree-color); background: color-mix(in srgb, var(--tree-color) 12%, #0a1222); }
+.talent-detail-title { flex: 1; min-width: 0; }
+.talent-detail-title strong { display: block; font-size: 15px; line-height: 1.2; margin-bottom: 3px; }
+.talent-detail-rank { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.talent-line { margin: 6px 0 0; font-size: 12.5px; line-height: 1.38; color: var(--text-2); }
 .talent-line-label { display: inline-block; margin-inline-end: 6px; font-size: 10px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); }
 .talent-line.next .talent-line-label { color: var(--tree-color); }
-.talent-requirement { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--accent); }
+.talent-requirement { font-size: 11.5px; font-weight: 700; line-height: 1.3; color: var(--accent); }
 .talent-requirement.locked { color: var(--gold); }
-.talent-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; margin-top: 10px; }
-.talent-notice { margin-top: 8px; font-size: 12px; color: var(--green); }
+.talent-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; margin-top: 8px; }
+.talent-actions button { min-height: 44px; }
+.talent-notice { margin-top: 6px; font-size: 12px; color: var(--green); }
 .talent-rules { margin: 0 2px; font-size: 11.5px; color: var(--text-3); line-height: 1.5; }
 
 /* ------------------------------------------------------------- codex */
@@ -929,6 +955,9 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
   .orb.core-orb { width: 76px; height: 76px; }
   .codex-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .codex-tile { min-height: 80px; }
+  /* Talents: the tree on the left, the selected talent pinned beside it. */
+  .talent-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, .8fr); align-items: start; }
+  .talent-detail { top: 0; bottom: auto; box-shadow: 0 4px 0 #02050b; }
   .levelup { padding: 8px 14px; gap: 6px; }
   .draft-head { flex-direction: row; justify-content: center; gap: 12px; margin-bottom: 0; padding-top: 0; }
   .draft .lvtitle { font-size: 24px; }

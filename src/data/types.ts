@@ -234,7 +234,8 @@ export interface PactDef {
   desc: string;
   reward: number; // added reward multiplier
   mods?: Modifier[];
-  rule?: 'noHeal' | 'loneBall' | 'haste' | 'fortified' | 'fragile' | 'noReroll' | 'eliteSurge' | 'ironclad' | 'noRelic' | 'shortFuse';
+  rule?: 'noHeal' | 'loneBall' | 'haste' | 'fortified' | 'fragile' | 'noReroll' | 'eliteSurge' | 'ironclad' | 'noRelic' | 'shortFuse'
+    | 'eclipse' | 'warlords' | 'tide' | 'narrowFate';
   /** Requires this research flag to appear in Run setup. */
   flag?: string;
 }

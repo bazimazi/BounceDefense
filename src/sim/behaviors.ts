@@ -3,6 +3,7 @@ import {
   shardAt, sparkNearest, type HitInfo,
 } from './combat';
 import { phaseExitX, phaseY } from './physics';
+import { STAT_DEFAULTS } from './stats';
 import { DEFENSE_Y, type Ball, type Enemy, type Segment } from './types';
 import type { World } from './world';
 
@@ -32,6 +33,10 @@ function ready(w: World, b: object, key: string, cd: number): boolean {
   c[key] = w.time + cd;
   return true;
 }
+
+/** Gemini's twin power at the default shard power, and with Mirror Image. */
+export const GEMINI_TWIN = 0.45;
+export const GEMINI_MIRROR = 1;
 
 export const BEHAVIORS: Record<string, Behavior> = {
   talent_banked_power: {
@@ -294,7 +299,8 @@ export const BEHAVIORS: Record<string, Behavior> = {
       const c = w.spawnBall('clone', b.x, b.y, Math.cos(a), Math.sin(a));
       if (!c) return;
       const mirror = w.build.has('mirror_image');
-      c.dmgMult = mirror ? 0.8 : 0.45;
+      // The twin is a clone, spawned at shard power (45% by default): it starts at 60%, 90% with Mirror Image.
+      c.dmgMult *= (mirror ? GEMINI_MIRROR : GEMINI_TWIN) / STAT_DEFAULTS.shardPower;
       if (mirror) c.pierceLeft += 1;
       c.powered = b.powered;
       c.life = 9;

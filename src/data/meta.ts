@@ -62,7 +62,15 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'apex_pantheon', name: 'Apex Pantheon', icon: '🌌', desc: 'Defeat all four apex bosses.', progress: (p) => [APEX_BOSSES.filter((b) => (p.bossKills[b.id] ?? 0) > 0).length, APEX_BOSSES.length], rewards: [{ type: 'research', amount: 8 }, { type: 'cores', amount: 20 }] },
   { id: 'apex_slayer', name: 'Apex Slayer', icon: '⚔️', desc: 'Defeat 25 apex bosses.', progress: (p) => [apexKills(p), 25], rewards: [{ type: 'research', amount: 10 }, { type: 'cores', amount: 25 }] },
   { id: 'hivemind', name: 'Hivemind', icon: '🐝', desc: 'Have 14 balls in flight at once.', progress: (p) => [p.stats.maxBallsInFlight, 14], rewards: [{ type: 'relic', id: 'echo_bell' }, { type: 'relic', id: 'hydra_tooth' }] },
+  { id: 'awakened', name: 'Awakened', icon: '✴️', desc: 'Fully awaken a core.', progress: (p) => [fullyAwakened(p), 1], rewards: [{ type: 'research', amount: 6 }] },
+  { id: 'radiant_arsenal', name: 'Radiant Arsenal', icon: '🌟', desc: 'Fully awaken every core.', progress: (p) => [fullyAwakened(p), CORES.length], rewards: [{ type: 'cosmetic', id: 'radiant' }, { type: 'research', amount: 15 }] },
+  { id: 'gladiator', name: 'Gladiator', icon: '🥊', desc: 'Win 10 Gauntlets.', progress: (p) => [p.stats.gauntletWins ?? 0, 10], rewards: [{ type: 'cores', amount: 15 }, { type: 'research', amount: 6 }] },
 ];
+
+/** Cores at their final Awakening rank (five). */
+function fullyAwakened(p: Profile): number {
+  return Object.values(p.awakening ?? {}).filter((r) => r >= 5).length;
+}
 
 export function apexKills(p: Profile): number {
   return APEX_BOSSES.reduce((n, b) => n + (p.bossKills[b.id] ?? 0), 0);
@@ -104,7 +112,7 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'abyss_slayer', name: 'Abyss Walker', icon: '🕳️', desc: 'Win on Abyss.', check: (s) => s.victory && s.difficulty >= 4, rewards: [{ type: 'cosmetic', id: 'abyssal' }, { type: 'cores', amount: 12 }] },
   { id: 'ascension_5', name: 'Rising', icon: '🔆', desc: 'Win on Ascension 5 or higher.', check: (s) => s.victory && (s.ascension ?? 0) >= 5, rewards: [{ type: 'relic', id: 'cursed_crown' }, { type: 'research', amount: 6 }] },
   { id: 'ascension_10', name: 'Transcendent', icon: '🌞', desc: 'Win on Ascension 10 or higher.', check: (s) => s.victory && (s.ascension ?? 0) >= 10, rewards: [{ type: 'cores', amount: 15 }] },
-  { id: 'ascension_20', name: 'Apex', icon: '👁️', desc: 'Win on Ascension 20.', check: (s) => s.victory && (s.ascension ?? 0) >= 20, rewards: [{ type: 'cosmetic', id: 'ascendant' }, { type: 'cores', amount: 25 }] },
+  { id: 'ascension_20', name: 'Apex', icon: '👁️', desc: 'Win on Ascension 20 or higher.', check: (s) => s.victory && (s.ascension ?? 0) >= 20, rewards: [{ type: 'cosmetic', id: 'ascendant' }, { type: 'cores', amount: 25 }] },
   { id: 'pact_master', name: 'Pact Master', icon: '📜', desc: 'Win with 3 or more Risk Pacts.', check: (s) => s.victory && s.pacts.length >= 3, rewards: [{ type: 'cores', amount: 6 }] },
   { id: 'blitz', name: 'Blitz', icon: '⚡', desc: 'Win a run in 7:30 or less.', check: (s) => s.victory && s.time <= 450, rewards: [{ type: 'research', amount: 4 }] },
   { id: 'level_30', name: 'Ascended Build', icon: '⬆️', desc: 'Reach level 30 in one run.', check: (s) => s.level >= 30, rewards: [{ type: 'coins', amount: 1000 }] },
@@ -119,7 +127,14 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'pandemonium_slayer', name: 'Chaos Tamer', icon: '🎭', desc: 'Win on Pandemonium or higher.', check: (s) => s.victory && s.difficulty >= 8, rewards: [{ type: 'cores', amount: 26 }, { type: 'research', amount: 10 }] },
   { id: 'eternity_slayer', name: 'Eternal', icon: '💫', desc: 'Win on Eternity.', check: (s) => s.victory && s.difficulty >= 9, rewards: [{ type: 'cores', amount: 35 }, { type: 'research', amount: 12 }] },
   { id: 'combo_300', name: 'Combo Legend', icon: '🎇', desc: 'Reach a 300 combo.', check: (s) => s.bestCombo >= 300, rewards: [{ type: 'research', amount: 5 }] },
+  { id: 'ascension_25', name: 'Beyond the Ladder', icon: '🌠', desc: 'Win on Ascension 25 or higher.', check: (s) => s.victory && (s.ascension ?? 0) >= 25, rewards: [{ type: 'cores', amount: 30 }, { type: 'research', amount: 10 }] },
+  { id: 'ascension_30', name: 'Zenith', icon: '🔱', desc: 'Win on Ascension 30.', check: (s) => s.victory && (s.ascension ?? 0) >= 30, rewards: [{ type: 'cosmetic', id: 'zenith' }, { type: 'cores', amount: 40 }] },
+  { id: 'gauntlet_run', name: 'Gauntlet Runner', icon: '🥊', desc: 'Win a Gauntlet.', check: (s) => s.victory && s.mode === 'gauntlet', rewards: [{ type: 'cosmetic', id: 'gladiator' }, { type: 'research', amount: 5 }] },
+  { id: 'gauntlet_abyss', name: 'Pantheon Breaker', icon: '🏛️', desc: 'Win a Gauntlet on Abyss or higher.', check: (s) => s.victory && s.mode === 'gauntlet' && s.difficulty >= 4, rewards: [{ type: 'cores', amount: 20 }, { type: 'research', amount: 8 }] },
+  { id: 'pactbreaker', name: 'Pactbreaker', icon: '🌑', desc: 'Win on Abyss or higher with two Abyssal Pacts.', check: (s) => s.victory && s.difficulty >= 4 && s.pacts.filter((id) => ABYSSAL_PACTS.includes(id)).length >= 2, rewards: [{ type: 'cores', amount: 12 }, { type: 'research', amount: 8 }] },
 ];
+/** The pacts Abyssal Pacts research adds (Pactbreaker counts them). */
+export const ABYSSAL_PACTS = ['eclipse', 'warlords', 'tide', 'narrow_fate'];
 
 // ---------------------------------------------------------------- research
 /** Research expands the game horizontally: new mechanics and decisions, not bigger numbers. */
@@ -183,6 +198,7 @@ export const RESEARCH: ResearchDef[] = [
   { id: 'aftershock', branch: 'advanced', gate: { win: 3 }, name: 'Aftershock', icon: '🌋', desc: 'When Surge ends, it fires once more for half its duration.', cost: 15, requires: ['surge_study'], grants: [{ type: 'flag', id: 'aftershock' }] },
   { id: 'midas', branch: 'advanced', gate: { win: 4 }, name: 'Midas Protocol', icon: '👑', desc: 'Runs on Abyss and above pay +15% coins.', cost: 18, requires: ['prospecting'], grants: [{ type: 'flag', id: 'midas' }] },
   { id: 'evo_catalyst', branch: 'advanced', gate: { win: 4 }, name: 'Evolution Catalyst', icon: '⚗️', desc: 'Evolution recipes need one level less of every ingredient that needs two or more.', cost: 20, requires: ['evolution_codex'], grants: [{ type: 'flag', id: 'evocat' }] },
+  { id: 'abyssal_pacts', branch: 'advanced', gate: { win: 4 }, name: 'Abyssal Pacts', icon: '🌑', desc: 'Four harsher Risk Pacts become available: Eclipse, Warlords, Endless Tide and Narrow Fate.', cost: 10, requires: ['pact_mastery'], grants: [{ type: 'flag', id: 'pacts3' }] },
   { id: 'cryostasis', branch: 'advanced', gate: { win: 4 }, name: 'Cryostasis Failsafe', icon: '🧊', desc: 'Once per run, when the line falls below 25% HP, every enemy freezes for 3 seconds (bosses for 1).', cost: 20, requires: ['field_medic'], grants: [{ type: 'flag', id: 'cryostasis' }] },
   // ---- Apex: opened by apex bosses and the tiers beyond Abyss.
   { id: 'trophy_hunter', branch: 'apex', gate: { apex: true }, name: 'Trophy Hunter', icon: '🗿', desc: 'Bosses drop twice the coins, and an apex boss restores 30% of the line when it falls.', cost: 25, requires: [], grants: [{ type: 'flag', id: 'trophy' }] },
@@ -193,7 +209,7 @@ export const RESEARCH: ResearchDef[] = [
   { id: 'fate_weaving', branch: 'apex', gate: { win: 7 }, name: 'Fate Weaving', icon: '🧵', desc: 'Every level-up draft holds at least one rare or better card.', cost: 50, requires: ['fortune'], grants: [{ type: 'flag', id: 'fate' }] },
   { id: 'core_resonance', branch: 'apex', gate: { win: 8 }, name: 'Core Resonance', icon: '💞', desc: 'Runs also carry half the passive stats of your most-mastered other core.', cost: 60, requires: [], grants: [{ type: 'flag', id: 'echocore' }] },
   { id: 'grand_unification', branch: 'apex', gate: { win: 9 }, name: 'Grand Unification', icon: '🌌', desc: 'Every run begins with a legendary relic choice, and relic caches from bosses offer only rare and legendary relics.', cost: 120,
-    requires: ['scholarship', 'gilded_elites', 'spoils_of_war', 'relic_attunement', 'sentinel', 'aftershock', 'midas', 'evo_catalyst', 'cryostasis', 'trophy_hunter', 'twin_sentinels', 'combat_archive', 'signature_mastery', 'industrial_theory', 'fate_weaving', 'core_resonance'],
+    requires: ['scholarship', 'gilded_elites', 'spoils_of_war', 'relic_attunement', 'sentinel', 'aftershock', 'midas', 'evo_catalyst', 'cryostasis', 'abyssal_pacts', 'trophy_hunter', 'twin_sentinels', 'combat_archive', 'signature_mastery', 'industrial_theory', 'fate_weaving', 'core_resonance'],
     grants: [{ type: 'flag', id: 'unified' }] },
 ];
 /** Workshop prices once Industrial Theory is studied. */
@@ -259,9 +275,10 @@ export const OVERDRIVE: WorkshopDef[] = [
   { id: 'od_aegis', name: 'Aegis Lattice', icon: '💠', overdrive: true, desc: (l) => `−${pct1(l * 0.008)}% damage taken on the line`, maxLevel: OVERDRIVE_MAX, cost: odCost(420), mods: (l) => [{ stat: 'damageTaken', mult: -0.008 * l }] },
   { id: 'od_breaker', name: 'Titan Breaker', icon: '🪓', overdrive: true, desc: (l) => `+${l * 2}% damage to elites and bosses`, maxLevel: OVERDRIVE_MAX, cost: odCost(420), mods: (l) => [{ stat: 'eliteDamage', add: 0.02 * l }] },
   { id: 'od_focus', name: 'Focus Lens', icon: '🔍', overdrive: true, desc: (l) => `+${l * 3}% critical damage`, maxLevel: OVERDRIVE_MAX, cost: odCost(340), mods: (l) => [{ stat: 'critMult', add: 0.03 * l }] },
+  { id: 'od_impact', name: 'Impact Driver', icon: '🎳', overdrive: true, desc: (l) => `+${l * 2}% direct hit damage (balls, shards and clones)`, maxLevel: OVERDRIVE_MAX, cost: odCost(340), mods: (l) => [{ stat: 'hitPower', mult: 0.02 * l }] },
   { id: 'od_infusion', name: 'Elemental Infusion', icon: '⚗️', overdrive: true, desc: (l) => `+${l * 2}% elemental power`, maxLevel: OVERDRIVE_MAX, cost: odCost(340), mods: (l) => [{ stat: 'elementPower', mult: 0.02 * l }] },
   { id: 'od_detonator', name: 'Detonator', icon: '🧨', overdrive: true, desc: (l) => `+${l * 2}% explosion damage`, maxLevel: OVERDRIVE_MAX, cost: odCost(300), mods: (l) => [{ stat: 'explosionDamage', mult: 0.02 * l }] },
-  { id: 'od_swarm', name: 'Swarm Foundry', icon: '🧬', overdrive: true, desc: (l) => `+${pct1(l * 0.006)}% shard and clone power`, maxLevel: OVERDRIVE_MAX, cost: odCost(300), mods: (l) => [{ stat: 'shardPower', add: 0.006 * l }] },
+  { id: 'od_swarm', name: 'Swarm Foundry', icon: '🧬', overdrive: true, desc: (l) => `+${l}% shard and clone power`, maxLevel: OVERDRIVE_MAX, cost: odCost(300), mods: (l) => [{ stat: 'shardPower', add: 0.01 * l }] },
   { id: 'od_tempo', name: 'Tempo Engine', icon: '⏩', overdrive: true, desc: (l) => `+${l}% XP and +${l}% Surge charge`, maxLevel: OVERDRIVE_MAX, cost: odCost(340), mods: (l) => [{ stat: 'xpGain', mult: 0.01 * l }, { stat: 'surgeGain', mult: 0.01 * l }] },
   { id: 'od_treasury', name: 'Treasury', icon: '🏦', overdrive: true, desc: (l) => `+${l * 2}% coins`, maxLevel: OVERDRIVE_MAX, cost: odCost(380), mods: (l) => [{ stat: 'coinGain', mult: 0.02 * l }] },
 ];
@@ -333,12 +350,13 @@ const REFIT_SIGNATURE: Record<string, { text: (l: number) => string; mods: (l: n
   pyro: { text: (l) => `+${l * 4}% burn damage`, mods: (l) => [{ stat: 'burnPower', mult: 0.04 * l }] },
   tesla: { text: (l) => `+${l * 2}% chain damage`, mods: (l) => [{ stat: 'chainDamage', add: 0.02 * l }] },
   cryo: { text: (l) => `+${pct1(l * 0.025)}% damage to frozen enemies`, mods: (l) => [{ stat: 'frozenVuln', add: 0.025 * l }] },
-  blood: { text: (l) => `+${pct1(l * 0.002)}% lifesteal and +${l * 2} max HP`, mods: (l) => [{ stat: 'lifesteal', add: 0.002 * l }, { stat: 'maxHp', add: 2 * l }] },
+  blood: { text: (l) => `+${l * 4}% bleed damage and +${l * 2} max HP`, mods: (l) => [{ stat: 'bleedPower', mult: 0.04 * l }, { stat: 'maxHp', add: 2 * l }] },
   void: { text: (l) => `+${pct1(l * 0.02)}% stronger homing`, mods: (l) => [{ stat: 'magnetism', add: 0.006 * l }], damage: 0.03 },
   venom: { text: (l) => `+${l * 3}% poison damage`, mods: (l) => [{ stat: 'poisonPower', mult: 0.03 * l }] },
   titan: { text: (l) => `+${l * 4}% knockback and +${l * 3} max HP`, mods: (l) => [{ stat: 'knockback', mult: 0.04 * l }, { stat: 'maxHp', add: 3 * l }] },
   gemini: { text: (l) => `+${pct1(l * 0.008)}% twin and shard power`, mods: (l) => [{ stat: 'shardPower', add: 0.008 * l }] },
   chrono: { text: (l) => `Surge charges ${l * 2}% faster`, mods: (l) => [{ stat: 'surgeGain', mult: 0.02 * l }] },
+  blast: { text: (l) => `+${l * 4}% explosion damage`, mods: (l) => [{ stat: 'explosionDamage', mult: 0.04 * l }] },
 };
 
 export const REFITS: WorkshopDef[] = CORES.map((c) => {
@@ -359,11 +377,11 @@ export const WORKSHOP_MAP: Record<string, WorkshopDef> = Object.fromEntries(ALL_
 export const MASTERY_MAX = 30;
 export const SIGNATURE_UPGRADE: Record<string, string> = {
   striker: 'kinetic_lens', pyro: 'thermal_core', tesla: 'arc_capacitor', cryo: 'glacial_heart', blood: 'sanguine_pact', void: 'event_horizon',
-  venom: 'pandemic', titan: 'earthshaker', gemini: 'mirror_image', chrono: 'stasis_field',
+  venom: 'pandemic', titan: 'earthshaker', gemini: 'mirror_image', chrono: 'stasis_field', blast: 'cluster_charge',
 };
 export const MASTERY_TRAIL: Record<string, string> = {
   striker: 'prism', pyro: 'ember', tesla: 'aurora', cryo: 'aurora', blood: 'crimson', void: 'void',
-  venom: 'toxin', titan: 'magma', gemini: 'mirror', chrono: 'chrono',
+  venom: 'toxin', titan: 'magma', gemini: 'mirror', chrono: 'chrono', blast: 'fuse',
 };
 
 /** XP needed to go from `level` to `level + 1`. */

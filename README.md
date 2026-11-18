@@ -189,15 +189,19 @@ mark only actions that can be taken now (an affordable unlock, a talent point, a
 
 - **Battle** is a lobby over the live attract-mode game, which plays in the selected arena: the logo
   with the next goal under it (one tap to Goals), then one run card and Play. The run card sums up
-  arena, difficulty, reward multiplier and active pacts; tap it for **Run setup** (an arena carousel
-  drawn from each arena's real floor, the unlocked difficulties plus the next one as a teaser, and
-  Risk Pacts, with Play pinned below) or swipe it to change arena. Daily Seed sits beside Play.
-- **Armory** shows the core as a large orb in a carousel (unlock in place), parts and trails as
-  slots that open a bottom sheet to compare, buy and equip, and three build presets.
+  arena, difficulty, reward multiplier and active pacts; tap it for **Run setup** (the mode, Standard
+  or Gauntlet, once every classic boss has fallen; an arena carousel drawn from each arena's real floor,
+  the unlocked difficulties plus the next one as a teaser, and Risk Pacts, with Play pinned below) or
+  swipe it to change arena. Daily Seed sits beside Play.
+- **Armory** shows the core as a large orb in a carousel (unlock in place) with its Mastery and
+  Awakening, parts and trails as slots that open a bottom sheet to compare, buy and equip, and three
+  build presets.
 - **Forge** holds every permanent upgrade: Workshop (coins, in four sections: Foundations,
   Blueprints, Refits and Overdrive, with a completion meter across all of them), Research (three
   branches, Foundations, Advanced and Apex, open studies first, with its own completion meter) and Talents. Talents apply the moment they are learned; respecs are free between runs, so there is
-  no draft to apply or discard.
+  no draft to apply or discard. The selected talent and its Learn/Refund buttons dock to the bottom of
+  the page while the tree scrolls beneath them (beside the tree in phone landscape), so no node is
+  ever more than one tap from its description.
 - **Codex** is a collection grid with a completion ring; each entry opens a detail sheet.
 - **Goals** splits next goals, challenges, badges and mastery into segments.
 - **Settings** is a single scrolling page and adds Vibration, Left-handed controls (mirrors Recall
@@ -292,9 +296,9 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 
 | System | Content |
 | --- | --- |
-| Ball cores | 10: Striker, Pyro, Tesla, Cryo, Blood, Void, Venom, Titan, Gemini, Chrono. Each has a passive, starting upgrade, signature upgrade and a 30-level mastery track |
+| Ball cores | 11: Striker, Pyro, Tesla, Cryo, Blood, Void, Venom, Titan, Gemini, Blast, Chrono. Every damage type has a core of its own (direct hits, fire, lightning, ice, bleed, poison, explosions, shards). Each has a passive, starting upgrade, signature upgrade and a 30-level mastery track |
 | Ball parts | 26 across Shell, Impact and Momentum slots |
-| Run upgrades | 69 across offense, physics, multiplication, elemental (fire, ice, lightning, poison), defense, utility and core signatures |
+| Run upgrades | 70 across offense, physics, multiplication, elemental (fire, ice, lightning, poison, bleed), defense, utility and core signatures |
 | Synergies | 25 (known, hidden and legendary), discovered automatically |
 | Evolutions | 13 (Inferno, Tesla Storm, Glacier, Blood Moon, Hydra Swarm, Railgun, Plague Ball, Singularity, Thunderhead, Minefield, Grim Reaper, Aegis, Prism Ball) |
 | Relics | 32 run-long artifacts (common, rare, legendary and cursed) found in relic caches; most are earned through Goals and Pilot Rank |
@@ -305,9 +309,26 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 | Bosses | 6 scripted fights: Fortress, Magnetar, Hydra, Broodmother (eggs and acid), Chronarch (time stop and stasis), Architect (walls and ward pylons); plus 4 apex bosses that close Abyss and every tier above it: Colossus (damage budget and quakes), Twin Eclipse (two bound bosses that revive each other), Overmind (shielded by its swarm) and Void Sovereign (three phases, sealed behind void shards) |
 | Arenas | 6 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells, spore pods, tesla pylons, booster pads |
 | Arena events | 12, five of them hostile (the only kind Abyss allows) |
-| Difficulty | 10 tiers (Normal to Abyss, then Oblivion, Cataclysm, Singularity, Pandemonium and Eternity), and a 20-step Ascension ladder playable on Abyss and above, with stacking rules and growing rewards; 10 Risk Pacts |
-| Meta | Coins, Cores and Research; Workshop in four sections (14 Foundations, 17 Blueprints, 10 core Refits, 10 Overdrive lines of 50 levels each; 683 levels in all), 54-node Research tree in three branches (Foundations, Advanced, Apex; 657 points in all), Mastery 1–30, Pilot Rank 1–100, 44 achievements, 39 challenges, daily and weekly contracts, Codex, 18 trails, build presets |
-| Modes | Standard run, Endless continuation after a victory, Daily Seed (the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; the day's best is shown on Home) |
+| Difficulty | 10 tiers (Normal to Abyss, then Oblivion, Cataclysm, Singularity, Pandemonium and Eternity), and a 30-step Ascension ladder playable on Abyss and above, with stacking rules and growing rewards; 14 Risk Pacts (four of them Abyssal) |
+| Meta | Coins, Cores and Research; Workshop in four sections (14 Foundations, 17 Blueprints, 11 core Refits, 11 Overdrive lines of 50 levels each; 743 levels in all), 55-node Research tree in three branches (Foundations, Advanced, Apex; 667 points in all), Core Awakening (five Cores-bought ranks per core, the last a perk of its own), Mastery 1–30, Pilot Rank 1–100, 47 achievements, 44 challenges, daily and weekly contracts, Codex, 22 trails, build presets |
+| Modes | Standard run, the Gauntlet (every boss back to back, opened by defeating all six), Endless continuation after a victory, Daily Seed (the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; the day's best is shown on Home) |
+
+### Damage types
+
+Every damage type scales from the hit that caused it and has its own levers, core and endgame line:
+
+| Type | How it deals damage | Core | Scales with |
+| --- | --- | --- | --- |
+| Direct hits | Ball, shard and clone impacts; armor applies | Striker, Titan, Void | damage, crits, bank shots, Impact Driver (direct hits only) |
+| Fire | One burn per enemy, refreshed by every proc; through armor | Pyro | burn power, Thermal Core crits |
+| Lightning | Arcs to nearby enemies; jumps with no target left ground into the struck enemy (25% each, up to 4), so chains still hurt a lone boss | Tesla (+20% chain damage) | chain damage, jumps |
+| Ice | Freezes, then frozen enemies take more damage and shatter | Cryo | frozen vulnerability, freeze time |
+| Bleed | Stacks (10 by default) that each deal 16% of the hit per second, through armor | Blood (+40% bleed damage, 5 more stacks) | bleed power (Bloodletting, Hemorrhage, Whetstone, Blood Refit, Crimson Tide) |
+| Poison | Stacks (12 by default) that each deal 8% of the hit per second, spread on death | Venom | poison power, stack cap |
+| Explosions | Area blasts | Blast (its blasts can crit; Cluster Charge scatters bomblets) | explosion damage, area |
+| Shards | Split shards, echo clones and Gemini's twin, all at shard power | Gemini | shard power |
+
+Elemental power raises every status and arc.
 
 ### Long-term progression
 
@@ -322,8 +343,8 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 - **Beyond Abyss.** Five more tiers follow Abyss. Each opens close to Abyss and turns into a wall
   later in the run (`lateHp` ramps enemy health in from minute one to minute seven), and each ends with
   one or more apex bosses. Abyss itself now closes with the Colossus.
-- **Overdrive.** Ten long Workshop lines (damage, HP, damage taken, boss damage, crit damage, elements,
-  explosions, shards, XP and Surge, coins) with 50 levels each and steep prices. Every difficulty won
+- **Overdrive.** Eleven long Workshop lines (damage, HP, damage taken, boss damage, crit damage, direct
+  hits, elements, explosions, shards, XP and Surge, coins) with 50 levels each and steep prices. Every difficulty won
   opens five more levels of every line, so coins farmed on easier tiers become the power that beats the
   next one, and buying everything takes many hours on the top tiers.
 - **Blueprints.** Seventeen mechanics bought with coins, each level gated by a difficulty won:
@@ -335,19 +356,42 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 - **Refits.** One ten-level line per ball core (+2% damage and a signature stat such as burn damage,
   chain damage or lifesteal) that only applies to runs with that core. A level opens every three
   Mastery levels of the core, so tuning every core means playing every core; about 630,000 coins.
-- **Advanced and Apex Research.** Seventeen studies beyond the founding tree, each opened by a win
-  (Veteran up to Eternity) or an apex kill, priced 8 to 120 Research (543 in all, against 114 for the
+- **Advanced and Apex Research.** Eighteen studies beyond the founding tree, each opened by a win
+  (Veteran up to Eternity) or an apex kill, priced 8 to 120 Research (553 in all, against 114 for the
   founding tree). Advanced: Scholarship (wins pay more Research, up to +4 on Eternity), Gilded Elites,
   Relic Attunement, Aftershock (Surge echoes at half length), Spoils of War (a free pick per boss),
   Sentinel Drone (a drone on the line fires a shard every 6 s), Midas Protocol, Evolution Catalyst
-  (recipes need one level less) and Cryostasis Failsafe (the field freezes once when the line runs low).
+  (recipes need one level less), Cryostasis Failsafe (the field freezes once when the line runs low) and
+  Abyssal Pacts (four harsher Risk Pacts).
   Apex: Trophy Hunter, Twin Sentinels, Combat Archive, Signature Mastery (runs open with the core's
   signature upgrade), Industrial Theory (Workshop prices −15%), Fate Weaving (a rare card in every draft),
   Core Resonance (half the passive stats of the most-mastered other core) and Grand Unification, which
   needs every other study and an Eternity win and opens each run with a legendary relic.
 - **Ascension.** Winning on Abyss opens Ascension 1; each win at the highest open level (on Abyss or
-  any tier above it) opens the next, up to 20. Rules stack (tougher enemies, fewer rerolls, faster projectiles, earlier enrages,
-  a third boss…) and each level adds 12% to rewards and extra Cores on victory.
+  any tier above it) opens the next, up to 30. Rules stack (tougher enemies, fewer rerolls, faster projectiles, earlier enrages,
+  a third boss…) and each level adds 12% to rewards and extra Cores on victory. Ascension II (21–30) is
+  for profiles that have bought everything: armored enemies, faster elites, tougher bosses, halved
+  regeneration, more traits, slower Surge, harder breaches, more health, dearer levels and, at 30, one
+  more apex boss at the end of the run. Winning on 25 and 30 pays Cores, Research and the Zenith trail.
+- **The Gauntlet.** Defeating all six classic bosses opens a second mode in Run setup: every classic
+  boss back to back (the arena's own first), then the tier's apex bosses. A 75-second opening builds
+  the machine, there are no elites or mini-boss, a free pick follows every fight, squads keep coming at
+  about a third of their pace during fights, and the next boss arrives 20 seconds later. Classic bosses
+  are three times as tough as in a Standard run (more on the tiers whose enemies toughen late) and each
+  one adds 45%; apex bosses keep their Standard strength. A Gauntlet win is its own
+  record (shown in Run setup): it opens no difficulty or Ascension step, but pays like any run and has
+  its own challenges, an achievement and the Gladiator trail.
+- **Core Awakening.** Cores no longer pile up once every core is unlocked. Each core has five
+  Awakening ranks bought with Cores (10, 20, 35, 55 and 80; 2,200 for all eleven cores), and a rank opens
+  every six Mastery levels of that core. Ranks 1–4 are shared (+6% damage, +10% max HP, +10% XP and a
+  reroll, +10% damage to elites and bosses); rank 5 awakens a perk of the core's own (True Aim,
+  Wildfire Heart, Living Current, Absolute Zero, Crimson Tide, Event Horizon, Blight Bloom,
+  Unstoppable, Binary Star, Supernova, Timeless), several of which pay back the core's passive cost. Awakening
+  only applies to runs with that core.
+- **Abyssal Pacts.** An Advanced study after an Abyss win adds four harsher pacts: Eclipse (no
+  Resonance circuit, so no Starfall, +35%), Warlords (bosses +50% health, +45%), Endless Tide (squads
+  30% more often, +35%) and Narrow Fate (one fewer draft card, +30%). Winning on Abyss or higher with
+  two of them earns Pactbreaker.
 - **Pilot Rank.** Every run's Mastery XP also fills an account-wide rank from 1 to 100. Each rank pays
   coins; every third adds Research, every fourth Cores, and milestones unlock relics and trails.
 - **Contracts.** Three daily contracts and one weekly contract, drawn from a date seed so every
@@ -362,15 +406,17 @@ and layered, voice-limited SFX with adaptive music.
 ## Talent specializations
 
 Open **Forge → Talents**. Spend a shared budget
-across three trees: **Kinetics** rewards bank shots and combos, **Conduit** amplifies
-elements acquired during the run, and **Warden** improves defense and recovery.
-Each tree has five ranked nodes, prerequisite connections, and a distinct capstone.
-You start with 3 points and earn another per 500 total Mastery XP across all cores,
-up to 20. Existing saves receive credit for their accumulated XP.
+across four trees: **Kinetics** rewards bank shots and combos, **Conduit** amplifies
+elements acquired during the run, **Warden** improves defense and recovery, and **Havoc**
+amplifies explosions, crits and shards. Each tree has eleven ranked nodes over six tiers,
+prerequisite connections, a capstone and an apex capstone.
+You start with 3 points and earn another per 500 total Mastery XP across all cores for the
+first twenty, then at a rising price up to 100. Existing saves receive credit for their accumulated XP.
 
 Higher tiers require 3 / 8 points in earlier tiers of that tree and a maxed prerequisite.
-The 20-point budget allows a focused specialization with supporting talents, but not
-two capstones. Learning or refunding a rank applies and saves immediately.
+The first 20 points allow a focused specialization with supporting talents, but not
+two capstones. Learning or refunding a rank applies and saves immediately; tap a node and its
+description, current and next rank and the Learn/Refund buttons stay docked in view.
 Refunds and resets are free between runs. Refunding a prerequisite also refunds
 dependent nodes. Each run snapshots the allocation, shown in its pause menu.
 
@@ -578,12 +624,61 @@ least as demanding as the one that unlocks it despite its stronger tools. Tuning
 `sim/director.ts` (threat rate, timeline, elites, Endless ramp), `World.makeEnemy` (HP scaling with
 each tier's `growth`), `DifficultyDef`/`ArenaDef` multipliers, `xpForLevel`, and `data/`.
 
+**Ascension II** is a wall for a profile that is still buying its kit and a long climb for one that
+is done (Eternity, three cores, 8 runs per cell; `--asc` takes the levels):
+
+| Eternity profile | A10 | A20 | A30 |
+| --- | --- | --- | --- |
+| Entry kit (`--meta end --od 45 --bp 8 --refit 8 --research 8 --tp 70`) | ~67% | ~50% | ~13% |
+| Everything (`--od 50 --bp 9 --refit 10 --research 9 --tp 100 --tpwin 9`) | | ~63–75% | ~79% |
+
+With everything bought the bot's runs either cruise or collapse, so A20 and A30 sit within the
+±20-point swing of an 8-run cell there; the entry-kit row is the one to watch after content changes.
+
+**The Gauntlet** (`--mode gauntlet`, `--awaken N` sets the core's Awakening rank) plays about as hard
+as Standard on the same tier for a well-kitted profile and clearly harder for a young one:
+
+| Profile (three cores, 8 runs per cell) | Gauntlet | Standard |
+| --- | --- | --- |
+| Normal, `--meta mid --full` | ~75% | ~98% (fresh profile) |
+| Veteran / Inferno, `--meta max --full` | ~92% / ~92% | — / ~87% |
+| Abyss, `--meta max --bp 3 --research 3` | ~67% | ~67% |
+| Singularity, `--meta end --od 35 --bp 6 --refit 6 --research 6 --tp 50` | ~63% | ~73% |
+| Eternity, everything | ~100% | ~94% |
+
+Squads that keep coming during Gauntlet fights also pay XP, which is why the low tiers do not get
+harder in step with boss health; the fight stream (`GAUNTLET.fightSquads`) and the boss multipliers
+are the levers.
+
+**Damage types** are compared with `--build <type>`, which drafts only from one archetype's upgrades
+(`ARCHETYPES` in `scripts/balance.ts`), the core's signature and a shared kit of hull, extra balls
+and generic damage; `--shares` prints the damage meter averaged over the cell. Each type on its own
+core, Eternity at Ascension 20 with the entry kit (24 runs per cell), before and after the damage
+pass that added bleed power, lightning grounding, the Blast Core and Impact Driver:
+
+| Type (core) | Before | After | Final boss fight |
+| --- | --- | --- | --- |
+| Direct hits (Striker) | ~50% | ~67% | 41 s → 23 s |
+| Fire (Pyro) | ~83% | ~88% | ~15–29 s (unchanged mechanics) |
+| Lightning (Tesla) | ~75% | ~79% | 55 s → 27 s |
+| Ice (Cryo) | ~92% | ~92% | ~31–36 s (unchanged mechanics) |
+| Bleed (Blood) | ~58% | ~71% | 33 s → 20 s |
+| Poison (Venom) | ~100% | ~90% | 5 s → 7 s |
+| Explosions (Striker, then Blast) | ~58% | ~75% | ~35 s |
+| Shards (Gemini) | ~33% | ~46% | ~15 s |
+
+Every type wins 96–100% of Singularity Gauntlets with the entry kit. Shard builds stay the weakest at
+the very top: they have no stacking or area damage, so they lean on Swarm Foundry and Impact Driver.
+Gemini's twin used to be pinned at 45% and ignored every shard power bonus; it now follows shard power,
+which is what lets those lines scale it.
+
 ## Roadmap ideas
 
 - Opt-in fast-forward while every ball is in flight (players praise it in ball launchers; never forced)
 - A "best shot" replay on Results: the path of the run's highest-hit shot as a ghost trail
 - Ball roles for multi-ball builds (Bomber, Collector, Healer balls)
-- Boss Rush, Challenge Gauntlet and Build Trials modes (the director and seeded RNG already support fixed scenarios)
+- Challenge Gauntlet and Build Trials modes (the director and seeded RNG already support fixed scenarios; the Gauntlet's
+  boss queue shows how a mode reshapes the director)
 - A void element and more arenas and bosses
 - Cosmetic impact effects and arena themes
 - Code signing for Windows and macOS installers, and Tauri's updater for desktop builds

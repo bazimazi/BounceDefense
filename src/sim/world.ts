@@ -7,6 +7,7 @@ import { ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACT_MAP } from '../data/arenas';
 import { CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
 import { ENEMY_MAP, INTERNAL_ENEMIES } from '../data/enemies';
 import { ASCENSION_TIER, MAX_ASCENSION, ascensionRules, type AscensionRule } from '../data/ascension';
+import { AWAKEN_MAX, AWAKEN_REROLL_RANK, awakenModifiers } from '../data/awakening';
 import { DEFAULT_UNLOCKED_RELICS, RELICS, RELIC_MAP, RELIC_WEIGHT } from '../data/relics';
 import { MAX_DRAFT_CARDS, SECOND_WIND, SENTINEL_INTERVAL, SIGNATURE_UPGRADE, WORKSHOP_MAP } from '../data/meta';
 import { normalizeTalents, TALENTS, talentModifiers, type TalentRanks } from '../data/talents';
@@ -55,7 +56,13 @@ export interface RunConfig {
   bossLore?: number;
   /** Core Resonance's partner core: half its passive stats join the run. */
   echoCore?: string;
+  /** Standard run, or the Gauntlet: every boss back to back. */
+  mode?: RunMode;
+  /** Awakening rank of the run's core (0 to 5). */
+  awakening?: number;
 }
+
+export type RunMode = 'standard' | 'gauntlet';
 
 /** Where the Sentinel drones hover above the line. */
 export const SENTINEL_POS: [number, number][] = [[118, DEFENSE_Y - 26], [422, DEFENSE_Y - 26]];
@@ -251,6 +258,8 @@ export class World {
   dmgSkill = '';
   private attributedBh = new Map<string, Behavior>();
   noHeal: boolean;
+  /** Gauntlet mode: every boss back to back (see `GAUNTLET`). */
+  gauntlet: boolean;
   loneBall: boolean;
   enemySpeedMult: number;
   enemyHpMult: number;
@@ -286,12 +295,14 @@ export class World {
     const asc = this.asc;
     this.noHeal = pacts.some((p) => p.rule === 'noHeal');
     this.loneBall = pacts.some((p) => p.rule === 'loneBall');
-    this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1);
+    this.gauntlet = cfg.mode === 'gauntlet' && !cfg.tutorial;
+    const awakening = clamp(Math.floor(cfg.awakening ?? 0), 0, AWAKEN_MAX);
+    this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1) * (asc.has('speed10') ? 1.1 : 1);
     this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) *
-      (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1);
+      (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1) * (asc.has('hp50') ? 1.5 : 1);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
     const ws = (id: string) => cfg.workshop[id] ?? 0;
-    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) + ws('bp_draft') - (asc.has('reroll') ? 1 : 0));
+    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) + ws('bp_draft') + (awakening >= AWAKEN_REROLL_RANK ? 1 : 0) - (asc.has('reroll') ? 1 : 0));
     this.banishes = noReroll ? 0 : (this.flags.has('banish') ? 2 + (this.flags.has('banish2') ? 1 : 0) : 0) + ws('bp_exile');
     this.xpScale = asc.has('xp10') ? 1.1 : 1;
     this.xpNext = Math.ceil(xpForLevel(1) * this.xpScale);
@@ -319,12 +330,15 @@ export class World {
     }
     for (const p of pacts) if (p.mods) mods.push(...p.mods);
     mods.push(...talentModifiers(this.talents));
+    mods.push(...awakenModifiers(core.id, awakening));
     // Research: Combat Archive rewards a wide boss record, Core Resonance lends half of another core's passive stats.
     if (this.flags.has('archive')) mods.push({ stat: 'eliteDamage', add: 0.02 * Math.min(10, cfg.bossLore ?? 0) });
     const echo = this.flags.has('echocore') && cfg.echoCore && cfg.echoCore !== core.id ? CORE_MAP[cfg.echoCore] : undefined;
     if (echo) for (const m of echo.mods) mods.push({ stat: m.stat, ...(m.add ? { add: m.add / 2 } : {}), ...(m.mult ? { mult: m.mult / 2 } : {}) });
     if (asc.has('hull15')) mods.push({ stat: 'maxHp', mult: -0.15 });
     if (asc.has('heal30')) mods.push({ stat: 'healMult', mult: -0.3 });
+    if (asc.has('regen50')) mods.push({ stat: 'regen', mult: -0.5 });
+    if (asc.has('surgeSlow')) mods.push({ stat: 'surgeGain', mult: -0.25 });
     if (this.flags.has('tactics')) mods.push({ stat: 'recallCooldown', add: -2 });
     if (this.flags.has('surge1')) mods.push({ stat: 'surgeGain', mult: 0.15 });
     for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
@@ -463,12 +477,13 @@ export class World {
     // Tier and arena toughness phase in over the opening ninety seconds, so early fodder still pops in a hit or two.
     const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
     const crown = this.build.has('relic_cursed_crown') ? 1.25 : 1;
-    const bossAsc = def.boss && this.asc.has('boss20') ? 1.2 : 1;
-    const late = 1 + ((this.diff.lateHp ?? 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
+    const bossAsc = def.boss ? (this.asc.has('boss20') ? 1.2 : 1) * (this.asc.has('boss40') ? 1.4 : 1) * (this.pacts.has('warlords') ? 1.5 : 1) : 1;
+    // Ascension 29 steepens the late ramp on every tier (tiers without one gain a quarter).
+    const late = 1 + ((this.diff.lateHp ?? 1) * (this.asc.has('late25') ? 1.25 : 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
     const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown * late;
     return {
       id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed,
-      armor: def.armor + (this.pacts.has('ironclad') ? 3 : 0),
+      armor: def.armor + (this.pacts.has('ironclad') ? 3 : 0) + (this.asc.has('armor3') && !def.boss ? 3 : 0),
       kx: 0, ky: 0,
       st: {
         burnDps: 0, burnT: 0, burnTick: 0, chill: 0, chillT: 0, frozenT: 0, bleed: 0, bleedT: 0, bleedDps: 0, bleedTick: 0,
@@ -920,7 +935,8 @@ export class World {
     // Pacts make some upgrades inert; never offer a card that cannot do anything.
     const inert = [...(this.loneBall ? ['extra_ball'] : []), ...(this.noHeal ? ['vampiric', 'regen'] : [])];
     const wide = (this.cfg.workshop.bp_wide_draft ?? 0) > 0 ? 1 : 0;
-    const count = Math.min(MAX_DRAFT_CARDS, (this.flags.has('fourth_card') ? 4 : 3) + wide + (this.build.has('relic_chaos_die') ? 1 : 0));
+    const narrow = this.pacts.has('narrowFate') ? 1 : 0;
+    const count = Math.max(2, Math.min(MAX_DRAFT_CARDS, (this.flags.has('fourth_card') ? 4 : 3) + wide + (this.build.has('relic_chaos_die') ? 1 : 0)) - narrow);
     this.offers = makeOffers({
       build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
       count, levelIndex: this.levelUps, noHeal: this.noHeal, guaranteeRare: this.flags.has('fate'),
@@ -1477,6 +1493,7 @@ export class World {
       poisonKills: r.poisonKills, relics: [...this.build.relics], endlessTime: this.endlessTime,
       damageBy: this.damageReport(),
       ascension: this.asc.size,
+      ...(this.gauntlet ? { mode: 'gauntlet' as const } : {}),
       reactions: [...this.reactionsRun], synergies: [...this.build.synergies], evolutions: [...this.build.evolutions],
       upgrades: [...this.build.upgrades.entries()].map(([id, level]) => ({ id, level })),
       enemiesSeen: [...this.enemiesSeen], eventsSeen: this.eventsSeen,

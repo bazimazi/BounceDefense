@@ -262,6 +262,11 @@ export const PACTS: PactDef[] = [
   { id: 'ironclad', name: 'Ironclad', icon: '🛡️', desc: 'Every enemy gains +3 armor.', reward: 0.3, rule: 'ironclad', flag: 'pacts2' },
   { id: 'relicless', name: 'Relicless', icon: '🏺', desc: 'No relics can be found.', reward: 0.25, rule: 'noRelic', flag: 'pacts2' },
   { id: 'short_fuse', name: 'Short Fuse', icon: '🧨', desc: 'The first boss arrives 90 seconds sooner.', reward: 0.3, rule: 'shortFuse', flag: 'pacts2' },
+  // Abyssal Pacts (Advanced research after an Abyss win): each removes a tool the endgame leans on.
+  { id: 'eclipse', name: 'Eclipse', icon: '🌑', desc: 'No Resonance circuit, so no Starfall.', reward: 0.35, rule: 'eclipse', flag: 'pacts3' },
+  { id: 'warlords', name: 'Warlords', icon: '👹', desc: 'Every boss has 50% more health.', reward: 0.45, rule: 'warlords', flag: 'pacts3' },
+  { id: 'tide', name: 'Endless Tide', icon: '🌊', desc: 'Squads arrive 30% more often.', reward: 0.35, rule: 'tide', flag: 'pacts3' },
+  { id: 'narrow_fate', name: 'Narrow Fate', icon: '🎴', desc: 'Level-up drafts show one card fewer.', reward: 0.3, rule: 'narrowFate', flag: 'pacts3' },
 ];
 export const PACT_MAP: Record<string, PactDef> = Object.fromEntries(PACTS.map((p) => [p.id, p]));
 

@@ -8,6 +8,7 @@ import {
   WORKSHOP_MAP, masteryLevel, masteryRewards, rankLevel, rankRewards, type WorkshopDef,
 } from '../data/meta';
 import { ASCENSIONS, ASCENSION_REWARD, ASCENSION_TIER } from '../data/ascension';
+import { AWAKEN_MASTERY, AWAKEN_MAX, awakenRankText } from '../data/awakening';
 import { CONTRACT_MAP } from '../data/contracts';
 import { RELICS, RELIC_COLOR, RELIC_MAP } from '../data/relics';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
@@ -15,8 +16,8 @@ import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
-  buyPart, buyWorkshop, canResearch, canUnlockCore, contractBoard, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
-  isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, overdriveOpen, partsForSlot, researchLock, rewardMultiplier, unlockCore, workshopCap, workshopCost, workshopLock,
+  awaken, awakenCost, buyPart, buyWorkshop, canAwaken, canResearch, canUnlockCore, contractBoard, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
+  gauntletUnlocked, isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, overdriveOpen, partsForSlot, researchLock, rewardMultiplier, unlockCore, workshopCap, workshopCost, workshopLock,
   type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
@@ -26,7 +27,7 @@ import { createArenaSurface } from '../render/arena';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_FORMATS, statLabel, type StatKey } from '../sim/stats';
 import { FIELD_TOP } from '../sim/types';
-import type { World } from '../sim/world';
+import type { RunMode, World } from '../sim/world';
 import type { Game } from '../game';
 import { LANGUAGES, localizeDigits, t, type UiKey } from '../i18n';
 import { amount, badge, iconButton, meter, orb, pips, richText, sectionTitle, segmented, statTile, wallet } from './components';
@@ -100,7 +101,7 @@ export class UI {
   private handEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
-  private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>(), ascension: 0 };
+  private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>(), ascension: 0, mode: 'standard' as RunMode };
   private forgeSegment: ForgeSegment = 'workshop';
   private workshopTab: WorkshopTab = 'classic';
   private researchTab: ResearchTab = 'core';
@@ -286,7 +287,7 @@ export class UI {
   /** Red dots mean "something here can be done now", never just "something is new". */
   private badges(): Record<HubTab, number | boolean> {
     const p = this.p;
-    const coreReady = CORES.some(c => canUnlockCore(p, c.id));
+    const coreReady = CORES.some(c => canUnlockCore(p, c.id) || canAwaken(p, c.id));
     const partReady = (['shell', 'impact', 'momentum'] as PartSlot[]).some(s => partsForSlot(p, s).some(x => !x.unlocked && x.def.unlock?.coins && p.coins >= x.def.unlock.coins));
     const talentPoints = talentProgress(p).total - talentSpent(p.talents);
     return {
@@ -444,6 +445,7 @@ export class UI {
     if (!ARENA_MAP[s.arena]) s.arena = 'proving';
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
     s.ascension = Math.max(0, Math.min(s.ascension, p.ascension));
+    if (!gauntletUnlocked(p)) s.mode = 'standard';
     if (!choice.pacts) s.pacts.clear();
     for (const id of [...s.pacts]) if (!this.pactAvailable(id)) s.pacts.delete(id);
     if (!choice.arena) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
@@ -472,9 +474,10 @@ export class UI {
   }
 
   /** The current setup as run options; Ascension only rides along on Abyss and above. */
-  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number } {
+  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number; mode: RunMode } {
     const s = this.setup;
-    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER ? s.ascension : 0 };
+    const gauntlet = s.mode === 'gauntlet';
+    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER && !gauntlet ? s.ascension : 0, mode: s.mode };
   }
 
   private pactAvailable(id: string): boolean {
@@ -491,7 +494,7 @@ export class UI {
     };
   }
 
-  private playButton(config: { arena: string; difficulty: number; pacts: string[]; ascension?: number }, enabled = true): HTMLButtonElement {
+  private playButton(config: { arena: string; difficulty: number; pacts: string[]; ascension?: number; mode?: RunMode }, enabled = true): HTMLButtonElement {
     return h('button', {
       class: 'primary big launch-button play-btn', disabled: !enabled,
       onclick: () => { this.click(); this.game.startRun(config); },
@@ -524,7 +527,8 @@ export class UI {
     const difficulty = DIFFICULTIES[s.difficulty];
     const opts = this.runOptions();
     const mult = rewardMultiplier(opts);
-    const diffName = opts.ascension ? t('home.ascensionTag', { difficulty: difficulty.name, n: opts.ascension }) : difficulty.name;
+    const tier = opts.ascension ? t('home.ascensionTag', { difficulty: difficulty.name, n: opts.ascension }) : difficulty.name;
+    const diffName = opts.mode === 'gauntlet' ? t('home.gauntletTag', { difficulty: tier }) : tier;
     const card = h('button', {
       class: `run-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}`,
       onclick: () => { this.click(); this.runSheet(); },
@@ -598,6 +602,7 @@ export class UI {
     if (choice.arena) this.swipe(card, move);
     const difficulty = DIFFICULTIES[s.difficulty];
     return [
+      ...(choice.difficulty ? this.modePicker(update) : []),
       sectionTitle(t('setup.arena')),
       choice.arena ? h('div', { class: 'arena-carousel' },
         iconButton('back', t('home.prevArena'), () => move(-1), 'carousel-btn'),
@@ -617,7 +622,7 @@ export class UI {
         h('p', { class: 'difficulty-info' }, h('span', { class: 'dot', style: `background:${difficulty.color}` }), difficulty.desc),
         // Apex tiers name the bosses waiting at the end of the run.
         difficulty.apex?.length ? h('p', { class: 'difficulty-info difficulty-apex' }, icon('skull'), difficulty.rules[0]) : null,
-        ...(s.difficulty >= ASCENSION_TIER ? this.ascensionPicker(update) : []),
+        ...(s.difficulty >= ASCENSION_TIER && s.mode !== 'gauntlet' ? this.ascensionPicker(update) : []),
       ] : []),
       ...(choice.pacts ? [
         sectionTitle(t('setup.pacts')),
@@ -632,6 +637,30 @@ export class UI {
         h('span', { class: 'pact-reward' }, t('setup.pactReward', { n: Math.round(pc.reward * 100) })),
         h('span', { class: 'check' }, icon('check'))))),
       ] : []),
+    ];
+  }
+
+  /**
+   * Standard or Gauntlet. Until every classic boss has fallen the Gauntlet shows as a goal with its
+   * progress, so the mode is discovered before it opens.
+   */
+  private modePicker(update: () => void): (Node | null)[] {
+    const p = this.p;
+    const s = this.setup;
+    if (!gauntletUnlocked(p)) {
+      const beaten = BOSSES.filter(b => (p.bossKills[b.id] ?? 0) > 0).length;
+      return [h('p', { class: 'sheet-intro mode-hint' }, icon('lock'), t('setup.gauntletLocked', { n: beaten, max: BOSSES.length }))];
+    }
+    const option = (mode: RunMode, title: string, desc: string) => h('button', {
+      role: 'radio', 'aria-checked': String(s.mode === mode), class: `mode-option ${s.mode === mode ? 'on' : ''}`, 'data-motion-key': `mode:${mode}`,
+      onclick: () => { if (s.mode === mode) return; s.mode = mode; this.click(); update(); },
+    }, h('b', {}, title), h('small', {}, desc));
+    return [
+      sectionTitle(t('setup.mode')),
+      h('div', { class: 'mode-options', role: 'radiogroup', 'aria-label': t('setup.mode') },
+        option('standard', t('setup.modeStandard'), t('setup.modeStandardDesc')),
+        option('gauntlet', t('setup.modeGauntlet'), t('setup.modeGauntletDesc'))),
+      s.mode === 'gauntlet' && p.gauntlet >= 0 ? h('p', { class: 'difficulty-info' }, icon('trophy'), t('setup.gauntletBest', { name: DIFFICULTIES[p.gauntlet].name })) : null,
     ];
   }
 
@@ -725,7 +754,8 @@ export class UI {
         owned
           ? h('div', { class: 'core-mastery-row' },
             h('div', { class: 'row' }, h('b', {}, t('loadout.masteryLabel', { level: m.level })), h('span', { class: 'spacer' }), h('small', {}, m.need ? `${Math.floor(m.into)}/${m.need}` : t('common.max'))),
-            meter(m.need ? m.into / m.need : 1, 'pink'))
+            meter(m.need ? m.into / m.need : 1, 'pink'),
+            this.awakenRow(c.id, save))
           : h('div', { class: 'core-unlock' },
             h('small', {}, reqOk ? t('loadout.costs', { n: c.unlockCost }) : t('common.lockedText', { text: c.unlockReq?.text ?? '' })),
             h('button', {
@@ -749,6 +779,34 @@ export class UI {
             h('button', { class: 'small-btn', onclick: () => { p.presets[i] = { ...l, name: presetLabel(l) }; this.toast(t('loadout.presetSaved')); save(); } }, t('common.save')),
             pr ? h('button', { class: 'small-btn', onclick: () => { Object.assign(l, { core: pr.core, shell: pr.shell, impact: pr.impact, momentum: pr.momentum, trail: pr.trail }); this.armoryIndex = -1; save(); } }, t('common.load')) : null));
       })));
+  }
+
+  /** Awakening: five Cores-bought ranks per core, each opened by Mastery; the fifth is the core's own perk. */
+  private awakenRow(core: string, save: () => void): HTMLElement {
+    const p = this.p;
+    const c = CORE_MAP[core];
+    const rank = p.awakening[core] ?? 0;
+    const cost = awakenCost(p, core);
+    const maxed = rank >= AWAKEN_MAX;
+    const closed = !maxed && cost === null;
+    return h('div', { class: `awaken-row ${maxed ? 'maxed' : ''}`, 'data-motion-key': `awaken:${core}` },
+      h('div', { class: 'row' },
+        h('b', { class: 'awaken-title' }, icon('star'), t('loadout.awakening')),
+        pips(rank, AWAKEN_MAX, !closed && !maxed),
+        h('span', { class: 'spacer' }),
+        h('small', {}, maxed ? t('loadout.awakenFull') : t('loadout.awakenRank', { rank, max: AWAKEN_MAX }))),
+      h('div', { class: 'awaken-text' }, richText(maxed ? awakenRankText(core, AWAKEN_MAX) : t('loadout.awakenNext', { text: awakenRankText(core, rank + 1) }))),
+      maxed ? null : closed
+        ? h('div', { class: 'shop-req' }, icon('lock'), t('loadout.awakenNeeds', { level: AWAKEN_MASTERY[rank] }))
+        : h('button', {
+          class: 'gold awaken-btn', disabled: !canAwaken(p, core), 'aria-label': t('loadout.awakenBuy', { name: c.name, n: cost ?? 0 }),
+          onclick: () => {
+            if (!awaken(p, core)) return;
+            this.game.audio.play('synergy');
+            this.toast(t('loadout.awakened', { name: c.name, rank: p.awakening[core] }), 'star');
+            save();
+          },
+        }, t('loadout.awaken'), amount('cores', cost ?? 0)));
   }
 
   private partSheet(slot: PartSlot): void {
@@ -1570,7 +1628,7 @@ export class UI {
     const overlay = h('div', { class: 'levelup pause-overlay' },
       h('div', { class: 'pause-head' },
         h('div', { class: 'lvtitle' }, t('pause.title')),
-        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
+        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.gauntlet ? t('home.gauntletTag', { difficulty: w.diff.name }) : w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
       h('div', { class: 'scroll pause-body' },
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('pause.currentBuild')), h('div', { class: 'buildname' }, this.game.buildName()))),
@@ -1646,7 +1704,7 @@ export class UI {
       h('div', { class: 'results-head' },
         h('div', { class: 'results-emblem', 'aria-hidden': 'true' }, icon(s.victory ? 'trophy' : abandoned ? 'flag' : 'skull')),
         h('div', { class: `result-title ${outcome}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),
-        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.daily ? t('results.daily') : ''}`)),
+        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.mode === 'gauntlet' ? t('results.gauntlet') : ''}${s.daily ? t('results.daily') : ''}`)),
       h('div', { class: 'scroll results-body' },
         h('div', { class: 'reward-row reveal' },
           reward('coins', r.rewards.coins),

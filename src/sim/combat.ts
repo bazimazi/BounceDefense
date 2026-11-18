@@ -19,6 +19,15 @@ export interface HitInfo {
 
 /** Max depth of proc chains (explosion -> chain -> explosion ...). Keeps cascades finite. */
 export const MAX_DEPTH = 4;
+/**
+ * Grounding: chain jumps that find no new target discharge into the enemy the arc started from,
+ * each for this share of the chain's damage (at most GROUND_MAX of them), so lightning still bites
+ * in a lone boss fight instead of fizzling.
+ */
+export const GROUNDING = 0.25;
+export const GROUND_MAX = 4;
+/** Cluster Charge: share of the parent blast each bomblet deals, and how far they scatter. */
+export const BOMBLET_POWER = 0.4;
 /** Enemies above this line are "far" (Long Shot); below NEAR_Y they are "near" (Point Blank). */
 export const FAR_Y = 450;
 export const NEAR_Y = DEFENSE_Y - 220;
@@ -71,7 +80,8 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
   const crit = w.rng.chance(cc);
   if (crit) dmg *= st.critMult + (build.has('snipers_nest') && e.y < FAR_Y ? 0.5 : 0);
   const procBase = dmg;
-  // Talent amplification stays on the direct hit: no recursive proc scaling.
+  // Direct-hit power and talent amplification stay on the hit itself: no recursive proc scaling.
+  dmg *= st.hitPower;
   let talentMult = 1;
   if (w.talents.convergence) {
     const statuses = Number(e.st.burnT > 0) + Number(e.st.chill > 0 || e.st.frozenT > 0) + Number(e.st.bleed > 0);
@@ -189,8 +199,8 @@ export function procs(w: World, e: Enemy, base: number, crit: boolean, depth: nu
   if (e.alive && w.rng.chance(st.burnChance * m)) applyBurn(w, e, base * st.burnPower * ep, depth);
   if (e.alive && w.rng.chance(st.chillChance * m)) applyChill(w, e, 1, depth);
   if (e.alive && w.rng.chance(st.poisonChance * m)) applyPoison(w, e, base * st.poisonPower * ep, 1, depth);
-  if (e.alive && w.rng.chance(st.bleedChance * m)) applyBleed(w, e, base * 0.16 * ep, crit && b.has('hemorrhage') ? 3 : 1);
-  else if (e.alive && crit && b.has('hemorrhage')) applyBleed(w, e, base * 0.16 * ep, 3);
+  if (e.alive && w.rng.chance(st.bleedChance * m)) applyBleed(w, e, base * st.bleedPower * ep, crit && b.has('hemorrhage') ? 3 : 1);
+  else if (e.alive && crit && b.has('hemorrhage')) applyBleed(w, e, base * st.bleedPower * ep, 3);
   if (b.has('elemental_trinity') && w.rng.chance(0.3)) {
     if (e.alive) applyBurn(w, e, base * st.burnPower * ep, depth);
     if (e.alive) applyChill(w, e, 1, depth);
@@ -476,7 +486,7 @@ export function meteor(w: World, x: number, y: number, dmg: number, depth = 1): 
 // ------------------------------------------------------------------ area & chains
 export function explode(
   w: World, x: number, y: number, r: number, dmg: number, depth: number,
-  opts: { color?: string; src?: 'explosion' | 'barrel' | 'enemyBlast' | 'surge' | 'nova' | 'quake' | 'meteor' | 'mine'; burn?: boolean },
+  opts: { color?: string; src?: 'explosion' | 'barrel' | 'enemyBlast' | 'surge' | 'nova' | 'quake' | 'meteor' | 'mine'; burn?: boolean; bomblet?: boolean },
 ): void {
   if (w.explosionsThisStep > 16) return; // runaway guard (per sim step)
   w.explosionsThisStep++;
@@ -485,12 +495,15 @@ export function explode(
   const burn = opts.burn || b.has('burning_explosion') || b.has('evo_inferno');
   const toxic = b.has('toxic_shrapnel') && src !== 'enemyBlast';
   const st = b.stats;
+  // Blast Core: the player's own blasts can critically strike.
+  const crit = (src === 'explosion' || src === 'mine') && b.has('blast_core') && w.rng.chance(st.critChance);
+  const hit = crit ? dmg * st.critMult : dmg;
   const list = acquire();
   try {
     w.grid.query(x, y, r, list);
     for (const e of list) {
       if (!e.alive) continue;
-      damageEnemy(w, e, dmg * (src === 'enemyBlast' ? 1 : targetMult(w, e)), { src: src === 'surge' ? 'explosion' : src, crit: false, depth });
+      damageEnemy(w, e, hit * (src === 'enemyBlast' ? 1 : targetMult(w, e)), { src: src === 'surge' ? 'explosion' : src, crit, depth });
       if (e.alive) {
         if (!e.boss && e.def.ai !== 'charger' && e.def.ai !== 'pylon') {
           const dx = e.x - x;
@@ -519,8 +532,19 @@ export function explode(
     if (b.has('evo_minefield')) {
       for (const z of w.zones) if (z.kind === 'mine' && z.alive && z.t > 0.2 && (z.x - x) ** 2 + (z.y - y) ** 2 < (r + 30) ** 2) z.tick = -1;
     }
+    // Cluster Charge: the player's blasts scatter bomblets, which never scatter more.
+    if (b.has('cluster_charge') && !opts.bomblet && src !== 'enemyBlast') {
+      const n = 1 + b.power('cluster_charge');
+      w.credit('cluster_charge', () => {
+        for (let i = 0; i < n; i++) {
+          const a = w.rng.range(0, Math.PI * 2);
+          const d = r * w.rng.range(0.35, 0.75);
+          explode(w, x + Math.cos(a) * d, y + Math.sin(a) * d, r * 0.55, dmg * BOMBLET_POWER, depth + 1, { color: '#ffd27a', burn: opts.burn, bomblet: true });
+        }
+      });
+    }
   }
-  w.emit({ t: 'explosion', x, y, r, color: opts.color ?? (burn ? '#ff7a2f' : toxic ? '#9cff5e' : '#ffb13b') });
+  w.emit({ t: 'explosion', x, y, r, color: crit ? '#ffe066' : opts.color ?? (burn ? '#ff7a2f' : toxic ? '#9cff5e' : '#ffb13b') });
   w.emit({ t: 'sfx', name: 'explode', vol: Math.min(1, 0.4 + r / 150) });
   w.emit({ t: 'shake', amt: Math.min(8, r / 16) });
 }
@@ -571,6 +595,11 @@ export function chainLightning(w: World, from: Enemy, dmg: number, count: number
     }
     cx = nx;
     cy = ny;
+  }
+  const unspent = Math.min(16, count + extra) - (hit.length - 1);
+  if (unspent > 0 && from.alive && !from.phased && !immune(from, 'lightning')) {
+    damageEnemy(w, from, dmg * GROUNDING * Math.min(unspent, GROUND_MAX) * targetMult(w, from), { src: 'chain', crit: false, depth });
+    w.emit({ t: 'ring', x: from.x, y: from.y, r: from.r + 10, color: '#8ff4ff' });
   }
   if (pts.length > 2) {
     w.emit({ t: 'lightning', pts, color: '#8ff4ff' });

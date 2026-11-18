@@ -3,7 +3,8 @@ import { analytics } from '../core/analytics';
 import { dailyKey, hashString, Rng } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../data/balls';
-import { BOSS_MAP, ENEMY_MAP } from '../data/enemies';
+import { BOSSES, BOSS_MAP, ENEMY_MAP } from '../data/enemies';
+import { AWAKEN_COST, AWAKEN_MASTERY, AWAKEN_MAX } from '../data/awakening';
 import {
   ACHIEVEMENTS, CATALYST_LEVELS, CHALLENGES, INDUSTRY_DISCOUNT, SIGNATURE_UPGRADE, apexKills, type ResearchDef, OVERDRIVE_MAX, OVERDRIVE_PER_TIER, REFIT_MASTERY_STEP, RESEARCH, RESEARCH_MAP, WORKSHOP_MAP, masteryLevel, masteryRewards,
   rankLevel, rankRewards,
@@ -14,7 +15,7 @@ import { DEFAULT_UNLOCKED_RELICS, RELIC_MAP } from '../data/relics';
 import { EVENT_MAP } from '../data/arenas';
 import { EVOLUTION_MAP, REACTION_MAP, SYNERGY_MAP } from '../data/synergies';
 import { DEFAULT_UNLOCKED_UPGRADES, UPGRADE_MAP } from '../data/upgrades';
-import type { RunConfig } from '../sim/world';
+import type { RunConfig, RunMode } from '../sim/world';
 import type { ContractSlot, DiscoveryCat, Profile, RunSummary, Unlock } from './types';
 import { normalizeTalents } from '../data/talents';
 import { talentProgress, talentWins } from './talents';
@@ -190,6 +191,41 @@ export function buyWorkshop(p: Profile, id: string): boolean {
   return true;
 }
 
+// ------------------------------------------------------------------ awakening
+/** Awakening ranks open for a core: one per AWAKEN_MASTERY step, none while it is locked. */
+export function awakenOpen(p: Profile, core: string): number {
+  if (!p.unlockedCores.includes(core)) return 0;
+  const level = masteryLevel(p.mastery[core] ?? 0).level;
+  return AWAKEN_MASTERY.filter((m) => level >= m).length;
+}
+
+/** Cores price of a core's next Awakening rank, or null when it is maxed or not open yet. */
+export function awakenCost(p: Profile, core: string): number | null {
+  const rank = p.awakening[core] ?? 0;
+  if (rank >= AWAKEN_MAX || rank >= awakenOpen(p, core)) return null;
+  return AWAKEN_COST[rank];
+}
+
+export function canAwaken(p: Profile, core: string): boolean {
+  const cost = awakenCost(p, core);
+  return cost !== null && p.cores >= cost;
+}
+
+export function awaken(p: Profile, core: string): boolean {
+  const cost = awakenCost(p, core);
+  if (cost === null || p.cores < cost) return false;
+  p.cores -= cost;
+  p.awakening[core] = (p.awakening[core] ?? 0) + 1;
+  analytics.emit('CoreAwakened', { id: core, rank: p.awakening[core] });
+  return true;
+}
+
+// ------------------------------------------------------------------ gauntlet
+/** The Gauntlet opens once every classic boss has fallen at least once. */
+export function gauntletUnlocked(p: Profile): boolean {
+  return BOSSES.every((b) => (p.bossKills[b.id] ?? 0) > 0);
+}
+
 /** Core Resonance's partner: the most-mastered other unlocked core. */
 export function echoCore(p: Profile, core: string): string | undefined {
   let best: string | undefined;
@@ -201,14 +237,17 @@ export function echoCore(p: Profile, core: string): string | undefined {
   return best;
 }
 
-export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean; ascension?: number }): RunConfig {
+export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean; ascension?: number; mode?: RunMode }): RunConfig {
   const l = p.loadout;
   const flags = researchFlags(p);
+  const core = p.unlockedCores.includes(l.core) ? l.core : 'striker';
+  // The Gauntlet needs every classic boss beaten, never runs the daily seed, and keeps the Ascension ladder out.
+  const gauntlet = opts.mode === 'gauntlet' && !opts.daily && gauntletUnlocked(p);
   return {
     seed: opts.seed,
     arena: opts.arena,
     difficulty: opts.difficulty,
-    core: p.unlockedCores.includes(l.core) ? l.core : 'striker',
+    core,
     parts: [l.shell, l.impact, l.momentum].filter((id) => isPartUnlocked(p, id)),
     pacts: opts.pacts.filter((id) => PACT_MAP[id] && (!PACT_MAP[id].flag || flags.includes(PACT_MAP[id].flag!))),
     workshop: { ...p.workshop },
@@ -219,10 +258,12 @@ export function runConfig(p: Profile, opts: { arena: string; difficulty: number;
     known: Object.fromEntries(Object.entries(p.discoveries).map(([k, v]) => [k, [...v]])),
     tutorial: !p.tutorialDone,
     daily: opts.daily,
-    ascension: opts.difficulty >= ASCENSION_TIER ? Math.max(0, Math.min(p.ascension, Math.floor(opts.ascension ?? 0))) : 0,
+    ascension: opts.difficulty >= ASCENSION_TIER && !gauntlet ? Math.max(0, Math.min(p.ascension, Math.floor(opts.ascension ?? 0))) : 0,
     relicPool: relicPool(p),
     bossLore: Object.values(p.bossKills).filter((n) => n > 0).length,
-    echoCore: echoCore(p, p.unlockedCores.includes(l.core) ? l.core : 'striker'),
+    echoCore: echoCore(p, core),
+    mode: gauntlet ? 'gauntlet' : 'standard',
+    awakening: p.awakening[core] ?? 0,
   };
 }
 
@@ -429,6 +470,8 @@ export function nextGoals(p: Profile, n = 3): Goal[] {
   const m = masteryLevel(p.mastery[core] ?? 0);
   const mr = masteryRewards(core).find((r) => r.level === m.level + 1);
   if (mr) goals.push({ kind: 'mastery', text: t('goal.mastery', { name: CORE_MAP[core].name, level: m.level + 1 }), reward: mr.text, cur: m.into, max: m.need });
+  const awake = p.unlockedCores.find((id) => canAwaken(p, id));
+  if (awake) goals.push({ kind: 'awaken', text: t('goal.awaken', { name: CORE_MAP[awake].name, rank: (p.awakening[awake] ?? 0) + 1 }), reward: t('goal.awakenReward'), cur: 1, max: 1 });
   const affordable = RESEARCH.find((r) => canResearch(p, r.id));
   if (affordable) goals.push({ kind: 'research', text: t('goal.research', { name: affordable.name }), reward: affordable.desc, cur: 1, max: 1 });
   const d = maxDifficulty(p);
@@ -504,7 +547,11 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     analytics.emit('BossDefeated', { id: b, fightTime: s.bossFightTimes[i] ?? 0 });
   });
   let ascensionUnlocked: number | null = null;
-  if (s.victory) {
+  // A Gauntlet win is its own record: it opens no difficulty and no Ascension step.
+  if (s.victory && s.mode === 'gauntlet') {
+    p.gauntlet = Math.max(p.gauntlet, s.difficulty);
+    st.gauntletWins++;
+  } else if (s.victory) {
     p.cleared[s.arena] = Math.max(p.cleared[s.arena] ?? -1, s.difficulty);
     analytics.emit('ArenaCompleted', { arena: s.arena, difficulty: s.difficulty });
     // Abyss opens Ascension 1; winning at the highest open level (Abyss or harder) opens the next.

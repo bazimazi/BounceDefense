@@ -83,14 +83,14 @@ describe('content integrity', () => {
   });
 
   it('is big: the expansion content is all registered', () => {
-    expect(CORES.length).toBe(10);
+    expect(CORES.length).toBe(11);
     expect(ARENAS.length).toBe(6);
     expect(BOSSES.length).toBe(6);
     expect(RELICS.length).toBeGreaterThanOrEqual(30);
     expect(EVOLUTIONS.length).toBe(13);
     expect(SYNERGIES.length).toBe(25);
     expect(UPGRADES.length).toBeGreaterThanOrEqual(65);
-    expect(PACTS.length).toBe(10);
+    expect(PACTS.length).toBe(14);
   });
 });
 

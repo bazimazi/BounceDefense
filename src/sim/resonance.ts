@@ -43,7 +43,8 @@ export class ResonanceCircuit {
   update(dt: number): void {
     this.overdrive = Math.max(0, this.overdrive - dt);
     for (const n of this.nodes) n.pulse = Math.max(0, n.pulse - dt * 2.5);
-    if (this.w.endTimer >= 0) return;
+    // The Eclipse pact turns the sky off: no circuit, so no Starfall.
+    if (this.w.endTimer >= 0 || this.w.pacts.has('eclipse')) return;
     for (const n of this.nodes) {
       if (!n.lit) continue;
       n.litT -= dt;

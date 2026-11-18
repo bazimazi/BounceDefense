@@ -231,9 +231,9 @@ export const EVOLUTIONS: EvolutionDef[] = [
   },
   {
     id: 'plague', name: 'Plague Ball', icon: '🧫', color: '#8dff5a',
-    desc: 'Every hit adds 2 extra Poison stacks. Poisoned kills burst into toxic clouds. Poison stacks 8 higher.',
+    desc: 'Every hit adds 2 extra Poison stacks. Poisoned kills burst into toxic clouds. Poison stacks 4 higher.',
     recipe: [{ id: 'venom', level: 5 }, { id: 'contagion', level: 1 }],
-    mods: [{ stat: 'poisonCap', add: 8 }, { stat: 'poisonChance', add: 0.3 }],
+    mods: [{ stat: 'poisonCap', add: 4 }, { stat: 'poisonChance', add: 0.3 }],
     behavior: 'evo_plague',
   },
   {

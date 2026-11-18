@@ -2,6 +2,9 @@ import { DEFAULT_LANGUAGE, isLanguage } from '../i18n';
 import type { DiscoveryCat, Profile } from './types';
 import { normalizeTalents } from '../data/talents';
 import { MAX_ASCENSION } from '../data/ascension';
+import { AWAKEN_MAX } from '../data/awakening';
+import { DIFFICULTIES } from '../data/arenas';
+import { CORE_MAP } from '../data/balls';
 import { talentProgress, talentWins } from './talents';
 
 export const SAVE_VERSION = 4;
@@ -32,7 +35,7 @@ export function defaultProfile(): Profile {
       runs: 0, wins: 0, kills: 0, damage: 0, bestCombo: 0, maxWallChain: 0, explosionKills: 0, fireKills: 0,
       lightningKills: 0, frozen: 0, bleedKills: 0, healed: 0, coinsEarned: 0, evolutions: 0, maxBallsInFlight: 0,
       maxMomentumTier: 0, elitesKilled: 0, playTime: 0, poisonKills: 0, starfalls: 0, goldenCaught: 0, relicsFound: 0,
-      maxAscension: 0, contractsDone: 0,
+      maxAscension: 0, contractsDone: 0, gauntletWins: 0,
     },
     cleared: {},
     bossKills: {},
@@ -44,6 +47,8 @@ export function defaultProfile(): Profile {
     ascension: 0,
     rankXp: 0,
     contracts: { day: '', daily: [], week: '', weekly: null },
+    awakening: {},
+    gauntlet: -1,
   };
 }
 
@@ -99,6 +104,14 @@ export function migrate(raw: unknown): Profile {
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');
   if (!p.cosmetics.includes('classic')) p.cosmetics.unshift('classic');
   p.ascension = Math.max(0, Math.min(MAX_ASCENSION, Math.floor(p.ascension) || 0));
+  // Awakening ranks: known cores only, whole ranks from 0 to the cap.
+  const awakening: Record<string, number> = {};
+  for (const [id, rank] of Object.entries(isObj(p.awakening) ? p.awakening : {})) {
+    const r = Math.floor(Number(rank));
+    if (CORE_MAP[id] && r > 0) awakening[id] = Math.min(AWAKEN_MAX, r);
+  }
+  p.awakening = awakening;
+  p.gauntlet = Number.isFinite(p.gauntlet) ? Math.max(-1, Math.min(DIFFICULTIES.length - 1, Math.floor(p.gauntlet))) : -1;
   if (!Array.isArray(p.contracts.daily)) p.contracts.daily = [];
   return p;
 }

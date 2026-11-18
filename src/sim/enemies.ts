@@ -296,7 +296,7 @@ export function updateEnemy(w: World, e: Enemy, dt: number): void {
     e.alive = false;
     // Endless pressure also sharpens breaches, at half the rate it toughens enemies.
     const endless = 1 + (w.director.endlessPressure() - 1) * 0.5;
-    const asc = w.asc.has('breach15') ? 1.15 : 1;
+    const asc = (w.asc.has('breach15') ? 1.15 : 1) * (w.asc.has('breach40') ? 1.4 : 1);
     const dmg = e.def.damage * (e.elite.length ? 1.6 : 1) * (1 + w.time / 600) * endless * asc;
     w.emit({ t: 'explosion', x: e.x, y: DEFENSE_Y, r: e.r + 10, color: '#ff3b3b' });
     if (e.def.deathBlast) w.emit({ t: 'explosion', x: e.x, y: DEFENSE_Y, r: 60, color: '#ff3b3b' });

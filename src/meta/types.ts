@@ -52,6 +52,8 @@ export interface LifetimeStats {
   /** Highest Ascension level won. */
   maxAscension: number;
   contractsDone: number;
+  /** Gauntlet runs won. */
+  gauntletWins: number;
 }
 
 export type DiscoveryCat = 'enemies' | 'bosses' | 'synergies' | 'evolutions' | 'reactions' | 'upgrades' | 'arenas' | 'events' | 'relics';
@@ -91,6 +93,10 @@ export interface Profile {
   /** Pilot Rank experience: every run's Mastery XP also feeds it. */
   rankXp: number;
   contracts: ContractBoard;
+  /** Core id -> Awakening rank (0 to 5), bought with Cores. */
+  awakening: Record<string, number>;
+  /** Highest difficulty index won in the Gauntlet, -1 before the first Gauntlet win. */
+  gauntlet: number;
 }
 
 export interface ContractBoard {
@@ -169,6 +175,8 @@ export interface RunSummary {
   /** Seconds survived after continuing into Endless. */
   endlessTime?: number;
   ascension?: number;
+  /** Set for Gauntlet runs; Standard runs leave it out. */
+  mode?: 'gauntlet';
 }
 
 export type Unlock =

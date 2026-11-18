@@ -9,6 +9,17 @@ import type { World } from './world';
 /** Endless multiplies enemy health by this much per minute survived past the victory. */
 export const ENDLESS_RAMP = 1.22;
 
+/**
+ * The Gauntlet: every classic boss back to back, then the tier's apex bosses. A short opening builds
+ * the machine and a free pick follows every fight. Squads keep coming during fights at `fightSquads`
+ * of their pace, so the late-run toughening of the tiers above Abyss still bites. Classic bosses arrive
+ * `bossHp` times as tough as in a Standard run, scaled by the square root of the tier's late-run HP
+ * ramp, and each adds `bossRamp`; apex bosses keep their Standard strength. Tuned with
+ * `npm run balance -- --mode gauntlet` to play about as hard as Standard on the same tier for a
+ * well-kitted profile and clearly harder for a young one.
+ */
+export const GAUNTLET = { first: 75, gap: 20, bossPicks: 1, bossHp: 3, bossRamp: 0.45, fightSquads: 0.35 };
+
 const ELITE_POOL: [string, number][] = [
   ['grunt', 0], ['runner', 30], ['brute', 60], ['shielder', 80], ['splitter', 95], ['bomber', 120], ['healer', 160], ['magnet', 170],
 ];
@@ -41,13 +52,22 @@ export class Director {
 
   constructor(private w: World) {
     const rotation = [w.arena.bossId, ...BOSSES.map((b) => b.id).filter((b) => b !== w.arena.bossId)];
-    const regular = w.diff.bosses + (w.asc.has('thirdBoss') ? 1 : 0);
-    this.queue = [...rotation.slice(0, regular), ...(w.diff.apex ?? [])];
+    const gauntlet = w.gauntlet;
+    const regular = gauntlet ? rotation.length : w.diff.bosses + (w.asc.has('thirdBoss') ? 1 : 0);
+    const apex = [...(w.diff.apex ?? [])];
+    // Ascension 30 sends one more apex boss: the first one this tier does not already field.
+    if (w.asc.has('apexPlus')) {
+      const extra = APEX_BOSSES.map((b) => b.id).find((id) => !apex.includes(id));
+      if (extra) apex.push(extra);
+    }
+    this.queue = [...rotation.slice(0, regular), ...apex];
     this.cycle = [...this.queue, ...[...rotation, ...APEX_BOSSES.map((b) => b.id)].filter((b) => !this.queue.includes(b))];
     const tut = !!w.cfg.tutorial;
-    this.bossTime = tut ? 330 : 400 - (w.pacts.has('shortFuse') ? 90 : 0);
+    this.bossTime = tut ? 330 : gauntlet ? GAUNTLET.first : 400 - (w.pacts.has('shortFuse') ? 90 : 0);
     // Even the hardest tiers give the build ~90 seconds to form before the first elite.
-    this.eliteTimer = tut ? 150 : Math.max(90, Math.min(110, this.eliteEvery()));
+    // The Gauntlet has no elites or mini-boss: the bosses are the run.
+    this.eliteTimer = tut ? 150 : gauntlet ? Infinity : Math.max(90, Math.min(110, this.eliteEvery()));
+    this.miniDone = gauntlet;
     this.eventTime = tut ? 75 : 65;
   }
 
@@ -70,7 +90,8 @@ export class Director {
     // A lively opening (fodder to smash right away) that meets the long-run curve by ~4 minutes.
     const base = 0.3 + t * 0.0034 + Math.max(0, t - 240) * 0.003;
     const asc = this.w.asc.has('spawn10') ? 1.1 : 1;
-    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut * asc;
+    const tide = this.w.pacts.has('tide') ? 1.3 : 1;
+    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut * asc * tide;
   }
 
   private pickSquad(): SquadDef {
@@ -100,9 +121,10 @@ export class Director {
       if (t >= this.bossTime) this.spawnBoss();
     }
 
-    // ---- squads
-    if (!this.squadsPaused) {
-      this.budget += this.threatRate(t) * dt;
+    // ---- squads (the Gauntlet keeps a thinner stream coming during its fights)
+    const pace = !this.squadsPaused ? 1 : w.gauntlet && this.bossActive ? GAUNTLET.fightSquads : 0;
+    if (pace > 0) {
+      this.budget += this.threatRate(t) * dt * pace;
       if (!this.next) this.next = this.pickSquad();
       if (this.budget >= this.squadCost(this.next)) {
         this.budget -= this.squadCost(this.next);
@@ -177,7 +199,7 @@ export class Director {
   spawnSquad(s: SquadDef): void {
     const w = this.w;
     // Elite traits on ordinary enemies phase in over the first 90 seconds.
-    const base = w.diff.traitChance + (w.asc.has('traits') ? 0.1 : 0);
+    const base = w.diff.traitChance + (w.asc.has('traits') ? 0.1 : 0) + (w.asc.has('traits2') ? 0.15 : 0);
     const traitChance = base * Math.min(1, w.time / 90);
     for (const [id, x, y] of this.place(s)) {
       const e = w.spawnEnemy(id, x, y);
@@ -205,12 +227,24 @@ export class Director {
     return e;
   }
 
+  /**
+   * How much tougher this fight's boss is than the tier's base. Standard runs add half a boss per fight.
+   * The Gauntlet's classic bosses follow GAUNTLET; its apex bosses keep the strength they would have
+   * after the tier's usual classic bosses, so the long queue in front of them does not inflate them.
+   */
+  private bossScale(id: string): number {
+    const n = this.bossesSpawned;
+    if (!this.w.gauntlet || this.endless) return 1 + 0.5 * n;
+    if (BOSS_MAP[id]?.apex) return 1 + 0.5 * (this.w.diff.bosses + n - BOSSES.length);
+    return GAUNTLET.bossHp * Math.sqrt(this.w.diff.lateHp ?? 1) * (1 + GAUNTLET.bossRamp * n);
+  }
+
   spawnBoss(): void {
     const w = this.w;
     // The run's queue first (the arena's own boss leads); Endless keeps cycling through every boss.
     const id = this.cycle[this.bossesSpawned % this.cycle.length];
     const def = BOSS_MAP[id];
-    const hpMult = w.diff.bossHpMult * (1 + 0.5 * this.bossesSpawned) * (this.endless ? 1 + this.endlessCycle * 0.8 : 1);
+    const hpMult = w.diff.bossHpMult * this.bossScale(id) * (this.endless ? 1 + this.endlessCycle * 0.8 : 1);
     const e = w.spawnEnemy(def.enemy, W / 2, BOSS_SPAWN_Y, { hpMult });
     if (!e) return;
     BOSS_SCRIPTS[def.enemy]?.init(w, e);
@@ -269,7 +303,9 @@ export class Director {
     }
     if (this.bossesSpawned < this.queue.length) {
       const apex = BOSS_MAP[this.queue[this.bossesSpawned]]?.apex;
-      this.bossTime = w.time + 80;
+      // The Gauntlet pays its picks per boss and gives only a short breather before the next one.
+      if (w.gauntlet) w.pendingLevels += GAUNTLET.bossPicks;
+      this.bossTime = w.time + (w.gauntlet ? GAUNTLET.gap : 80);
       this.warned = false;
       this.eventTime = w.time + 30;
       if (apex) w.banner(i18n('fx.apexAssault'), '#ff3b9a', i18n('fx.apexAssaultSub', { name: BOSS_MAP[this.queue[this.bossesSpawned]].name }));

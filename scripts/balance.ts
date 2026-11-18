@@ -14,6 +14,11 @@
  *                      [--research 4]      (every Advanced/Apex study open once difficulty 4 is won; apex kills from 4 up)
  *                      [--without sentinel,spoils]  (drop these research flags, to measure one study)
  *                      [--tp 60]           (talent points, spent Warden > Havoc > Kinetics > Conduit; deep tiers as if the tier below was won)
+ *                      [--mode gauntlet]   (every boss back to back instead of a Standard run)
+ *                      [--awaken 5]        (the core's Awakening rank)
+ *                      [--build fire]      (draft only from one archetype's upgrades, the core's signature and the shared kit: kinetic,
+ *                                           fire, lightning, ice, bleed, poison, explosion, swarm; see ARCHETYPES)
+ *                      [--shares]          (print each cell's damage meter: average share of damage by source)
  *
  * Meta presets: `mid` is roughly ten runs in (half the Workshop, 6 talent points); `max` is the
  * complete Workshop with 15 talent points; `end` is an Ascension-ready profile (every Workshop item,
@@ -23,7 +28,7 @@
  * Endgame tiers with --meta end: Oblivion ~70% at --od 15, Singularity ~55% at --od 35, Eternity ~25% at --od 45.
  */
 import { Rng } from '../src/core/rng';
-import { BLUEPRINTS, OVERDRIVE, REFITS, RESEARCH } from '../src/data/meta';
+import { BLUEPRINTS, OVERDRIVE, REFITS, RESEARCH, SIGNATURE_UPGRADE } from '../src/data/meta';
 import { ASCENSION_TIER } from '../src/data/ascension';
 import { computeRewards } from '../src/meta/progress';
 import { botChoose, defaultConfig, FULL_POOL } from '../src/sim/bot';
@@ -51,6 +56,20 @@ const META: Record<string, { workshop: Record<string, number>; talents: Record<s
     flags: ['reroll1', 'reroll2', 'fourth_card', 'relic4', 'surge1', 'tactics', 'bounty', 'medic'],
     relics: true,
   },
+};
+
+/** Upgrades every archetype may draft: hull, a second ball and the generic hit-damage scalers. */
+const SHARED_KIT = ['heavy_impact', 'velocity', 'mass', 'extra_ball', 'fortify', 'regen', 'barrier', 'scholar', 'safety_net'];
+/** One damage type each, with its core-signature upgrade, for comparing damage types on equal terms. */
+const ARCHETYPES: Record<string, string[]> = {
+  kinetic: ['precision', 'lethal', 'ricochet', 'bank_shot', 'piercing', 'long_shot', 'bounty_hunter', 'kinetic_lens', 'accelerant'],
+  fire: ['ignite', 'wildfire', 'melt', 'thermal_core', 'attunement'],
+  lightning: ['chain_lightning', 'static_charge', 'storm_surge', 'arc_capacitor', 'attunement'],
+  ice: ['frostbite', 'permafrost', 'cold_snap', 'glacial_heart', 'attunement'],
+  bleed: ['serrated', 'bloodletting', 'vampiric', 'sanguine_pact', 'attunement'],
+  poison: ['venom', 'virulence', 'contagion', 'miasma', 'pandemic', 'attunement'],
+  explosion: ['volatile', 'blast_radius', 'chain_reaction', 'mine_layer', 'cluster_charge'],
+  swarm: ['splitter', 'echo', 'shard_forge', 'mirror_image', 'refraction'],
 };
 
 interface Hand { t: number; hold: number }
@@ -142,21 +161,30 @@ const tutorial = args.includes('--tutorial');
 const noise = Number(get('noise', '25'));
 const maxTime = Number(get('max', '1200'));
 const ascs = get('asc', '0').split(',').map(Number);
+const mode = get('mode', 'standard') === 'gauntlet' ? 'gauntlet' as const : 'standard' as const;
+const awakening = Number(get('awaken', '0'));
+const archetype = get('build', '');
+if (archetype && !ARCHETYPES[archetype]) throw new Error(`unknown --build ${archetype}; one of ${Object.keys(ARCHETYPES).join(', ')}`);
+const showShares = args.includes('--shares');
 
 console.log(`Human-like bot, ${runs} runs per cell${full ? ', full upgrade pool' : ''}${od ? `, Overdrive ${od}` : ''}${bpTier >= 0 ? `, Blueprints to tier ${bpTier}` : ''}${refit ? `, Refit ${refit}` : ''}${researchTier >= 0 ? `, Research to tier ${researchTier}` : ''}${tp ? `, ${tp} talent points` : ''}\n`);
 for (const arena of arenas) for (const difficulty of diffs) for (const ascension of difficulty >= ASCENSION_TIER ? ascs : [0]) for (const core of cores) {
   let wins = 0, time = 0, level = 0, minHp = 0, kills = 0, coins = 0;
+  const shares = new Map<string, number>();
   const deaths: number[] = [];
   const fights: number[] = [];
   const finals: number[] = [];
   for (let i = 0; i < runs; i++) {
     const cfg = defaultConfig({
-      seed: 7000 + i * 977, core, arena, difficulty, pacts, tutorial, workshop, talents: tp > 0 ? spendTalents(tp, Number(get('tpwin', String(difficulty - 1)))) : talents, ascension,
+      seed: 7000 + i * 977, core, arena, difficulty, pacts, tutorial, workshop, mode, awakening, talents: tp > 0 ? spendTalents(tp, Number(get('tpwin', String(difficulty - 1)))) : talents, ascension,
       flags, bossLore: researchTier < 0 ? 0 : Math.min(10, 6 + researchTier), echoCore: studied.includes('echocore') ? (core === 'pyro' ? 'tesla' : 'pyro') : undefined, ...(meta.relics ? { relicPool: RELICS.map((r) => r.id) } : {}), ...(full ? { pool: FULL_POOL } : {}),
+      ...(archetype ? { pool: [...SHARED_KIT, ...ARCHETYPES[archetype], SIGNATURE_UPGRADE[core]] } : {}),
     });
     const r = play(cfg, maxTime, noise);
     if (r.s.victory) wins++;
     else deaths.push(Math.round(r.s.time));
+    const total = (r.s.damageBy ?? []).reduce((a, [, v]) => a + v, 0) || 1;
+    for (const [k, v] of r.s.damageBy ?? []) shares.set(k, (shares.get(k) ?? 0) + v / total / runs);
     time += r.s.time; level += r.s.level; minHp += r.minHp; kills += r.s.kills;
     coins += computeRewards(r.s, 0, flags, workshop).coins;
     fights.push(...r.s.bossFightTimes.map(Math.round));
@@ -170,6 +198,10 @@ for (const arena of arenas) for (const difficulty of diffs) for (const ascension
     `${arena.padEnd(8)} d${difficulty}${ascension ? `a${ascension}`.padEnd(4) : '    '} ${core.padEnd(8)} win ${String(Math.round((wins / runs) * 100)).padStart(3)}%  ` +
     `avgTime ${(time / runs).toFixed(0).padStart(4)}s  lvl ${(level / runs).toFixed(1).padStart(4)}  kills ${(kills / runs).toFixed(0).padStart(4)}  ` +
     `minHp ${((minHp / runs) * 100).toFixed(0).padStart(3)}%  medianDeath ${median(deaths).padStart(5)}  medianBossFight ${median(fights).padStart(5)}  finalBoss ${median(finals).padStart(5)}  ` +
-    `coins ${(coins / runs).toFixed(0).padStart(6)}`,
+    `coins ${(coins / runs).toFixed(0).padStart(6)}${archetype ? `  [${archetype}]` : ''}`,
   );
+  if (showShares) {
+    const top = [...shares].sort((a, b) => b[1] - a[1]).filter(([, v]) => v >= 0.02);
+    console.log(`    damage: ${top.map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(', ')}`);
+  }
 }

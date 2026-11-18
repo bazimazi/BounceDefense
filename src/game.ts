@@ -12,7 +12,7 @@ import { botChoose, botStep, defaultConfig, FULL_POOL } from './sim/bot';
 import { buildName } from './sim/build';
 import type { Offer } from './sim/offers';
 import { DEFENSE_Y, LAUNCHER_X, LAUNCHER_Y, SIM_DT } from './sim/types';
-import { World } from './sim/world';
+import { World, type RunMode } from './sim/world';
 import { UI } from './ui/screens';
 
 export interface RunOptions {
@@ -23,6 +23,8 @@ export interface RunOptions {
   daily?: boolean;
   /** Ascension level for an Abyss run. */
   ascension?: number;
+  /** The Gauntlet (every boss back to back) instead of a Standard run. */
+  mode?: RunMode;
 }
 
 /** Owns the app lifecycle: menus, runs, input, the frame loop, saving. */
@@ -129,7 +131,7 @@ export class Game {
       else this.startRun({ arena: 'proving', difficulty: 0, pacts: [] });
       return;
     }
-    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension });
+    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension, mode: opts.mode });
   }
 
   buildName(): string {
@@ -162,7 +164,7 @@ export class Game {
     this.renderer.reset();
     const arenas = ['proving', 'foundry', 'rift', 'blight', 'spire', 'citadel'];
     this.demo = new World(defaultConfig({
-      seed: this.demoRng.int(1, 1e9), arena: this.demoArena ?? this.demoRng.pick(arenas), core: this.demoRng.pick(['striker', 'pyro', 'tesla', 'cryo', 'venom', 'titan', 'gemini']),
+      seed: this.demoRng.int(1, 1e9), arena: this.demoArena ?? this.demoRng.pick(arenas), core: this.demoRng.pick(['striker', 'pyro', 'tesla', 'cryo', 'venom', 'titan', 'gemini', 'blast']),
       pool: FULL_POOL,
     }));
     this.demo.hp = this.demo.maxHp = 400;
@@ -185,7 +187,8 @@ export class Game {
     const w = this.world;
     this.ui.beginRun(w);
     // Name the battlefield as the run opens; the tutorial keeps the screen clear for its hints.
-    const diffName = w.asc.size ? i18n('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name;
+    const tier = w.asc.size ? i18n('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name;
+    const diffName = w.gauntlet ? i18n('home.gauntletTag', { difficulty: tier }) : tier;
     if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : diffName);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
