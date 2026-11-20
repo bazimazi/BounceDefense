@@ -40,8 +40,14 @@ describe('talent progression and save safety', () => {
     expect(p.version).toBe(SAVE_VERSION);
     expect(p.talents).toEqual({});
     expect(talentProgress(p).total).toBe(7);
-    expect(p.coins).toBe(300);
-    expect(p.research).toBe(5);
+    // The credited Pilot Rank (10) pays its ranks as runs would have: coins, Research every third rank, the Sunset trail.
+    expect(p.rankXp).toBe(2000);
+    expect(p.coins).toBe(300 + 990);
+    expect(p.research).toBe(5 + 3);
+    expect(p.cosmetics).toContain('sunset');
+    // A save that already has Pilot Rank is not paid twice.
+    const again = migrate({ ...p, version: 3 });
+    expect(again.coins).toBe(p.coins);
   });
 
   it('rejects malformed ranks, unknown ids, unmet prerequisites and overspending', () => {

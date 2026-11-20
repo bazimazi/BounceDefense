@@ -6,8 +6,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'striker', name: 'Striker Core', icon: '⚪', color: '#f4f6ff',
     desc: 'Balanced and precise. Rewards clean bank shots.',
-    passive: 'Precision Engineering: +25% damage. Hits after a wall bounce gain +15% crit chance.',
-    mods: [{ stat: 'bankCrit', add: 0.15 }, { stat: 'damage', mult: 0.25 }],
+    passive: 'Precision Engineering: +30% damage. Hits after a wall bounce gain +15% crit chance.',
+    mods: [{ stat: 'bankCrit', add: 0.15 }, { stat: 'damage', mult: 0.3 }],
     startUpgrades: [],
     unlockCost: 0,
   },
@@ -23,16 +23,16 @@ export const CORES: CoreDef[] = [
   {
     id: 'tesla', name: 'Tesla Core', icon: '⚡', color: '#5ee7ff', element: 'lightning',
     desc: 'Fast and conductive. Lightning leaps between targets.',
-    passive: 'Conductor: +10% chain chance, +1 jump, +20% chain damage, +8% speed.',
-    mods: [{ stat: 'chainChance', add: 0.1 }, { stat: 'chainCount', add: 1 }, { stat: 'chainDamage', mult: 0.2 }, { stat: 'speed', mult: 0.08 }],
+    passive: 'Conductor: +5% chain chance, +1 jump, +12% chain damage.',
+    mods: [{ stat: 'chainChance', add: 0.05 }, { stat: 'chainCount', add: 1 }, { stat: 'chainDamage', mult: 0.12 }],
     startUpgrades: ['chain_lightning'],
     unlockCost: 3,
   },
   {
     id: 'cryo', name: 'Cryo Core', icon: '❄️', color: '#9fdcff', element: 'ice',
     desc: 'Heavy and cold. Freezes the battlefield, then shatters it.',
-    passive: 'Deep Cold: +25% chill chance, +15% ball size, +25% damage. Frozen enemies take +25% more damage.',
-    mods: [{ stat: 'chillChance', add: 0.25 }, { stat: 'radius', mult: 0.15 }, { stat: 'frozenVuln', add: 0.25 }, { stat: 'damage', mult: 0.25 }],
+    passive: 'Deep Cold: +30% chill chance, +15% ball size, +32% damage. Frozen enemies take +25% more damage.',
+    mods: [{ stat: 'chillChance', add: 0.3 }, { stat: 'radius', mult: 0.15 }, { stat: 'frozenVuln', add: 0.25 }, { stat: 'damage', mult: 0.32 }],
     startUpgrades: ['frostbite'],
     unlockCost: 5,
     unlockReq: { achievement: 'first_boss', text: 'Defeat any boss' },
@@ -40,8 +40,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'blood', name: 'Blood Core', icon: '🩸', color: '#ff2a55',
     desc: 'Opens wounds that never close. Trades hull for sustain.',
-    passive: 'Thirst: +20% bleed chance, bleeds deal +40% damage and stack 5 higher, +3% lifesteal, but -20 max HP.',
-    mods: [{ stat: 'lifesteal', add: 0.03 }, { stat: 'bleedChance', add: 0.2 }, { stat: 'bleedPower', mult: 0.4 }, { stat: 'bleedCap', add: 5 }, { stat: 'maxHp', add: -20 }],
+    passive: 'Thirst: +22% damage, +30% bleed chance, bleeds deal +75% damage and stack 5 higher, +4% lifesteal, but -10 max HP.',
+    mods: [{ stat: 'damage', mult: 0.22 }, { stat: 'lifesteal', add: 0.04 }, { stat: 'bleedChance', add: 0.3 }, { stat: 'bleedPower', mult: 0.75 }, { stat: 'bleedCap', add: 5 }, { stat: 'maxHp', add: -10 }],
     startUpgrades: ['vampiric'],
     unlockCost: 6,
     unlockReq: { achievement: 'blood_bank', text: 'Heal 300 HP total' },
@@ -49,8 +49,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'void', name: 'Void Core', icon: '🌀', color: '#c77dff',
     desc: 'Bends space. Refuses to fall.',
-    passive: 'Rift Phase: the first time each launch the ball would hit the floor, it phases to the top of the arena instead. -15% damage.',
-    mods: [{ stat: 'magnetism', add: 0.3 }, { stat: 'damage', mult: -0.15 }],
+    passive: 'Rift Phase: the first time each launch the ball would hit the floor, it phases to the top of the arena instead. -20% damage.',
+    mods: [{ stat: 'magnetism', add: 0.3 }, { stat: 'damage', mult: -0.2 }],
     startUpgrades: [],
     behavior: 'void_core',
     unlockCost: 8,
@@ -59,8 +59,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'venom', name: 'Venom Core', icon: '🧪', color: '#8dff5a', element: 'poison',
     desc: 'Patient and lethal. Every hit leaves something behind.',
-    passive: 'Toxin: +30% poison chance and +25% poison damage. Poisoned enemies move 20% slower.',
-    mods: [{ stat: 'poisonChance', add: 0.3 }, { stat: 'poisonPower', mult: 0.25 }],
+    passive: 'Toxin: +10% damage, +45% poison chance and +40% poison damage. Poisoned enemies move 20% slower.',
+    mods: [{ stat: 'damage', mult: 0.1 }, { stat: 'poisonChance', add: 0.45 }, { stat: 'poisonPower', mult: 0.4 }],
     startUpgrades: ['venom'],
     behavior: 'venom_core',
     unlockCost: 6,
@@ -69,8 +69,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'titan', name: 'Titan Core', icon: '🪨', color: '#d9a066',
     desc: 'Huge, slow and devastating. Every hit lands like a hammer.',
-    passive: 'Colossus: +40% ball size, +22% damage, +40% knockback, −15% speed, +10 max HP.',
-    mods: [{ stat: 'radius', mult: 0.4 }, { stat: 'damage', mult: 0.22 }, { stat: 'knockback', mult: 0.4 }, { stat: 'speed', mult: -0.15 }, { stat: 'maxHp', add: 10 }],
+    passive: 'Colossus: +15% ball size, +26% damage, +40% knockback, −15% speed, +25 max HP.',
+    mods: [{ stat: 'radius', mult: 0.15 }, { stat: 'damage', mult: 0.26 }, { stat: 'knockback', mult: 0.4 }, { stat: 'speed', mult: -0.15 }, { stat: 'maxHp', add: 25 }],
     startUpgrades: ['heavy_impact'],
     unlockCost: 6,
     unlockReq: { achievement: 'elite_hunter', text: 'Kill 25 elites' },
@@ -78,8 +78,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'gemini', name: 'Gemini Core', icon: '♊', color: '#ffc2f4',
     desc: 'Never flies alone. Two balls, one mind.',
-    passive: 'Twin Star: every launch also fires a twin at 45% power, raised by every shard and clone power bonus. −10% damage.',
-    mods: [{ stat: 'damage', mult: -0.1 }],
+    passive: 'Twin Star: every launch also fires a twin at 25% power, raised by every shard and clone power bonus. −14% damage.',
+    mods: [{ stat: 'damage', mult: -0.14 }],
     startUpgrades: ['shard_forge'],
     behavior: 'gemini_core',
     unlockCost: 7,
@@ -88,8 +88,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'blast', name: 'Blast Core', icon: '💣', color: '#ffb13b',
     desc: 'Loud and unstable. Every hit is a fuse.',
-    passive: 'Payload: +15% explosion chance, +30% explosion damage and +15% blast area. Your explosions can critically strike.',
-    mods: [{ stat: 'explosionChance', add: 0.15 }, { stat: 'explosionDamage', mult: 0.3 }, { stat: 'area', mult: 0.15 }],
+    passive: 'Payload: +12% explosion chance, +15% explosion damage and +15% blast area. Your explosions can critically strike, at a quarter of your crit chance.',
+    mods: [{ stat: 'explosionChance', add: 0.12 }, { stat: 'explosionDamage', mult: 0.15 }, { stat: 'area', mult: 0.15 }],
     startUpgrades: ['volatile'],
     behavior: 'blast_core',
     unlockCost: 6,
@@ -98,8 +98,8 @@ export const CORES: CoreDef[] = [
   {
     id: 'chrono', name: 'Chrono Core', icon: '⌛', color: '#ffd27a',
     desc: 'Bends time around itself. The battlefield crawls while you think.',
-    passive: 'Time Dilation: enemies near your balls move 40% slower. +0.4s combo window, Surge charges 20% faster.',
-    mods: [{ stat: 'comboWindow', add: 0.4 }, { stat: 'surgeGain', mult: 0.2 }],
+    passive: 'Time Dilation: enemies near your balls move 40% slower. +22% damage, +0.4s combo window, Surge charges 20% faster.',
+    mods: [{ stat: 'damage', mult: 0.22 }, { stat: 'comboWindow', add: 0.4 }, { stat: 'surgeGain', mult: 0.2 }],
     startUpgrades: [],
     behavior: 'chrono_core',
     unlockCost: 9,
@@ -258,6 +258,13 @@ export const TRAILS = [
   { id: 'zenith', name: 'Zenith', colors: ['#ffffff', '#7af0ff'] },
   { id: 'radiant', name: 'Radiant', colors: ['#fff8d6', '#ff9de2'] },
   { id: 'fuse', name: 'Fuse', colors: ['#fff0b0', '#ff6a00'] },
+  // Mastery trails of their own for the cores whose old one doubled an achievement or challenge reward.
+  { id: 'comet', name: 'Comet', colors: ['#ffffff', '#ffc98a'] },
+  { id: 'phoenix', name: 'Phoenix', colors: ['#ffe9a0', '#ff2a6d'] },
+  { id: 'volt', name: 'Voltaic', colors: ['#eaffff', '#00b8ff'] },
+  { id: 'glacier', name: 'Glacier', colors: ['#e8fbff', '#2fb8c9'] },
+  { id: 'sanguine', name: 'Sanguine', colors: ['#ffc2c2', '#7a0016'] },
+  { id: 'rift', name: 'Rift', colors: ['#b9a3ff', '#120030'] },
 ];
 
 localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);

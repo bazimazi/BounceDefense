@@ -5,6 +5,7 @@ import type { Profile, RunSummary, Unlock } from '../meta/types';
 import { CORES, TRAILS } from './balls';
 import { APEX_BOSSES, BOSSES } from './enemies';
 import { UPGRADE_MAP } from './upgrades';
+import { ASCENSION_TIER, ascensionCap } from './ascension';
 
 // ---------------------------------------------------------------- achievements
 /** Cumulative goals. They double as a roadmap: every one unlocks new content. */
@@ -83,8 +84,16 @@ export interface ChallengeDef {
   name: string;
   icon: string;
   desc: string;
-  check: (s: RunSummary) => boolean;
+  check: (s: RunSummary, ctx: ChallengeContext) => boolean;
   rewards: Unlock[];
+}
+
+/** The profile as it stood before the run, for challenges measured against the player's own frontier. */
+export interface ChallengeContext {
+  /** Hardest difficulty open before the run (Eternity once everything is won). */
+  hardestOpen: number;
+  /** Highest Ascension open before the run. */
+  ascensionOpen: number;
 }
 
 export const CHALLENGES: ChallengeDef[] = [
@@ -97,7 +106,7 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'glass_cannon', name: 'Glass Cannon', icon: '💔', desc: 'Win with the Glass Heart pact.', check: (s) => s.victory && s.pacts.includes('fragile'), rewards: [{ type: 'research', amount: 4 }] },
   { id: 'combo_king', name: 'Combo King', icon: '👑', desc: 'Reach a 150 combo.', check: (s) => s.bestCombo >= 150, rewards: [{ type: 'coins', amount: 500 }] },
   { id: 'evolutionist', name: 'Evolutionist', icon: '🧬', desc: 'Evolve twice in one run.', check: (s) => s.evolutions.length >= 2, rewards: [{ type: 'research', amount: 4 }] },
-  { id: 'elementalist', name: 'Elementalist', icon: '🔺', desc: 'Trigger all three elemental reactions in one run.', check: (s) => s.reactions.length >= 3, rewards: [{ type: 'research', amount: 4 }] },
+  { id: 'elementalist', name: 'Elementalist', icon: '🔺', desc: 'Trigger three different elemental reactions in one run.', check: (s) => s.reactions.length >= 3, rewards: [{ type: 'research', amount: 4 }] },
   { id: 'demolition_expert', name: 'Demolition Expert', icon: '🛢️', desc: 'Detonate 25 barrels in one run.', check: (s) => s.barrelsExploded >= 25, rewards: [{ type: 'coins', amount: 400 }] },
   { id: 'iron_wall', name: 'Iron Wall', icon: '🧱', desc: 'Win on Veteran or higher.', check: (s) => s.victory && s.difficulty >= 1, rewards: [{ type: 'cores', amount: 5 }] },
   { id: 'nightmare_slayer', name: 'Nightmare Slayer', icon: '😈', desc: 'Win on Nightmare or higher.', check: (s) => s.victory && s.difficulty >= 2, rewards: [{ type: 'cosmetic', id: 'crimson' }, { type: 'cores', amount: 8 }] },
@@ -131,10 +140,18 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'ascension_30', name: 'Zenith', icon: '🔱', desc: 'Win on Ascension 30.', check: (s) => s.victory && (s.ascension ?? 0) >= 30, rewards: [{ type: 'cosmetic', id: 'zenith' }, { type: 'cores', amount: 40 }] },
   { id: 'gauntlet_run', name: 'Gauntlet Runner', icon: '🥊', desc: 'Win a Gauntlet.', check: (s) => s.victory && s.mode === 'gauntlet', rewards: [{ type: 'cosmetic', id: 'gladiator' }, { type: 'research', amount: 5 }] },
   { id: 'gauntlet_abyss', name: 'Pantheon Breaker', icon: '🏛️', desc: 'Win a Gauntlet on Abyss or higher.', check: (s) => s.victory && s.mode === 'gauntlet' && s.difficulty >= 4, rewards: [{ type: 'cores', amount: 20 }, { type: 'research', amount: 8 }] },
-  { id: 'pactbreaker', name: 'Pactbreaker', icon: '🌑', desc: 'Win on Abyss or higher with two Abyssal Pacts.', check: (s) => s.victory && s.difficulty >= 4 && s.pacts.filter((id) => ABYSSAL_PACTS.includes(id)).length >= 2, rewards: [{ type: 'cores', amount: 12 }, { type: 'research', amount: 8 }] },
+  // Measured against the player's frontier, so it is a real fight whenever it is attempted (a finished kit used to
+  // clear it on Abyss every time).
+  { id: 'pactbreaker', name: 'Pactbreaker', icon: '🌑', desc: 'Win with three Abyssal Pacts on the hardest difficulty you have open, at the highest Ascension it allows.',
+    check: (s, ctx) => s.victory && s.mode !== 'gauntlet' && s.difficulty >= Math.max(ASCENSION_TIER, ctx.hardestOpen)
+      && (s.ascension ?? 0) >= Math.min(ctx.ascensionOpen, ascensionCap(s.difficulty))
+      && s.pacts.filter((id) => ABYSSAL_PACTS.includes(id)).length >= PACTBREAKER_PACTS,
+    rewards: [{ type: 'cores', amount: 20 }, { type: 'research', amount: 12 }] },
 ];
 /** The pacts Abyssal Pacts research adds (Pactbreaker counts them). */
 export const ABYSSAL_PACTS = ['eclipse', 'warlords', 'tide', 'narrow_fate'];
+/** Abyssal Pacts Pactbreaker asks for. */
+export const PACTBREAKER_PACTS = 3;
 
 // ---------------------------------------------------------------- research
 /** Research expands the game horizontally: new mechanics and decisions, not bigger numbers. */
@@ -347,16 +364,16 @@ export const REFIT_MASTERY_STEP = 3;
 const refitCost = (lvl: number) => Math.round((900 * Math.pow(1.4, lvl)) / 10) * 10;
 const REFIT_SIGNATURE: Record<string, { text: (l: number) => string; mods: (l: number) => Modifier[]; damage?: number }> = {
   striker: { text: (l) => `+${l}% crit chance after a wall bounce`, mods: (l) => [{ stat: 'bankCrit', add: 0.01 * l }] },
-  pyro: { text: (l) => `+${l * 4}% burn damage`, mods: (l) => [{ stat: 'burnPower', mult: 0.04 * l }] },
-  tesla: { text: (l) => `+${l * 2}% chain damage`, mods: (l) => [{ stat: 'chainDamage', add: 0.02 * l }] },
-  cryo: { text: (l) => `+${pct1(l * 0.025)}% damage to frozen enemies`, mods: (l) => [{ stat: 'frozenVuln', add: 0.025 * l }] },
-  blood: { text: (l) => `+${l * 4}% bleed damage and +${l * 2} max HP`, mods: (l) => [{ stat: 'bleedPower', mult: 0.04 * l }, { stat: 'maxHp', add: 2 * l }] },
+  pyro: { text: (l) => `+${l * 3}% burn damage`, mods: (l) => [{ stat: 'burnPower', mult: 0.03 * l }] },
+  tesla: { text: (l) => `+${l * 3}% chain damage`, mods: (l) => [{ stat: 'chainDamage', add: 0.03 * l }] },
+  cryo: { text: (l) => `+${l * 5}% damage to frozen enemies`, mods: (l) => [{ stat: 'frozenVuln', add: 0.05 * l }] },
+  blood: { text: (l) => `+${l * 8}% bleed damage and +${l * 2} max HP`, mods: (l) => [{ stat: 'bleedPower', mult: 0.08 * l }, { stat: 'maxHp', add: 2 * l }], damage: 0.03 },
   void: { text: (l) => `+${pct1(l * 0.02)}% stronger homing`, mods: (l) => [{ stat: 'magnetism', add: 0.006 * l }], damage: 0.03 },
   venom: { text: (l) => `+${l * 3}% poison damage`, mods: (l) => [{ stat: 'poisonPower', mult: 0.03 * l }] },
-  titan: { text: (l) => `+${l * 4}% knockback and +${l * 3} max HP`, mods: (l) => [{ stat: 'knockback', mult: 0.04 * l }, { stat: 'maxHp', add: 3 * l }] },
-  gemini: { text: (l) => `+${pct1(l * 0.008)}% twin and shard power`, mods: (l) => [{ stat: 'shardPower', add: 0.008 * l }] },
-  chrono: { text: (l) => `Surge charges ${l * 2}% faster`, mods: (l) => [{ stat: 'surgeGain', mult: 0.02 * l }] },
-  blast: { text: (l) => `+${l * 4}% explosion damage`, mods: (l) => [{ stat: 'explosionDamage', mult: 0.04 * l }] },
+  titan: { text: (l) => `+${l * 2}% knockback and +${l * 2} max HP`, mods: (l) => [{ stat: 'knockback', mult: 0.02 * l }, { stat: 'maxHp', add: 2 * l }], damage: 0.01 },
+  gemini: { text: (l) => `+${pct1(l * 0.055)}% twin and shard power`, mods: (l) => [{ stat: 'shardPower', add: 0.055 * l }] },
+  chrono: { text: (l) => `Surge charges ${l * 2}% faster`, mods: (l) => [{ stat: 'surgeGain', mult: 0.02 * l }], damage: 0.05 },
+  blast: { text: (l) => `+${l * 2}% explosion damage`, mods: (l) => [{ stat: 'explosionDamage', mult: 0.02 * l }] },
 };
 
 export const REFITS: WorkshopDef[] = CORES.map((c) => {
@@ -380,7 +397,7 @@ export const SIGNATURE_UPGRADE: Record<string, string> = {
   venom: 'pandemic', titan: 'earthshaker', gemini: 'mirror_image', chrono: 'stasis_field', blast: 'cluster_charge',
 };
 export const MASTERY_TRAIL: Record<string, string> = {
-  striker: 'prism', pyro: 'ember', tesla: 'aurora', cryo: 'aurora', blood: 'crimson', void: 'void',
+  striker: 'comet', pyro: 'phoenix', tesla: 'volt', cryo: 'glacier', blood: 'sanguine', void: 'rift',
   venom: 'toxin', titan: 'magma', gemini: 'mirror', chrono: 'chrono', blast: 'fuse',
 };
 

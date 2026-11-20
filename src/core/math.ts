@@ -83,11 +83,17 @@ export const easeOutBack = (t: number): number => {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 };
 
-export function formatNum(n: number): string {
+/**
+ * Compact number: 12,345 -> 12.3K. `down` never overstates (a wallet) and `up` never understates (a price),
+ * so a wallet that reads the same as a price can always pay it.
+ */
+export function formatNum(n: number, dir: 'nearest' | 'down' | 'up' = 'nearest'): string {
   n = Math.round(n);
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e4) return (n / 1e3).toFixed(1) + 'K';
+  const r = dir === 'down' ? Math.floor : dir === 'up' ? Math.ceil : Math.round;
+  const short = (unit: number, suffix: string) => (r((n / unit) * 10) / 10).toFixed(1) + suffix;
+  if (n >= 1e9) return short(1e9, 'B');
+  if (n >= 1e6) return short(1e6, 'M');
+  if (n >= 1e4) return short(1e3, 'K');
   return n.toLocaleString('en-US');
 }
 

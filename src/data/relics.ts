@@ -54,7 +54,7 @@ export const RELICS: RelicDef[] = [
     mods: [{ stat: 'echoChance', add: 0.3 }, { stat: 'shardPower', add: 0.15 }] },
   { id: 'hydra_tooth', name: 'Hydra Tooth', icon: '🦷', rarity: 'rare', locked: true, desc: '+10% split chance. Shards +20% power.',
     mods: [{ stat: 'splitChance', add: 0.1 }, { stat: 'shardPower', add: 0.2 }] },
-  { id: 'star_compass', name: 'Star Compass', icon: '🧭', rarity: 'rare', desc: 'Starfall deals +60% damage. Signals grant double Surge charge.',
+  { id: 'star_compass', name: 'Star Compass', icon: '🧭', rarity: 'rare', inert: ['eclipse'], desc: 'Starfall deals +60% damage. Signals grant double Surge charge.',
     mods: [{ stat: 'starfallPower', mult: 0.6 }], behavior: 'relic_star_compass' },
   { id: 'overclock_chip', name: 'Overclock Chip', icon: '💾', rarity: 'rare', desc: '+15% ball speed. Surge charges 30% faster.',
     mods: [{ stat: 'speed', mult: 0.15 }, { stat: 'surgeGain', mult: 0.3 }] },

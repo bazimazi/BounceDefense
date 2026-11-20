@@ -22,7 +22,7 @@
     "android:build": "tauri android build --apk --aab",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",
-    "test": "vitest run",
+    "test": "node scripts/vitest.mjs run",
     "test:ui": "node scripts/ui-engines.mjs",
     "test:ui:layout": "node --import tsx scripts/ui-audit.mjs",
     "test:ui:flow": "node scripts/game-flow.mjs",
@@ -32,9 +32,10 @@
     "test:ui:motion": "node scripts/motion-check.mjs",
     "test:ui:aim": "node scripts/aim-check.mjs",
     "test:ui:i18n": "node --import tsx scripts/i18n-check.mjs",
-    "test:watch": "vitest",
+    "test:watch": "node scripts/vitest.mjs",
     "sim": "tsx scripts/simulate.ts",
-    "balance": "tsx scripts/balance.ts"
+    "balance": "tsx scripts/balance.ts",
+    "balance:cores": "node scripts/core-balance.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.2",

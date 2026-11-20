@@ -8,7 +8,9 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 5173,
-    strictPort: true,
+    // Tauri loads the fixed devUrl (http://localhost:5173), so only hold the port strictly under the Tauri CLI;
+    // a plain `npm run dev` falls through to the next free port.
+    strictPort: !!process.env.TAURI_ENV_PLATFORM,
     hmr: tauriDevHost ? { protocol: 'ws', host: tauriDevHost, port: 5174 } : undefined,
     watch: { ignored: ['**/src-tauri/**'] },
   },
@@ -21,5 +23,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // The full-run simulation tests play several minutes of game time each; 5 s is too tight on a busy machine.
+    testTimeout: 30000,
   },
 } as any);

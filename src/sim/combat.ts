@@ -19,6 +19,8 @@ export interface HitInfo {
 
 /** Max depth of proc chains (explosion -> chain -> explosion ...). Keeps cascades finite. */
 export const MAX_DEPTH = 4;
+/** Share of the crit chance Blast Core explosions roll with. */
+export const BLAST_CRIT_SHARE = 0.25;
 /**
  * Grounding: chain jumps that find no new target discharge into the enemy the arc started from,
  * each for this share of the chain's damage (at most GROUND_MAX of them), so lightning still bites
@@ -309,7 +311,8 @@ function killEnemyInner(w: World, e: Enemy, info: HitInfo, overflow: number): vo
   flushDamageNumber(w, e);
   const st = w.build.stats;
   const r = w.run;
-  r.kills++;
+  // This kill's own number: death effects below can kill more enemies before this kill's hooks run.
+  const killNo = ++r.kills;
   if (e.elite.length) r.eliteKills++;
   switch (info.src) {
     case 'burn': r.fireKills++; break;
@@ -424,7 +427,11 @@ function killEnemyInner(w: World, e: Enemy, info: HitInfo, overflow: number): vo
       }
     }
   }
-  for (const [bh, p] of w.bh) bh.onKill?.(w, e, info, p);
+  for (const [bh, p] of w.bh) {
+    // Re-set before every hook: a hook's own kills (meteors, shockwaves) overwrite it.
+    w.killIndex = killNo;
+    bh.onKill?.(w, e, info, p);
+  }
   if (e.boss) w.director.onBossPartDeath(e);
 }
 
@@ -496,7 +503,8 @@ export function explode(
   const toxic = b.has('toxic_shrapnel') && src !== 'enemyBlast';
   const st = b.stats;
   // Blast Core: the player's own blasts can critically strike.
-  const crit = (src === 'explosion' || src === 'mine') && b.has('blast_core') && w.rng.chance(st.critChance);
+  // Blast Core explosions crit at half the crit chance: full chance let Overdrive crit damage run away with the late game.
+  const crit = (src === 'explosion' || src === 'mine') && b.has('blast_core') && w.rng.chance(st.critChance * BLAST_CRIT_SHARE);
   const hit = crit ? dmg * st.critMult : dmg;
   const list = acquire();
   try {

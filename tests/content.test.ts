@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ARENAS, ARENA_EVENTS, DIFFICULTIES, EVENT_MAP, PACTS } from '../src/data/arenas';
 import { ASCENSIONS, ASCENSION_TIER, MAX_ASCENSION } from '../src/data/ascension';
-import { CORES, PARTS, PART_MAP, TRAILS } from '../src/data/balls';
+import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../src/data/balls';
 import { CONTRACTS } from '../src/data/contracts';
 import { ALL_BOSSES, APEX_BOSSES, BOSSES, BOSS_MAP, ENEMY_MAP } from '../src/data/enemies';
 import {
@@ -518,7 +518,9 @@ describe('advanced and apex research', () => {
     const plain = makeWorld();
     expect(makeWorld({ flags: ['archive'], bossLore: 10 }).build.stats.eliteDamage).toBeCloseTo(plain.build.stats.eliteDamage + 0.2);
     const echo = makeWorld({ flags: ['echocore'], echoCore: 'tesla' });
-    expect(echo.build.stats.chainChance).toBeCloseTo(plain.build.stats.chainChance + 0.05);
+    // Half of the Tesla Core's own chain chance.
+    const teslaChain = CORE_MAP.tesla.mods.find((m) => m.stat === 'chainChance')!.add!;
+    expect(echo.build.stats.chainChance).toBeCloseTo(plain.build.stats.chainChance + teslaChain / 2);
     const p = defaultProfile();
     p.unlockedCores.push('pyro', 'tesla');
     p.mastery = { striker: 9000, pyro: 300, tesla: 800 };

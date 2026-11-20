@@ -35,7 +35,7 @@ function ready(w: World, b: object, key: string, cd: number): boolean {
 }
 
 /** Gemini's twin power at the default shard power, and with Mirror Image. */
-export const GEMINI_TWIN = 0.45;
+export const GEMINI_TWIN = 0.25;
 export const GEMINI_MIRROR = 1;
 
 export const BEHAVIORS: Record<string, Behavior> = {
@@ -299,7 +299,7 @@ export const BEHAVIORS: Record<string, Behavior> = {
       const c = w.spawnBall('clone', b.x, b.y, Math.cos(a), Math.sin(a));
       if (!c) return;
       const mirror = w.build.has('mirror_image');
-      // The twin is a clone, spawned at shard power (45% by default): it starts at 60%, 90% with Mirror Image.
+      // The twin is a clone: GEMINI_TWIN at the default shard power, scaled by every shard and clone power bonus (Mirror Image: full power).
       c.dmgMult *= (mirror ? GEMINI_MIRROR : GEMINI_TWIN) / STAT_DEFAULTS.shardPower;
       if (mirror) c.pierceLeft += 1;
       c.powered = b.powered;
@@ -348,7 +348,7 @@ export const BEHAVIORS: Record<string, Behavior> = {
   },
   apocalypse: {
     onKill(w) {
-      if (w.run.kills % 15 !== 0) return;
+      if (w.killIndex % 15 !== 0) return;
       const tgt = densest(w);
       if (tgt) meteor(w, tgt.x, tgt.y, w.build.stats.damage * 3, 2);
     },
@@ -413,9 +413,16 @@ export const BEHAVIORS: Record<string, Behavior> = {
   relic_phoenix: {},
   relic_soul_lantern: {
     onKill(w) {
-      if (w.run.kills % 20 !== 0 || w.lanternStacks >= 40) return;
+      if (w.killIndex % 20 !== 0 || w.lanternStacks >= 40) return;
       w.lanternStacks++;
-      w.onBuildChanged(w.build.addBaseMods([{ stat: 'damage', mult: 0.01 }]));
+      // One modifier that grows, so 40 stacks are +40% (separate +1% multipliers would compound to +49%).
+      if (!w.lanternMod) {
+        w.lanternMod = { stat: 'damage', mult: 0.01 };
+        w.onBuildChanged(w.build.addBaseMods([w.lanternMod]));
+      } else {
+        w.lanternMod.mult = 0.01 * w.lanternStacks;
+        w.onBuildChanged(w.build.recompute());
+      }
     },
   },
   relic_meteor: {
@@ -443,7 +450,7 @@ export const BEHAVIORS: Record<string, Behavior> = {
   },
   talent_cascade: {
     onKill(w, e, info) {
-      if (w.run.kills % 25 !== 0 || info.src === 'quake') return;
+      if (w.killIndex % 25 !== 0 || info.src === 'quake') return;
       explode(w, e.x, e.y, 80 * w.build.stats.area, w.build.stats.damage * 1.1, 2, { src: 'quake', color: '#ff8a6b' });
     },
   },
@@ -465,7 +472,7 @@ export const BEHAVIORS: Record<string, Behavior> = {
   },
   talent_armageddon: {
     onKill(w) {
-      if (w.run.kills % 15 !== 0) return;
+      if (w.killIndex % 15 !== 0) return;
       const target = densest(w);
       if (target) meteor(w, target.x, target.y, w.build.stats.damage * 2.5, 2);
     },

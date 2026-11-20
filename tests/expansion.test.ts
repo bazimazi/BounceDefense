@@ -98,12 +98,25 @@ describe('Abyssal Pacts', () => {
     expect(PACT_MAP.eclipse.rule).toBe('eclipse');
   });
 
-  it('Pactbreaker counts only Abyssal Pacts', () => {
+  it("Pactbreaker needs three Abyssal Pacts at the player's own frontier", () => {
     const c = CHALLENGES.find((x) => x.id === 'pactbreaker')!;
-    const s = { ...makeWorld().summary(), victory: true, difficulty: 4 };
-    expect(c.check({ ...s, pacts: ['haste', 'fortified'] })).toBe(false);
-    expect(c.check({ ...s, pacts: ['eclipse', 'tide'] })).toBe(true);
-    expect(c.check({ ...s, difficulty: 3, pacts: ['eclipse', 'tide'] })).toBe(false);
+    const three = ['eclipse', 'tide', 'warlords'];
+    const s = { ...makeWorld().summary(), victory: true, difficulty: 5, ascension: 3 };
+    const fresh = { hardestOpen: 5, ascensionOpen: 3 };
+    expect(c.check({ ...s, pacts: three }, fresh)).toBe(true);
+    // Only Abyssal Pacts count, and three of them.
+    expect(c.check({ ...s, pacts: ['haste', 'fortified', 'no_heal'] }, fresh)).toBe(false);
+    expect(c.check({ ...s, pacts: ['eclipse', 'tide'] }, fresh)).toBe(false);
+    // Below the hardest open difficulty, or below the Ascension it allows, does not count.
+    expect(c.check({ ...s, difficulty: 4, pacts: three }, fresh)).toBe(false);
+    expect(c.check({ ...s, ascension: 2, pacts: three }, fresh)).toBe(false);
+    // A finished profile cannot take it on Abyss any more: Eternity at its highest Ascension.
+    const done = { hardestOpen: 9, ascensionOpen: 30 };
+    expect(c.check({ ...s, difficulty: 4, ascension: 10, pacts: three }, done)).toBe(false);
+    expect(c.check({ ...s, difficulty: 9, ascension: 30, pacts: three }, done)).toBe(true);
+    // An Ascension the tier cannot host is not asked for (A22 open, Singularity allows 20).
+    expect(c.check({ ...s, difficulty: 7, ascension: 20, pacts: three }, { hardestOpen: 7, ascensionOpen: 22 })).toBe(true);
+    expect(c.check({ ...s, mode: 'gauntlet', pacts: three }, fresh)).toBe(false);
   });
 });
 

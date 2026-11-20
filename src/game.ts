@@ -1,7 +1,7 @@
 import { AudioEngine } from './audio/audio';
 import { analytics } from './core/analytics';
 import { clamp } from './core/math';
-import { Rng } from './core/rng';
+import { dailyKey, Rng } from './core/rng';
 import { createDebugPanel } from './debug/debug';
 import { applyRun, researchFlags, runConfig } from './meta/progress';
 import { hasSave, loadProfile, safeLocalStorage, saveProfile } from './meta/profile';
@@ -52,6 +52,12 @@ export class Game {
   private tut = { launched: false, t: 0, eliteHint: 0, surgeHinted: false, holdHinted: false, idle: 0 };
   private debugEl: HTMLElement | null = null;
   private runOpts: RunOptions | null = null;
+  /** UTC day the current run started on: a Daily Seed run that crosses midnight still belongs to its own day. */
+  private runDay = '';
+  /** Game time of the last pending-victory snapshot taken during Endless. */
+  private pendingAt = 0;
+  /** Rewards of a won run recovered on load (the app closed before it was claimed), announced once Home is up. */
+  private recovered: number | null = null;
   private lastHaptic = 0;
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
@@ -59,6 +65,17 @@ export class Game {
     // A first launch follows the device language; afterwards the saved choice is kept.
     if (!hasSave(this.store)) this.profile.settings.language = detectLanguage();
     setLanguage(this.profile.settings.language);
+    // A victory that was never claimed (the app closed on the victory screen or during Endless) still counts.
+    const pending = this.profile.pendingRun;
+    if (pending) {
+      this.profile.pendingRun = null;
+      try {
+        this.recovered = applyRun(this.profile, pending.summary, pending.discoveries, pending.day).rewards.coins;
+      } catch (err) {
+        console.error(err);
+      }
+      this.save();
+    }
     this.renderer = new Renderer(canvas);
     this.ui = new UI(uiRoot, this);
   }
@@ -72,11 +89,22 @@ export class Game {
     this.applySettings();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.mode === 'run' && !this.paused && this.world?.state === 'playing') this.pause();
+      if (document.hidden && this.mode === 'run' && this.world?.victory) this.storePending(this.world);
       if (document.hidden) this.save();
       this.audio.setBackground(document.hidden);
     });
     this.ui.home();
+    if (this.recovered !== null) this.ui.toast(i18n('toast.victoryRecovered', { n: this.recovered }));
+    this.recovered = null;
     requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** Keeps a won run in the save until it is claimed, so closing the app cannot lose it. */
+  private storePending(w: World): void {
+    if (!w.victory || this.world !== w) return;
+    this.profile.pendingRun = { summary: w.summary(), discoveries: [...w.newDiscoveries], day: this.runDay };
+    this.pendingAt = w.time;
+    this.save();
   }
 
   // ------------------------------------------------------------------ profile
@@ -88,6 +116,12 @@ export class Game {
     return researchFlags(this.profile);
   }
 
+  /** Aim preview bounces: one, plus Extended Scope and Chronometry. */
+  previewBounces(): number {
+    const f = this.flags();
+    return 1 + (f.includes('scope') ? 1 : 0) + (f.includes('scope2') ? 1 : 0);
+  }
+
   applySettings(): void {
     const s = this.profile.settings;
     setLanguage(s.language);
@@ -95,7 +129,7 @@ export class Game {
     this.renderer.opts.shake = s.shake;
     this.renderer.opts.damageNumbers = s.damageNumbers;
     this.renderer.opts.reduceFlashes = s.reduceFlashes;
-    this.renderer.opts.previewBounces = this.flags().includes('scope') ? 2 : 1;
+    this.renderer.opts.previewBounces = this.previewBounces();
     const wantDebug = s.debug || new URLSearchParams(location.search).has('debug');
     if (wantDebug && !this.debugEl) {
       this.debugEl = createDebugPanel(this);
@@ -174,11 +208,15 @@ export class Game {
     this.audio.unlock();
     this.audio.startMusic();
     this.runOpts = opts;
+    this.runDay = dailyKey();
+    this.pendingAt = 0;
     const seed = opts.seed ?? (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
     const cfg = runConfig(this.profile, { ...opts, seed });
     this.world = new World(cfg);
     this.demo = null;
     this.renderer.reset();
+    // Research bought since the last settings change (Extended Scope, Chronometry) applies from this run on.
+    this.renderer.opts.previewBounces = this.previewBounces();
     this.mode = 'run';
     this.paused = false;
     this.acc = 0;
@@ -192,8 +230,10 @@ export class Game {
     if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : diffName);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
-      if (victory && !w.director.endless) this.ui.victoryChoice(w);
-      else this.finishRun();
+      if (victory && !w.director.endless) {
+        this.storePending(w);
+        this.ui.victoryChoice(w);
+      } else this.finishRun();
     });
     w.bus.on('evolution', () => this.ui.hint(null));
     analytics.emit('RunStarted', { arena: cfg.arena, difficulty: cfg.difficulty, core: cfg.core, pacts: cfg.pacts, seed: cfg.seed });
@@ -245,7 +285,8 @@ export class Game {
     const s = w.summary();
     // Records before this run, so Results can flag a new personal best.
     const best = { combo: this.profile.stats.bestCombo, chain: this.profile.stats.maxWallChain };
-    const report = applyRun(this.profile, s, w.newDiscoveries);
+    this.profile.pendingRun = null;
+    const report = applyRun(this.profile, s, w.newDiscoveries, this.runDay || dailyKey(), new Date(), { abandoned });
     const build = s.upgrades.map((u) => u.id);
     analytics.emit(s.victory ? 'RunCompleted' : 'RunFailed', { arena: s.arena, difficulty: s.difficulty, time: s.time, level: s.level, kills: s.kills, build });
     this.save();
@@ -378,6 +419,8 @@ export class Game {
     if (drawW) this.renderer.draw(drawW, this.mode === 'run' && this.ui.arenaHudVisible);
 
     if (this.mode === 'run' && this.world) {
+      // Endless keeps the claimable victory fresh in the save.
+      if (this.world.director.endless && this.world.time - this.pendingAt > 20) this.storePending(this.world);
       this.ui.updateHud(this.world);
       this.updateAudioIntensity(this.world);
       if (this.world.cfg.tutorial) this.updateTutorial(this.world, dt);

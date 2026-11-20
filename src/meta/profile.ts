@@ -6,6 +6,8 @@ import { AWAKEN_MAX } from '../data/awakening';
 import { DIFFICULTIES } from '../data/arenas';
 import { CORE_MAP } from '../data/balls';
 import { talentProgress, talentWins } from './talents';
+import { MASTERY_TRAIL, masteryLevel, rankLevel, rankRewards } from '../data/meta';
+import { applyUnlock } from './progress';
 
 export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'bounce-defense-save';
@@ -49,6 +51,8 @@ export function defaultProfile(): Profile {
     contracts: { day: '', daily: [], week: '', weekly: null },
     awakening: {},
     gauntlet: -1,
+    setup: { arena: 'proving', difficulty: 0, pacts: [], ascension: 0, mode: 'standard' },
+    pendingRun: null,
   };
 }
 
@@ -87,13 +91,19 @@ export function migrate(raw: unknown): Profile {
     // v1 had no trail in the loadout
     if (isObj(data.loadout) && !data.loadout.trail) data.loadout = { ...data.loadout, trail: 'classic' };
   }
+  let creditedRank = false;
   if (v < 4) {
     // v3 had no Pilot Rank: credit every Mastery XP already earned.
     if (typeof data.rankXp !== 'number' && isObj(data.mastery)) {
       data.rankXp = Object.values(data.mastery).reduce<number>((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+      creditedRank = true;
     }
   }
   const p = mergeDefaults(base, data);
+  // ...and pay the ranks that credit reaches, as a run would have (coins, Cores, Research, relics, the Sunset trail).
+  if (creditedRank) {
+    for (let r = 2; r <= rankLevel(p.rankXp).level; r++) rankRewards(r).forEach((u) => applyUnlock(p, u));
+  }
   // Keep only supported settings when loading an older profile.
   for (const key of Object.keys(p.settings)) {
     if (!(key in base.settings)) Reflect.deleteProperty(p.settings, key);
@@ -103,6 +113,10 @@ export function migrate(raw: unknown): Profile {
   p.talents = normalizeTalents(p.talents, talentProgress(p).total, talentWins(p));
   if (!p.unlockedCores.includes('striker')) p.unlockedCores.unshift('striker');
   if (!p.cosmetics.includes('classic')) p.cosmetics.unshift('classic');
+  // Mastery 4 pays the core's own trail; saves from before some cores had one of their own receive it now.
+  for (const [core, trail] of Object.entries(MASTERY_TRAIL)) {
+    if (!p.cosmetics.includes(trail) && masteryLevel(p.mastery[core] ?? 0).level >= 4) p.cosmetics.push(trail);
+  }
   p.ascension = Math.max(0, Math.min(MAX_ASCENSION, Math.floor(p.ascension) || 0));
   // Awakening ranks: known cores only, whole ranks from 0 to the cap.
   const awakening: Record<string, number> = {};

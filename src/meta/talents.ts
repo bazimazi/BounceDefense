@@ -1,4 +1,4 @@
-import { normalizeTalents, TALENT_MAP, TALENT_POINT_CAP, talentPointCost, talentRequirement, talentSpent, type TalentRanks } from '../data/talents';
+import { normalizeTalents, TALENTS, TALENT_MAP, TALENT_POINT_CAP, talentPointCost, talentRequirement, talentSpent, type TalentRanks } from '../data/talents';
 import { CORES } from '../data/balls';
 import type { Profile } from './types';
 
@@ -43,4 +43,16 @@ export function changeTalent(ranks: TalentRanks, id: string, delta: 1 | -1, budg
 
 export function applyTalents(p: Profile, ranks: TalentRanks): void {
   p.talents = normalizeTalents(ranks, talentProgress(p).total, talentWins(p));
+}
+
+/**
+ * Unspent points that can be learned right now. Points past what the open tiers can hold (deep tiers wait
+ * for Abyss, Singularity and Eternity wins) are not an action, so they never light a red dot.
+ */
+export function talentPointsUsable(p: Pick<Profile, 'mastery' | 'talents' | 'cleared'>): number {
+  const total = talentProgress(p).total;
+  const free = total - talentSpent(p.talents);
+  if (free <= 0) return 0;
+  const won = talentWins(p);
+  return TALENTS.some((t) => changeTalent(p.talents, t.id, 1, total, won) !== null) ? free : 0;
 }

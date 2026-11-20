@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { analytics } from '../core/analytics';
 import { dailyKey, hashString, Rng } from '../core/rng';
-import { ARENAS, ARENA_MAP, DIFFICULTIES, PACT_MAP } from '../data/arenas';
+import { ARENAS, ARENA_MAP, DIFFICULTIES, PACTS, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PARTS, PART_MAP, TRAILS } from '../data/balls';
 import { BOSSES, BOSS_MAP, ENEMY_MAP } from '../data/enemies';
 import { AWAKEN_COST, AWAKEN_MASTERY, AWAKEN_MAX } from '../data/awakening';
@@ -9,8 +9,8 @@ import {
   ACHIEVEMENTS, CATALYST_LEVELS, CHALLENGES, INDUSTRY_DISCOUNT, SIGNATURE_UPGRADE, apexKills, type ResearchDef, OVERDRIVE_MAX, OVERDRIVE_PER_TIER, REFIT_MASTERY_STEP, RESEARCH, RESEARCH_MAP, WORKSHOP_MAP, masteryLevel, masteryRewards,
   rankLevel, rankRewards,
 } from '../data/meta';
-import { ASCENSION_REWARD, ASCENSION_TIER, MAX_ASCENSION } from '../data/ascension';
-import { CONTRACTS, CONTRACT_MAP, DAILY_CONTRACTS, DAILY_REWARDS, WEEKLY_REWARD } from '../data/contracts';
+import { ASCENSION_REWARD, ASCENSION_TIER, MAX_ASCENSION, ascensionCap, ascensionDifficulty } from '../data/ascension';
+import { CONTRACTS, CONTRACT_MAP, DAILY_CONTRACTS, contractMinDifficulty, contractRewards, contractTarget } from '../data/contracts';
 import { DEFAULT_UNLOCKED_RELICS, RELIC_MAP } from '../data/relics';
 import { EVENT_MAP } from '../data/arenas';
 import { EVOLUTION_MAP, REACTION_MAP, SYNERGY_MAP } from '../data/synergies';
@@ -258,7 +258,7 @@ export function runConfig(p: Profile, opts: { arena: string; difficulty: number;
     known: Object.fromEntries(Object.entries(p.discoveries).map(([k, v]) => [k, [...v]])),
     tutorial: !p.tutorialDone,
     daily: opts.daily,
-    ascension: opts.difficulty >= ASCENSION_TIER && !gauntlet ? Math.max(0, Math.min(p.ascension, Math.floor(opts.ascension ?? 0))) : 0,
+    ascension: opts.difficulty >= ASCENSION_TIER && !gauntlet ? Math.max(0, Math.min(p.ascension, ascensionCap(opts.difficulty), Math.floor(opts.ascension ?? 0))) : 0,
     relicPool: relicPool(p),
     bossLore: Object.values(p.bossKills).filter((n) => n > 0).length,
     echoCore: echoCore(p, core),
@@ -356,11 +356,18 @@ export function weekKey(date = new Date()): string {
   return `w${Math.floor((day - 4) / 7)}`;
 }
 
+/** Contract strength: difficulties won (0 before the first win, 10 after Eternity). */
+export function contractTier(p: Profile): number {
+  return bestCleared(p) + 1;
+}
+
 function drawContracts(p: Profile, key: string, n: number, weekly: boolean): ContractSlot[] {
   const rng = new Rng(hashString(`${weekly ? 'weekly' : 'daily'}:${key}`));
   const pool = CONTRACTS.filter((c) => !c.available || c.available(p));
   rng.shuffle(pool);
-  return pool.slice(0, n).map((c) => ({ id: c.id, target: weekly ? c.weekly : c.daily, progress: 0, done: false }));
+  // The jobs are shared by date; their size follows this player's strength, so the board is never a formality.
+  const tier = contractTier(p);
+  return pool.slice(0, n).map((c) => ({ id: c.id, target: contractTarget(c, tier, weekly), progress: 0, done: false, tier }));
 }
 
 /** Today's board: three daily contracts and this week's contract, drawn fresh when the day or week turns. */
@@ -381,18 +388,29 @@ export function contractBoard(p: Profile, date = new Date()): Profile['contracts
 
 export function contractText(slot: ContractSlot): string {
   const def = CONTRACT_MAP[slot.id];
-  return def ? def.desc.replace('{n}', String(slot.target)) : slot.id;
+  if (!def) return slot.id;
+  const text = def.desc.replace('{n}', slot.target.toLocaleString('en-US'));
+  const min = contractMinDifficulty(slot.tier ?? 0);
+  return min > 0 ? t('contract.onTier', { text, difficulty: DIFFICULTIES[min].name }) : text;
+}
+
+/** What a slot pays, at the strength it was drawn for. */
+export function contractSlotRewards(p: Profile, slot: ContractSlot): Unlock[] {
+  const b = p.contracts;
+  const index = b.daily.indexOf(slot);
+  return contractRewards(index >= 0 ? index : 'weekly', slot.tier ?? 0);
 }
 
 /** Adds a run to the board; returns the contracts it completed, rewards already applied. */
 function progressContracts(p: Profile, s: RunSummary, date: Date, push: (u: Unlock) => void): string[] {
   const b = contractBoard(p, date);
   const done: string[] = [];
-  const slots: [ContractSlot, Unlock[]][] = b.daily.map((c, i) => [c, DAILY_REWARDS[i] ?? DAILY_REWARDS[0]]);
-  if (b.weekly) slots.push([b.weekly, WEEKLY_REWARD]);
+  const slots: [ContractSlot, Unlock[]][] = b.daily.map((c, i) => [c, contractRewards(i, c.tier ?? 0)]);
+  if (b.weekly) slots.push([b.weekly, contractRewards('weekly', b.weekly.tier ?? 0)]);
   for (const [slot, rewards] of slots) {
     const def = CONTRACT_MAP[slot.id];
-    if (!def || slot.done) continue;
+    // Only runs at a meaningful tier count: one below the hardest difficulty won when the board was drawn.
+    if (!def || slot.done || s.difficulty < contractMinDifficulty(slot.tier ?? 0)) continue;
     const v = Math.max(0, def.value(s));
     slot.progress = def.mode === 'max' ? Math.max(slot.progress, v) : slot.progress + v;
     if (slot.progress >= slot.target) {
@@ -412,6 +430,23 @@ export const DAILY_COIN_BONUS = 1.5;
 export const DAILY_RESEARCH_BONUS = 1;
 /** A Daily Seed run must last this long (or be won) to claim the bonus, so quitting at once cannot farm it. */
 export const DAILY_MIN_TIME = 90;
+
+/**
+ * Today's Daily Seed for this player. The seed (layout, squads, the day's pact) is shared; the challenge grows
+ * with the player: the hardest difficulty won, the highest Ascension won that the tier can host, and once
+ * Risk Pacts are researched, one pact drawn from the day.
+ */
+export function dailyOptions(p: Profile, seed: number): { arena: string; difficulty: number; pacts: string[]; seed: number; daily: true; ascension: number } {
+  const unlocked = ARENAS.filter((a) => isArenaUnlocked(p, a.id));
+  const arena = unlocked[seed % unlocked.length]?.id ?? 'proving';
+  const difficulty = Math.max(0, Math.min(maxDifficulty(p), bestCleared(p)));
+  const ascension = difficulty >= ASCENSION_TIER ? Math.min(ascensionCap(difficulty), p.stats.maxAscension, p.ascension) : 0;
+  const flags = researchFlags(p);
+  // Lone Ball would turn a shared daily into a different game; every other pact the player owns can come up.
+  const pool = PACTS.filter((pc) => pc.rule !== 'loneBall' && (!pc.flag || flags.includes(pc.flag)));
+  const pacts = flags.includes('pacts') && pool.length ? [pool[new Rng(seed ^ 0x9e3779b9).int(0, pool.length - 1)].id] : [];
+  return { arena, difficulty, pacts, seed, daily: true, ascension };
+}
 
 /** Today's Daily Seed record, reset when the UTC day has changed. */
 export function dailyRecord(p: Profile, today = dailyKey()): Profile['daily'] {
@@ -476,8 +511,9 @@ export function nextGoals(p: Profile, n = 3): Goal[] {
   if (affordable) goals.push({ kind: 'research', text: t('goal.research', { name: affordable.name }), reward: affordable.desc, cur: 1, max: 1 });
   const d = maxDifficulty(p);
   if (d < DIFFICULTIES.length - 1) goals.push({ kind: 'diff', text: t('goal.winOn', { name: DIFFICULTIES[d].name }), reward: t('goal.unlockDifficulty', { name: DIFFICULTIES[d + 1].name }), cur: 0, max: 1 });
-  else if (p.ascension < MAX_ASCENSION) {
-    goals.push({ kind: 'asc', text: p.ascension ? t('goal.ascension', { n: p.ascension }) : t('goal.winOn', { name: DIFFICULTIES[d].name }), reward: t('goal.unlockAscension', { n: p.ascension + 1 }), cur: 0, max: 1 });
+  // The Ascension ladder is a goal from the first Abyss win, naming the easiest tier its next step is played on.
+  if (p.ascension > 0 && p.ascension < MAX_ASCENSION) {
+    goals.push({ kind: 'asc', text: t('goal.ascension', { n: p.ascension, difficulty: DIFFICULTIES[ascensionDifficulty(p.ascension)].name }), reward: t('goal.unlockAscension', { n: p.ascension + 1 }), cur: 0, max: 1 });
   }
   const board = p.tutorialDone ? contractBoard(p) : null;
   const open = board?.daily.find((c) => !c.done);
@@ -515,13 +551,19 @@ export interface RunReport {
   ascensionUnlocked: number | null;
 }
 
-export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: DiscoveryCat; id: string }[], today = dailyKey(), now = new Date()): RunReport {
+/** An abandoned, lost run shorter than this does not count as a played run (contracts, run-count goals). */
+export const MIN_COUNTED_RUN = 90;
+
+export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: DiscoveryCat; id: string }[], today = dailyKey(), now = new Date(), opts: { abandoned?: boolean } = {}): RunReport {
+  // Starting a run and quitting at once must not tick "play N runs" contracts and achievements.
+  const counted = s.victory || !opts.abandoned || s.time >= MIN_COUNTED_RUN;
   const arenasBefore = ARENAS.filter((a) => isArenaUnlocked(p, a.id)).map((a) => a.id);
   const diffBefore = maxDifficulty(p);
+  const challengeCtx = { hardestOpen: diffBefore, ascensionOpen: p.ascension };
   const st = p.stats;
 
   // ---- lifetime stats
-  st.runs++;
+  if (counted) st.runs++;
   if (s.victory) st.wins++;
   st.kills += s.kills;
   st.damage += s.damageDealt;
@@ -593,7 +635,8 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
       rewards.coins = Math.round(rewards.coins * DAILY_COIN_BONUS);
       rewards.research += DAILY_RESEARCH_BONUS;
     }
-    const newBest = s.kills > rec.best;
+    // The first run of the day sets the record; only later runs can beat it.
+    const newBest = rec.runs > 0 && s.kills > rec.best;
     rec.best = Math.max(rec.best, s.kills);
     rec.runs++;
     daily = { bonus, best: rec.best, newBest };
@@ -624,7 +667,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     rankRewards(r).forEach(push);
     analytics.emit('RankUp', { rank: r });
   }
-  const contracts = progressContracts(p, s, now, push);
+  const contracts = counted ? progressContracts(p, s, now, push) : [];
   const after = masteryLevel(p.mastery[s.core]);
   const masteryTexts: string[] = [];
   for (const r of masteryRewards(s.core)) {
@@ -649,7 +692,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   }
   const challenges: string[] = [];
   for (const c of CHALLENGES) {
-    if (p.challenges.includes(c.id) || !c.check(s)) continue;
+    if (p.challenges.includes(c.id) || !c.check(s, challengeCtx)) continue;
     p.challenges.push(c.id);
     challenges.push(`${c.icon} ${c.name}`);
     c.rewards.forEach(push);

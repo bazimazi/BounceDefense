@@ -131,6 +131,8 @@ export const BOSS_SCRIPTS: Record<string, BossScript> = {
         const x = Math.min(W - 40, Math.max(40, e.x + off));
         const c = w.spawnEnemy('boss_hydra', x, e.y, { hpMult: (e.maxHp * 0.45) / e.def.hp });
         if (!c) continue;
+        // The parent's max HP already carries every boss multiplier (Warlords, Ascension); don't apply them twice.
+        c.maxHp = c.hp = e.maxHp * 0.45;
         c.gen = e.gen + 1;
         c.r = sizes[c.gen];
         c.spawnT = 0.2;
@@ -543,11 +545,17 @@ function twinScript(partner: string, fire: boolean): BossScript {
   };
 }
 
+/** Each ward pylon's health as a share of the Architect's (about what pylons had on Normal). */
+const PYLON_HP_SHARE = 0.12;
+
 function spawnPylons(w: World, e: Enemy): void {
   for (let i = 0; i < 3; i++) {
     const a = e.t2 + (i * Math.PI * 2) / 3;
-    const p = w.spawnEnemy('ward_pylon', e.x + Math.cos(a) * PYLON_ORBIT, e.y + Math.sin(a) * PYLON_ORBIT * 0.75, { hpMult: Math.max(1, e.maxHp / e.def.hp) * 0.35 });
-    if (p) p.spawnT = 0.2;
+    const p = w.spawnEnemy('ward_pylon', e.x + Math.cos(a) * PYLON_ORBIT, e.y + Math.sin(a) * PYLON_ORBIT * 0.75);
+    if (!p) continue;
+    // A fixed share of the Architect: ordinary-enemy scaling (tier, time, late HP) would make pylons outgrow the boss.
+    p.maxHp = p.hp = e.maxHp * PYLON_HP_SHARE;
+    p.spawnT = 0.2;
   }
   e.t3 = 3;
 }

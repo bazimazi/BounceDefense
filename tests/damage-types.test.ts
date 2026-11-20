@@ -3,8 +3,8 @@ import { CORES, CORE_MAP } from '../src/data/balls';
 import { AWAKEN_PERK_MAP } from '../src/data/awakening';
 import { MASTERY_TRAIL, OVERDRIVE, REFITS, SIGNATURE_UPGRADE } from '../src/data/meta';
 import { UPGRADE_MAP } from '../src/data/upgrades';
-import { GEMINI_MIRROR } from '../src/sim/behaviors';
-import { applyBleed, chainLightning, explode, GROUND_MAX, GROUNDING, procs } from '../src/sim/combat';
+import { GEMINI_MIRROR, GEMINI_TWIN } from '../src/sim/behaviors';
+import { applyBleed, BLAST_CRIT_SHARE, chainLightning, explode, GROUND_MAX, GROUNDING, procs } from '../src/sim/combat';
 import { STAT_DEFAULTS } from '../src/sim/stats';
 import { SIM_DT } from '../src/sim/types';
 import { emptyWorld } from './helpers';
@@ -83,16 +83,17 @@ describe('damage types', () => {
   });
 
   it('the Tesla Core raises chain damage', () => {
-    expect(emptyWorld({ core: 'tesla' }).build.stats.chainDamage).toBeGreaterThan(STAT_DEFAULTS.chainDamage * 1.15);
+    expect(emptyWorld({ core: 'tesla' }).build.stats.chainDamage).toBeGreaterThan(STAT_DEFAULTS.chainDamage * 1.1);
   });
 
   it('the Blast Core makes explosions bigger, and its blasts can crit', () => {
     const w = emptyWorld({ core: 'blast' });
     const st = w.build.stats;
-    expect(st.explosionChance).toBeGreaterThan(0.15);
+    expect(st.explosionChance).toBeGreaterThan(STAT_DEFAULTS.explosionChance + 0.1);
     expect(st.explosionDamage).toBeGreaterThan(STAT_DEFAULTS.explosionDamage);
     expect(w.build.has('blast_core')).toBe(true);
-    st.critChance = 1;
+    // Blast explosions roll at a share of the crit chance: this chance makes that share certain.
+    st.critChance = 1 / BLAST_CRIT_SHARE;
     st.critMult = 3;
     const e = w.spawnEnemy('brute', 200, 300)!;
     e.armor = 0;
@@ -134,8 +135,8 @@ describe('damage types', () => {
     g.beginAim(); g.setAim(0, -1); g.release();
     g.step(SIM_DT);
     const twin = g.balls.find((b) => b.kind === 'clone')!;
-    expect(twin.dmgMult).toBeCloseTo(g.build.stats.shardPower);
-    expect(CORE_MAP.gemini.mods).toEqual([{ stat: 'damage', mult: -0.1 }]);
+    expect(twin.dmgMult).toBeCloseTo(g.build.stats.shardPower * GEMINI_TWIN / STAT_DEFAULTS.shardPower);
+    expect(CORE_MAP.gemini.mods).toEqual([{ stat: 'damage', mult: -0.14 }]);
 
     const m = emptyWorld({ core: 'gemini', seed: 9 });
     m.build.addUpgrade('mirror_image');

@@ -256,7 +256,7 @@ export interface RelicDef {
   /** Double-edged: shown with a warning tint. */
   cursed?: boolean;
   /** Pacts under which this relic would do nothing. */
-  inert?: ('noHeal' | 'loneBall')[];
+  inert?: ('noHeal' | 'loneBall' | 'eclipse')[];
 }
 
 export interface ArenaEventDef {

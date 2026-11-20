@@ -39,6 +39,17 @@ export function talentPanel(p: Profile, state: TalentState, changed: (sound: 'le
     state.notice = refunded > 1 ? t('talents.refunded', { n: refunded }) : '';
     changed(delta > 0 ? 'learn' : 'refund');
   };
+  /** Learn max: every rank of this talent the budget and its requirements allow, in one tap. */
+  const learnMax = () => {
+    let next = p.talents;
+    let n = 0;
+    for (let x = changeTalent(next, talent.id, 1, progress.total, won); x; x = changeTalent(next, talent.id, 1, progress.total, won)) { next = x; n++; }
+    if (!n) return;
+    applyTalents(p, next);
+    state.notice = n > 1 ? t('talents.learnedRanks', { n }) : '';
+    changed('learn');
+  };
+  const canLearn = !lock && rank < talent.maxRank && available > 0;
   const status = lock ?? (rank === talent.maxRank ? t('talents.fullyLearned') : available <= 0 ? t('talents.noPoints') : t('talents.ready'));
 
   return h('div', { class: 'talent-panel', style: `--tree-color:${tree.color}` },
@@ -97,7 +108,8 @@ export function talentPanel(p: Profile, state: TalentState, changed: (sound: 'le
         rank < talent.maxRank ? h('p', { class: 'talent-line next' }, h('span', { class: 'talent-line-label' }, t('talents.nextLabel')), richText(talent.desc(rank + 1))) : null,
         h('div', { class: 'talent-actions' },
           h('button', { id: 'talent-refund', disabled: rank === 0, onclick: () => update(-1) }, t('talents.refund')),
-          h('button', { id: 'talent-learn', class: 'primary', disabled: !!lock || rank === talent.maxRank || available <= 0, onclick: () => update(1) }, t('talents.learn'))),
+          h('button', { id: 'talent-max', disabled: !canLearn || talent.maxRank - rank < 2 || available < 2, 'aria-label': t('talents.learnMaxLabel'), title: t('talents.learnMaxLabel'), onclick: learnMax }, t('talents.learnMax')),
+          h('button', { id: 'talent-learn', class: 'primary', disabled: !canLearn, onclick: () => update(1) }, t('talents.learn'))),
         state.notice ? h('div', { class: 'talent-notice', role: 'status' }, state.notice) : null)),
     h('p', { class: 'talent-rules' }, t('talents.rules')),
   );

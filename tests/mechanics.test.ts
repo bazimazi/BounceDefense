@@ -4,6 +4,8 @@ import { applyRun, contractBoard, runConfig, weekKey } from '../src/meta/progres
 import { defaultProfile } from '../src/meta/profile';
 import { applyChill, ballHitEnemy, chainLightning, killEnemy } from '../src/sim/combat';
 import { ballSpeed, onWallBounce } from '../src/sim/physics';
+import { GEMINI_TWIN } from '../src/sim/behaviors';
+import { STAT_DEFAULTS } from '../src/sim/stats';
 import { DEFENSE_Y, SIM_DT } from '../src/sim/types';
 import type { World } from '../src/sim/world';
 import { emptyWorld, makeWorld, steps } from './helpers';
@@ -316,7 +318,7 @@ describe('upgrade and core mechanics', () => {
     g.beginAim(); g.setAim(0, -1); g.release();
     g.step(SIM_DT);
     const twin = g.balls.find((b) => b.kind === 'clone')!;
-    expect(twin.dmgMult).toBeCloseTo(g.build.stats.shardPower);
+    expect(twin.dmgMult).toBeCloseTo(g.build.stats.shardPower * GEMINI_TWIN / STAT_DEFAULTS.shardPower);
 
     const c = makeWorld({ core: 'chrono', seed: 9 });
     c.director.update = () => {};

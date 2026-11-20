@@ -250,12 +250,12 @@ describe('daily seed', () => {
 });
 
 describe('goals', () => {
-  it('points at the Loadout once a core is affordable instead of a finished collect bar', () => {
+  it('points at the Armory once a core is affordable instead of a finished collect bar', () => {
     const p = defaultProfile();
     p.tutorialDone = true;
     p.cores = 50;
     const goals = nextGoals(p, 10);
-    expect(goals.some((g) => g.text.includes('Unlock') && g.text.includes('Loadout'))).toBe(true);
+    expect(goals.some((g) => g.text.includes('Unlock') && g.text.includes('Armory'))).toBe(true);
     expect(goals.some((g) => /^Collect \d+ Cores$/.test(g.text) && g.cur >= g.max)).toBe(false);
   });
 });

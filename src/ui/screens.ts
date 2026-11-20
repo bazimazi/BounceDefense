@@ -1,13 +1,13 @@
 import { formatNum, formatTime } from '../core/math';
 import { dailySeed } from '../core/rng';
-import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS } from '../data/arenas';
+import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
 import { ALL_BOSSES, BOSSES, BOSS_MAP, CODEX_ENEMIES } from '../data/enemies';
 import {
   ACHIEVEMENTS, ALL_WORKSHOP, BLUEPRINTS, CHALLENGES, OVERDRIVE, OVERDRIVE_MAX, OVERDRIVE_PER_TIER, REFITS, REFIT_MASTERY_STEP, RESEARCH, WORKSHOP,
   WORKSHOP_MAP, masteryLevel, masteryRewards, rankLevel, rankRewards, type WorkshopDef,
 } from '../data/meta';
-import { ASCENSIONS, ASCENSION_REWARD, ASCENSION_TIER } from '../data/ascension';
+import { ASCENSIONS, ASCENSION_REWARD, ASCENSION_TIER, ascensionCap, ascensionDifficulty } from '../data/ascension';
 import { AWAKEN_MASTERY, AWAKEN_MAX, awakenRankText } from '../data/awakening';
 import { CONTRACT_MAP } from '../data/contracts';
 import { RELICS, RELIC_COLOR, RELIC_MAP } from '../data/relics';
@@ -16,12 +16,12 @@ import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
-  awaken, awakenCost, buyPart, buyWorkshop, canAwaken, canResearch, canUnlockCore, contractBoard, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
+  awaken, awakenCost, dailyOptions, buyPart, buyWorkshop, canAwaken, canResearch, canUnlockCore, contractBoard, contractSlotRewards, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
   gauntletUnlocked, isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, overdriveOpen, partsForSlot, researchLock, rewardMultiplier, unlockCore, workshopCap, workshopCost, workshopLock,
   type Goal, type RunReport,
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
-import { talentProgress } from '../meta/talents';
+import { talentPointsUsable } from '../meta/talents';
 import type { DiscoveryCat, RunSummary } from '../meta/types';
 import { createArenaSurface } from '../render/arena';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
@@ -88,6 +88,11 @@ interface ViewSnapshot {
   wallet: string | null;
 }
 
+/** Seconds for a cooldown label: whole numbers stay whole, otherwise one decimal. */
+function fmtSeconds(v: number): string {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
 export class UI {
   readonly navigation = new Navigation();
   private root: HTMLElement;
@@ -115,6 +120,10 @@ export class UI {
 
   constructor(root: HTMLElement, private game: Game) {
     this.root = root;
+    // Restore the last Run setup; battlePage() still clamps it to what this profile has open.
+    const saved = game.profile.setup;
+    this.setup = { arena: saved.arena, difficulty: Math.max(0, Math.floor(saved.difficulty) || 0), pacts: new Set(saved.pacts),
+      ascension: Math.max(0, Math.floor(saved.ascension) || 0), mode: saved.mode === 'gauntlet' ? 'gauntlet' : 'standard' };
     root.addEventListener('click', event => {
       if (!(event.target instanceof Element)) return;
       const control = event.target.closest<HTMLElement>('button, [role="button"]');
@@ -289,7 +298,7 @@ export class UI {
     const p = this.p;
     const coreReady = CORES.some(c => canUnlockCore(p, c.id) || canAwaken(p, c.id));
     const partReady = (['shell', 'impact', 'momentum'] as PartSlot[]).some(s => partsForSlot(p, s).some(x => !x.unlocked && x.def.unlock?.coins && p.coins >= x.def.unlock.coins));
-    const talentPoints = talentProgress(p).total - talentSpent(p.talents);
+    const talentPoints = talentPointsUsable(p);
     return {
       armory: coreReady || partReady,
       forge: this.workshopReady() || RESEARCH.some(r => canResearch(p, r.id)) || talentPoints > 0,
@@ -444,7 +453,6 @@ export class UI {
     const choice = this.setupChoices();
     if (!ARENA_MAP[s.arena]) s.arena = 'proving';
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
-    s.ascension = Math.max(0, Math.min(s.ascension, p.ascension));
     if (!gauntletUnlocked(p)) s.mode = 'standard';
     if (!choice.pacts) s.pacts.clear();
     for (const id of [...s.pacts]) if (!this.pactAvailable(id)) s.pacts.delete(id);
@@ -468,16 +476,30 @@ export class UI {
       h('div', { class: 'battle-panel reveal' },
         configurable ? this.runCard(choice.arena) : null,
         h('div', { class: 'play-row' },
-          choice.difficulty ? h('button', { class: 'daily-btn', 'aria-label': t('home.nav.daily'), title: t('home.nav.daily'), onclick: () => { this.click(); this.dailyRun(); } },
-            icon('daily'), h('span', {}, t('home.dailyShort')), badge(!daily.claimed)) : null,
+          choice.difficulty ? h('button', {
+            class: 'daily-btn', 'aria-label': this.dailyLabel(), title: this.dailyLabel(), onclick: () => { this.click(); this.dailyRun(); },
+          },
+            icon('daily'), h('span', {}, t('home.dailyShort')), daily.runs ? h('small', { class: 'daily-best' }, formatNum(daily.best)) : null, badge(!daily.claimed)) : null,
           this.playButton(this.runOptions(), isArenaUnlocked(p, s.arena)))));
+  }
+
+  /** Saves the Run setup (the chosen Ascension, not the clamped one) so the next visit opens on it. */
+  private rememberSetup(): void {
+    const s = this.setup;
+    this.p.setup = { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.ascension, mode: s.mode };
+    this.game.save();
   }
 
   /** The current setup as run options; Ascension only rides along on Abyss and above. */
   private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number; mode: RunMode } {
     const s = this.setup;
     const gauntlet = s.mode === 'gauntlet';
-    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER && !gauntlet ? s.ascension : 0, mode: s.mode };
+    return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER && !gauntlet ? this.ascensionFor(s.difficulty) : 0, mode: s.mode };
+  }
+
+  /** The chosen Ascension as far as this difficulty's band and the ladder allow (the choice itself is kept for harder tiers). */
+  private ascensionFor(difficulty: number): number {
+    return Math.max(0, Math.min(this.setup.ascension, this.p.ascension, ascensionCap(difficulty)));
   }
 
   private pactAvailable(id: string): boolean {
@@ -497,7 +519,7 @@ export class UI {
   private playButton(config: { arena: string; difficulty: number; pacts: string[]; ascension?: number; mode?: RunMode }, enabled = true): HTMLButtonElement {
     return h('button', {
       class: 'primary big launch-button play-btn', disabled: !enabled,
-      onclick: () => { this.click(); this.game.startRun(config); },
+      onclick: () => { this.click(); this.rememberSetup(); this.game.startRun(config); },
     }, icon(enabled ? 'play' : 'lock'), h('strong', {}, t('home.play')));
   }
 
@@ -669,16 +691,25 @@ export class UI {
     const p = this.p;
     const s = this.setup;
     if (p.ascension <= 0) return [h('p', { class: 'sheet-intro ascension-hint' }, icon('lock'), t('setup.ascensionHint'))];
-    const set = (n: number) => { const v = Math.max(0, Math.min(p.ascension, n)); if (v === s.ascension) return; s.ascension = v; this.click(); update(); };
-    const rules = ASCENSIONS.filter(a => a.level <= s.ascension);
+    const cap = Math.min(p.ascension, ascensionCap(s.difficulty));
+    const level = this.ascensionFor(s.difficulty);
+    const set = (n: number) => { const v = Math.max(0, Math.min(cap, n)); if (v === level) return; s.ascension = v; this.click(); update(); };
+    const rules = ASCENSIONS.filter(a => a.level <= level);
+    const minus = iconButton('back', t('setup.ascensionMinus'), () => set(level - 1), 'carousel-btn');
+    const plus = iconButton('forward', t('setup.ascensionPlus'), () => set(level + 1), 'carousel-btn');
+    minus.disabled = level <= 0;
+    plus.disabled = level >= cap;
+    // Levels the ladder has opened but this tier cannot host: say where they are played.
+    const band = p.ascension > cap ? t('setup.ascensionBand', { n: cap + 1, difficulty: DIFFICULTIES[ascensionDifficulty(cap + 1)].name }) : null;
     return [
       sectionTitle(t('setup.ascension')),
       h('div', { class: 'ascension-stepper', 'data-motion-key': 'ascension' },
-        iconButton('back', t('setup.ascensionMinus'), () => set(s.ascension - 1), 'carousel-btn'),
+        minus,
         h('div', { class: 'ascension-value' },
-          h('b', {}, s.ascension ? t('setup.ascensionLevel', { n: s.ascension }) : t('setup.ascensionOff')),
-          s.ascension ? h('small', {}, t('setup.pactReward', { n: Math.round(ASCENSION_REWARD * s.ascension * 100) })) : null),
-        iconButton('forward', t('setup.ascensionPlus'), () => set(s.ascension + 1), 'carousel-btn')),
+          h('b', {}, level ? t('setup.ascensionLevel', { n: level }) : t('setup.ascensionOff')),
+          level ? h('small', {}, t('setup.pactReward', { n: Math.round(ASCENSION_REWARD * level * 100) })) : null),
+        plus),
+      band ? h('p', { class: 'difficulty-info ascension-band' }, icon('lock'), band) : null,
       rules.length ? h('details', { class: 'ascension-rules' },
         h('summary', {}, t('setup.ascensionRules'), h('b', {}, String(rules.length))),
         h('ol', {}, rules.map(a => h('li', {}, a.desc)))) : null,
@@ -701,11 +732,19 @@ export class UI {
     if (target) feedback(target);
   }
 
+  /** The Daily button names today's challenge, which grows with the player, and today's best once played. */
+  private dailyLabel(): string {
+    const p = this.p;
+    const daily = dailyRecord(p);
+    const o = dailyOptions(p, dailySeed());
+    const name = DIFFICULTIES[o.difficulty].name;
+    const tier = [o.ascension ? t('home.ascensionTag', { difficulty: name, n: o.ascension }) : name, ...o.pacts.map(id => PACT_MAP[id]?.name ?? id)].join(' · ');
+    const head = daily.runs ? t('home.dailyBestLabel', { n: formatNum(daily.best) }) : t('home.nav.daily');
+    return t('home.dailyToday', { head, tier });
+  }
+
   private dailyRun(): void {
-    const seed = dailySeed();
-    const unlocked = ARENAS.filter((a) => isArenaUnlocked(this.p, a.id));
-    const arena = unlocked[seed % unlocked.length].id;
-    this.game.startRun({ arena, difficulty: Math.min(1, maxDifficulty(this.p)), pacts: [], seed, daily: true });
+    this.game.startRun(dailyOptions(this.p, dailySeed()));
   }
 
   // ------------------------------------------------------------------ armory
@@ -850,7 +889,7 @@ export class UI {
 
   private forgePage(): HTMLElement {
     const p = this.p;
-    const available = talentProgress(p).total - talentSpent(p.talents);
+    const available = talentPointsUsable(p);
     const choose = (id: string) => { this.forgeSegment = id as ForgeSegment; this.click(); this.renderTab('forge'); };
     const body = this.forgeSegment === 'workshop' ? this.workshopBody() : this.forgeSegment === 'research' ? this.researchBody() : this.talentBody();
     return h('div', { class: 'forge' },
@@ -967,7 +1006,7 @@ export class UI {
         : h('button', {
           class: 'gold buy-btn', disabled: !affordable, 'aria-label': t('workshop.buy', { name: wd.name, n: cost }),
           onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.renderTab('forge'); } },
-        }, icon('coin'), h('b', {}, formatNum(cost))));
+        }, icon('coin'), h('b', {}, formatNum(cost, 'up'))));
   }
 
   private researchBody(): HTMLElement[] {
@@ -1175,7 +1214,10 @@ export class UI {
         h('span', { class: 'contract-icon' }, def?.icon ?? '•'),
         h('div', { class: 'contract-copy' },
           h('b', {}, contractText(slot)),
-          slot.done ? null : meter(slot.progress / Math.max(1, slot.target), 'gold thin')),
+          slot.done ? null : meter(slot.progress / Math.max(1, slot.target), 'gold thin'),
+          // What it pays: rewards grow with the player, like the jobs themselves.
+          slot.done ? null : h('span', { class: 'contract-reward' }, contractSlotRewards(p, slot).map(u =>
+            u.type === 'coins' || u.type === 'cores' || u.type === 'research' ? amount(u.type, u.amount) : null))),
         slot.done ? h('span', { class: 'done-mark' }, icon('check')) : h('small', { class: 'contract-count' }, `${formatNum(Math.floor(slot.progress))}/${formatNum(slot.target)}`));
     };
     return [
@@ -1334,7 +1376,7 @@ export class UI {
     const pause = h('button', { class: 'hudbtn pause-btn', 'aria-label': t('hud.pause'), onclick: () => { this.click(); this.navigation.hold(); this.game.pause(); } }, icon('pause'));
     const surge = h('button', { class: 'surge', 'aria-label': t('hud.surge'), title: t('hud.surgeTitle'), onclick: () => this.game.world?.activateSurge() },
       h('span', { class: 'surge-face' }, icon('bolt'), h('b', { class: 'surge-text' }, t('hud.surgeLabel')))) as HTMLButtonElement;
-    const recall = h('button', { class: 'recall', 'aria-label': t('hud.recall'), title: t('hud.recallTitle'), onclick: () => this.game.world?.activateRecall() },
+    const recall = h('button', { class: 'recall', 'aria-label': t('hud.recall'), title: t('hud.recallTitle', { n: fmtSeconds(this.game.world?.build.stats.recallCooldown ?? 10) }), onclick: () => this.game.world?.activateRecall() },
       h('span', { class: 'recall-icon', 'aria-hidden': 'true' }, icon('recall')), h('span', { class: 'recall-label' }, t('hud.recallLabel')), h('small', {}, t('hud.ready'))) as HTMLButtonElement;
     this.surgeBtn = surge;
     this.recallBtn = recall;
@@ -1492,7 +1534,8 @@ export class UI {
       h('div', { class: 'draft-head' },
         h('div', { class: 'draft-kicker' }, icon('star'), t('relic.kicker'), w.build.relics.length ? h('span', { class: 'draft-queue' }, t('relic.owned', { n: w.build.relics.length })) : null),
         h('div', { class: 'lvtitle' }, t('relic.title')),
-        this.buildStrip(w)),
+        // A cache that opens the run (Relic Cache, Grand Unification) has no build to show yet.
+        w.build.upgrades.size || w.build.relics.length ? this.buildStrip(w) : null),
       h('div', { class: 'col offer-list' }, w.offers.map(card)),
       h('div', { class: 'offer-actions' }, peek, skip));
     if (fresh) {
@@ -1647,7 +1690,7 @@ export class UI {
           h('summary', {}, icon('info'), t('pause.manual')),
           guide(t('pause.powerShot'), t('pause.powerShotDesc')),
           guide(t('pause.resonance'), t('pause.resonanceDesc')),
-          guide(t('pause.recallSurge'), t('pause.recallSurgeDesc')))),
+          guide(t('pause.recallSurge'), t('pause.recallSurgeDesc', { n: fmtSeconds(w.build.stats.recallCooldown) })))),
       h('div', { class: 'col overlay-actions' },
         h('button', { class: 'primary big', onclick: () => { this.click(); this.game.resume(); } }, icon('play'), t('pause.resume')),
         h('div', { class: 'row' },
@@ -1688,7 +1731,9 @@ export class UI {
       ...r.challenges.map((c): [IconName, string] => ['flag', t('results.challengeShort', { name: c })]),
       ...(r.arenaUnlocked ? [['battle', t('results.newArenaShort', { name: r.arenaUnlocked })] as [IconName, string]] : []),
       ...(r.difficultyUnlocked ? [['fire', t('results.newDifficultyShort', { name: r.difficultyUnlocked })] as [IconName, string]] : []),
-      ...(r.ascensionUnlocked ? [['fire', t('results.ascensionShort', { n: r.ascensionUnlocked })] as [IconName, string]] : []),
+      ...(r.ascensionUnlocked ? [['fire', ascensionDifficulty(r.ascensionUnlocked) > s.difficulty
+        ? t('results.ascensionBandShort', { n: r.ascensionUnlocked, difficulty: DIFFICULTIES[ascensionDifficulty(r.ascensionUnlocked)].name })
+        : t('results.ascensionShort', { n: r.ascensionUnlocked })] as [IconName, string]] : []),
       ...r.contracts.map((c): [IconName, string] => ['daily', t('results.contractShort', { name: c })]),
       ...(r.daily?.bonus ? [['daily', t('results.dailyBonusShort')] as [IconName, string]] : []),
       ...(r.daily?.newBest ? [['daily', t('results.dailyBestShort', { n: formatNum(r.daily.best) })] as [IconName, string]] : []),
@@ -1726,11 +1771,13 @@ export class UI {
           statTile(t('results.bestCombo'), formatNum(s.bestCombo), !!best && s.bestCombo > best.combo && best.combo > 0),
           statTile(t('results.damageDealt'), formatNum(s.damageDealt)),
           statTile(t('results.level'), s.level),
-          statTile(t('results.bounceChain'), s.maxBounceChain, !!best && s.maxWallChain > best.chain && best.chain > 0),
+          statTile(t('results.bounceChain'), s.maxWallChain, !!best && s.maxWallChain > best.chain && best.chain > 0),
           statTile(t('results.bosses'), s.bossesDefeated.length),
           statTile(t('results.powerShots'), s.powerShots ?? 0),
           statTile(t('results.starfalls'), s.starfalls ?? 0),
-          statTile(t('results.recalls'), s.recalls ?? 0)),
+          statTile(t('results.recalls'), s.recalls ?? 0),
+          // Unending asks for ten minutes of Endless: show how far this run got.
+          (s.endlessTime ?? 0) > 0 ? statTile(t('results.endless'), formatTime(s.endlessTime ?? 0)) : null),
         s.damageBy?.length ? [sectionTitle(t('results.damageReport')), damageReport(s.damageBy, s.time)] : null,
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('results.yourBuild')), h('div', { class: 'buildname' }, s.buildName))),

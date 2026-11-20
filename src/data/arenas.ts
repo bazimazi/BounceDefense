@@ -208,12 +208,12 @@ export const DIFFICULTIES: DifficultyDef[] = [
   },
   {
     id: 'nightmare', name: 'Nightmare', color: '#ff7b54', desc: 'A real test of your build.',
-    hpMult: 2.1, speedMult: 1.12, spawnMult: 1.95, eliteEvery: 90, eliteModCount: 2, bossHpMult: 1.5, growth: 3.8, dmgMult: 1.44, bosses: 2, traitChance: 0, rewardMult: 1.9,
+    hpMult: 2.25, speedMult: 1.12, spawnMult: 1.95, eliteEvery: 90, eliteModCount: 2, bossHpMult: 1.5, growth: 3.8, dmgMult: 1.44, bosses: 2, traitChance: 0, rewardMult: 1.9,
     rules: ['A second boss arrives', 'Elites have 2 modifiers', 'Enemies toughen faster and hit harder'],
   },
   {
     id: 'inferno', name: 'Inferno', color: '#ff3d3d', desc: 'Even ordinary enemies turn dangerous.',
-    hpMult: 2.6, speedMult: 1.16, spawnMult: 2.18, eliteEvery: 75, eliteModCount: 2, bossHpMult: 2, growth: 5.2, dmgMult: 1.73, bosses: 2, traitChance: 0.08, rewardMult: 2.5,
+    hpMult: 2.8, speedMult: 1.16, spawnMult: 2.18, eliteEvery: 75, eliteModCount: 2, bossHpMult: 2, growth: 5.2, dmgMult: 1.73, bosses: 2, traitChance: 0.08, rewardMult: 2.5,
     rules: ['A second boss arrives', '8% of enemies spawn with an elite trait', 'Enemies toughen faster and hit harder'],
   },
   {
@@ -224,7 +224,7 @@ export const DIFFICULTIES: DifficultyDef[] = [
   // Beyond Abyss: each tier is built to be lost until the Overdrive Workshop has caught up with it.
   {
     id: 'oblivion', name: 'Oblivion', color: '#8f9bff', desc: 'Where finished builds go to be tested again.',
-    hpMult: 3.6, speedMult: 1.23, spawnMult: 2.55, eliteEvery: 55, eliteModCount: 3, bossHpMult: 9, growth: 8, lateHp: 2.5, dmgMult: 2.8, bosses: 2, apex: ['overmind'], traitChance: 0.2, hostileEvents: true, rewardMult: 4.2,
+    hpMult: 3.85, speedMult: 1.23, spawnMult: 2.55, eliteEvery: 55, eliteModCount: 3, bossHpMult: 9, growth: 8, lateHp: 2.5, dmgMult: 2.8, bosses: 2, apex: ['overmind'], traitChance: 0.2, hostileEvents: true, rewardMult: 4.2,
     rules: ['Two bosses, then the apex boss The Overmind', '20% of enemies spawn with an elite trait', 'Elites arrive every 55 seconds', 'Arena events are always hostile'],
   },
   {
@@ -263,10 +263,10 @@ export const PACTS: PactDef[] = [
   { id: 'relicless', name: 'Relicless', icon: '🏺', desc: 'No relics can be found.', reward: 0.25, rule: 'noRelic', flag: 'pacts2' },
   { id: 'short_fuse', name: 'Short Fuse', icon: '🧨', desc: 'The first boss arrives 90 seconds sooner.', reward: 0.3, rule: 'shortFuse', flag: 'pacts2' },
   // Abyssal Pacts (Advanced research after an Abyss win): each removes a tool the endgame leans on.
-  { id: 'eclipse', name: 'Eclipse', icon: '🌑', desc: 'No Resonance circuit, so no Starfall.', reward: 0.35, rule: 'eclipse', flag: 'pacts3' },
-  { id: 'warlords', name: 'Warlords', icon: '👹', desc: 'Every boss has 50% more health.', reward: 0.45, rule: 'warlords', flag: 'pacts3' },
-  { id: 'tide', name: 'Endless Tide', icon: '🌊', desc: 'Squads arrive 30% more often.', reward: 0.35, rule: 'tide', flag: 'pacts3' },
-  { id: 'narrow_fate', name: 'Narrow Fate', icon: '🎴', desc: 'Level-up drafts show one card fewer.', reward: 0.3, rule: 'narrowFate', flag: 'pacts3' },
+  { id: 'eclipse', name: 'Eclipse', icon: '🌑', desc: 'No Resonance circuit, so no Starfall, and Surge charges 30% slower.', reward: 0.35, rule: 'eclipse', flag: 'pacts3', mods: [{ stat: 'surgeGain', mult: -0.3 }] },
+  { id: 'warlords', name: 'Warlords', icon: '👹', desc: 'Bosses and elites have 50% more health.', reward: 0.45, rule: 'warlords', flag: 'pacts3' },
+  { id: 'tide', name: 'Endless Tide', icon: '🌊', desc: 'Squads arrive 30% more often, and enemies are 15% tougher.', reward: 0.35, rule: 'tide', flag: 'pacts3' },
+  { id: 'narrow_fate', name: 'Narrow Fate', icon: '🎴', desc: 'Level-up drafts show one card fewer, and you gain 15% less XP.', reward: 0.3, rule: 'narrowFate', flag: 'pacts3', mods: [{ stat: 'xpGain', mult: -0.15 }] },
 ];
 export const PACT_MAP: Record<string, PactDef> = Object.fromEntries(PACTS.map((p) => [p.id, p]));
 

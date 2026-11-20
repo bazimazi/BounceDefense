@@ -46,13 +46,35 @@ export const ASCENSIONS: AscensionDef[] = [
   { id: 'surgeSlow', level: 26, desc: 'Surge charges 25% slower.' },
   { id: 'breach40', level: 27, desc: 'Breaches hit your line 40% harder.' },
   { id: 'hp50', level: 28, desc: 'Enemies have 50% more health.' },
-  { id: 'late25', level: 29, desc: 'Enemies toughen 25% more as the run goes on.' },
+  { id: 'late25', level: 29, desc: 'Enemies toughen 50% more as the run goes on.' },
   { id: 'apexPlus', level: 30, desc: 'One more apex boss waits at the end of the run.' },
 ];
 
 export const MAX_ASCENSION = ASCENSIONS.length;
 /** Difficulty index (Abyss) from which Ascension can be played. */
 export const ASCENSION_TIER = 4;
+/**
+ * The ladder climbs with the difficulties: each band of ten levels opens on a harder tier, so the top of
+ * Ascension is played where the apex bosses are (and cannot be farmed on Abyss with an endgame kit).
+ */
+export const ASCENSION_BANDS: { upTo: number; difficulty: number }[] = [
+  { upTo: 10, difficulty: 4 },
+  { upTo: 20, difficulty: 7 },
+  { upTo: 30, difficulty: 9 },
+];
+
+/** Highest Ascension level playable on a difficulty (0 below Abyss). */
+export function ascensionCap(difficulty: number): number {
+  let cap = 0;
+  for (const b of ASCENSION_BANDS) if (difficulty >= b.difficulty) cap = b.upTo;
+  return cap;
+}
+
+/** The easiest difficulty an Ascension level can be played on. */
+export function ascensionDifficulty(level: number): number {
+  return (ASCENSION_BANDS.find((b) => level <= b.upTo) ?? ASCENSION_BANDS[ASCENSION_BANDS.length - 1]).difficulty;
+}
+
 /** Reward multiplier added per Ascension level. */
 export const ASCENSION_REWARD = 0.12;
 

@@ -264,6 +264,8 @@ html[lang='fa'] .title.logo { --logo-scale: 1.45; line-height: 1.3; padding-inli
 .daily-btn .icon { width: 22px; height: 22px; color: var(--text); }
 .daily-btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .daily-btn .badge.dot { top: 8px; inset-inline-end: 10px; }
+/* Today's best Daily Seed score, under the label. */
+.daily-btn .daily-best { font-size: 10px; line-height: 1; color: var(--gold); font-weight: 800; }
 /* Run setup sheet: the full arena card, difficulty and pacts, with Play pinned below. */
 .run-sheet .sheet-body > .section-title:first-child { margin-top: 2px; }
 .arena-carousel { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; align-items: center; }
@@ -494,8 +496,9 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .talent-line.next .talent-line-label { color: var(--tree-color); }
 .talent-requirement { font-size: 11.5px; font-weight: 700; line-height: 1.3; color: var(--accent); }
 .talent-requirement.locked { color: var(--gold); }
-.talent-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; margin-top: 8px; }
-.talent-actions button { min-height: 44px; }
+.talent-actions { display: grid; grid-template-columns: 1fr auto 1.4fr; gap: 8px; margin-top: 8px; }
+.talent-actions #talent-max { padding-inline: 14px; }
+.talent-actions button { min-height: 44px; min-width: 0; }
 .talent-notice { margin-top: 6px; font-size: 12px; color: var(--green); }
 .talent-rules { margin: 0 2px; font-size: 11.5px; color: var(--text-3); line-height: 1.5; }
 
@@ -958,6 +961,9 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
   /* Talents: the tree on the left, the selected talent pinned beside it. */
   .talent-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, .8fr); align-items: start; }
   .talent-detail { top: 0; bottom: auto; box-shadow: 0 4px 0 #02050b; }
+  /* The side column is narrow: Learn gets its own row, Refund and Max share the one below. */
+  .talent-actions { grid-template-columns: 1fr 1fr; }
+  .talent-actions #talent-learn { grid-column: 1 / -1; order: -1; }
   .levelup { padding: 8px 14px; gap: 6px; }
   .draft-head { flex-direction: row; justify-content: center; gap: 12px; margin-bottom: 0; padding-top: 0; }
   .draft .lvtitle { font-size: 24px; }
@@ -1037,6 +1043,8 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .contract-icon { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px; font-size: 18px; background: #ffffff0a; }
 .contract-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .contract-copy b { font-size: 13px; line-height: 1.3; }
+.contract-reward { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; font-weight: 700; color: var(--text-2); }
+.contract-reward .amount .icon { width: 14px; height: 14px; }
 .contract-count { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mastery-card.rank-line { margin-top: 8px; }
 /* Four talent trees share one row: let long tree names fit a 320px phone. */

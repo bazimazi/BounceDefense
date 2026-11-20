@@ -11,7 +11,7 @@ export function amount(currency: Currency, n: number, cls = ''): HTMLElement {
 export function wallet(p: { coins: number; cores: number; research: number }): HTMLElement {
   const pill = (currency: Currency, n: number) => h('span', {
     class: `chip wallet-pill ${currency}`, title: `${n.toLocaleString()} ${t(`common.${currency}`)}`,
-  }, icon(CURRENCY_ICON[currency]), h('b', {}, formatNum(n)));
+  }, icon(CURRENCY_ICON[currency]), h('b', {}, formatNum(n, 'down')));
   // Cores and Research join the wallet once earned; a row of unexplained zeros only adds noise.
   return h('div', { class: 'chips wallet', 'aria-label': t('common.currencies') },
     pill('coins', p.coins), p.cores > 0 ? pill('cores', p.cores) : null, p.research > 0 ? pill('research', p.research) : null);

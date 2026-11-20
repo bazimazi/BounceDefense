@@ -90,6 +90,8 @@ export const TIER_SPEED = [1, 1, 1.05, 1.15, 1.2];
 export const COMBO_MILESTONES = [10, 25, 50, 100, 150, 200, 300];
 export const POWER_START = 0.55;
 export const POWER_END = 0.95;
+/** Level-ups with only Repair and Salvage left resolve on their own: Repair below this share of the hull. */
+export const AUTO_REPAIR_BELOW = 0.85;
 /** Default Tactical Recall cooldown; builds change it through the `recallCooldown` stat. */
 export const RECALL_COOLDOWN = 10;
 /** A tier's `lateHp` ramps in from this run time over LATE_HP_RAMP seconds. */
@@ -175,6 +177,8 @@ export class World {
   commanders: Enemy[] = [];
   vortexCounter = 0;
   lanternStacks = 0;
+  /** Soul Lantern's single, growing damage modifier. */
+  lanternMod: Modifier | null = null;
   phoenixUsed = false;
   /** The Second Wind blueprint has already held the line this run. */
   secondWindUsed = false;
@@ -213,6 +217,8 @@ export class World {
 
   hp = 100;
   maxHp = 100;
+  /** The number of the kill whose onKill hooks are running (every-Nth-kill effects read it). */
+  killIndex = 0;
   level = 1;
   xp = 0;
   xpNext = xpForLevel(1);
@@ -298,7 +304,7 @@ export class World {
     this.gauntlet = cfg.mode === 'gauntlet' && !cfg.tutorial;
     const awakening = clamp(Math.floor(cfg.awakening ?? 0), 0, AWAKEN_MAX);
     this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1) * (asc.has('speed10') ? 1.1 : 1);
-    this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) *
+    this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) * (pacts.some((p) => p.rule === 'tide') ? 1.15 : 1) *
       (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1) * (asc.has('hp50') ? 1.5 : 1);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
     const ws = (id: string) => cfg.workshop[id] ?? 0;
@@ -478,8 +484,8 @@ export class World {
     const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
     const crown = this.build.has('relic_cursed_crown') ? 1.25 : 1;
     const bossAsc = def.boss ? (this.asc.has('boss20') ? 1.2 : 1) * (this.asc.has('boss40') ? 1.4 : 1) * (this.pacts.has('warlords') ? 1.5 : 1) : 1;
-    // Ascension 29 steepens the late ramp on every tier (tiers without one gain a quarter).
-    const late = 1 + ((this.diff.lateHp ?? 1) * (this.asc.has('late25') ? 1.25 : 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
+    // Ascension 29 steepens the late ramp on every tier (tiers without one gain half).
+    const late = 1 + ((this.diff.lateHp ?? 1) * (this.asc.has('late25') ? 1.5 : 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
     const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown * late;
     return {
       id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed,
@@ -514,7 +520,7 @@ export class World {
 
   makeElite(e: Enemy, mods: string[]): void {
     e.elite = this.asc.has('eliteRegen') && !mods.includes('regen') ? [...mods, 'regen'] : mods;
-    e.hp *= 3;
+    e.hp *= 3 * (this.pacts.has('warlords') ? 1.5 : 1);
     e.maxHp = e.hp;
     e.r *= 1.3;
     for (const m of mods) {
@@ -587,7 +593,8 @@ export class World {
   relicChoices(): string[] {
     const pool = new Set([...DEFAULT_UNLOCKED_RELICS, ...(this.cfg.relicPool ?? [])]);
     return RELICS.filter((r) => pool.has(r.id) && !this.build.hasRelic(r.id) &&
-      !(r.inert?.includes('noHeal') && this.noHeal) && !(r.inert?.includes('loneBall') && this.loneBall)).map((r) => r.id);
+      !(r.inert?.includes('noHeal') && this.noHeal) && !(r.inert?.includes('loneBall') && this.loneBall)
+      && !(r.inert?.includes('eclipse') && this.pacts.has('eclipse'))).map((r) => r.id);
   }
 
   openRelicDraft(): void {
@@ -656,7 +663,8 @@ export class World {
 
   // ------------------------------------------------------------------ player
   hurt(dmg: number, x: number): void {
-    if (this.state === 'over' || this.time < this.invulnUntil) return;
+    // Nothing reaches the line once the run is decided: the victory slow-motion must not spend saves or empty the hull.
+    if (this.state === 'over' || this.endTimer >= 0 || this.time < this.invulnUntil) return;
     const st = this.build.stats;
     if (this.barrier.charges > 0) {
       this.barrier.charges--;
@@ -678,15 +686,6 @@ export class World {
     if (st.comboGuard > 0 && this.combo.count >= 30) amount *= 1 - Math.min(0.6, st.comboGuard);
     this.hp -= amount;
     this.run.damageTaken += amount;
-    // Cryostasis Failsafe: the first time the line runs low, the whole field freezes.
-    if (this.flags.has('cryostasis') && !this.cryostasisUsed && this.hp > 0 && this.hp < this.maxHp * 0.25) {
-      this.cryostasisUsed = true;
-      for (const e of this.enemies) if (e.alive) e.st.frozenT = Math.max(e.st.frozenT, e.boss ? 1 : 3);
-      this.banner(t('fx.cryostasis'), '#9fdcff', t('fx.cryostasisSub'), true);
-      this.emit({ t: 'flash', color: '#9fdcff', a: 0.4 });
-      this.emit({ t: 'ring', x: 270, y: DEFENSE_Y, r: 420, color: '#9fdcff', dur: 0.6 });
-      this.emit({ t: 'sfx', name: 'freeze' });
-    }
     if (this.director.bossActive) this.run.bossNoDamage = false;
     this.emit({ t: 'hurt', x, dmg: amount });
     this.emit({ t: 'shake', amt: Math.min(14, 4 + amount * 0.4) });
@@ -715,10 +714,11 @@ export class World {
       this.emit({ t: 'sfx', name: 'shield' });
     }
     const wind = this.cfg.workshop.bp_second_wind ?? 0;
-    if (this.hp <= 0 && wind > 0 && !this.secondWindUsed && !this.noHeal) {
+    if (this.hp <= 0 && wind > 0 && !this.secondWindUsed) {
       // Second Wind: the line holds once, recovers and clears the enemies pressing on it.
+      // Under Bloodless it still holds and blasts, but at 1 HP: no healing of any kind.
       this.secondWindUsed = true;
-      this.hp = this.maxHp * SECOND_WIND[Math.min(wind, SECOND_WIND.length) - 1];
+      this.hp = this.noHeal ? 1 : this.maxHp * SECOND_WIND[Math.min(wind, SECOND_WIND.length) - 1];
       this.credit('bp_second_wind', () => {
         for (const e of [...this.enemies]) {
           if (e.alive && e.y > DEFENSE_Y - 220) explode(this, e.x, e.y, 40, st.damage * 3, 1, { src: 'quake', color: '#ff6b8b' });
@@ -728,6 +728,15 @@ export class World {
       this.emit({ t: 'flash', color: '#ff6b8b', a: 0.45 });
       this.emit({ t: 'slowmo', dur: 0.7, scale: 0.35 });
       this.emit({ t: 'sfx', name: 'evolve' });
+    }
+    // Cryostasis checks the line after every save, so a hit that Unbreakable or Second Wind caught still freezes the field.
+    if (this.flags.has('cryostasis') && !this.cryostasisUsed && this.hp > 0 && this.hp < this.maxHp * 0.25) {
+      this.cryostasisUsed = true;
+      for (const e of this.enemies) if (e.alive) e.st.frozenT = Math.max(e.st.frozenT, e.boss ? 1 : 3);
+      this.banner(t('fx.cryostasis'), '#9fdcff', t('fx.cryostasisSub'), true);
+      this.emit({ t: 'flash', color: '#9fdcff', a: 0.4 });
+      this.emit({ t: 'ring', x: 270, y: DEFENSE_Y, r: 420, color: '#9fdcff', dur: 0.6 });
+      this.emit({ t: 'sfx', name: 'freeze' });
     }
     if (this.hp <= 0) {
       this.hp = 0;
@@ -943,6 +952,16 @@ export class World {
     });
     this.draft = 'upgrade';
     this.state = 'levelup';
+    // A finished build (every slot maxed) leaves only Repair and Salvage: that is no decision, so take the
+    // sensible one without stopping the fight. Late endgame runs would otherwise pause dozens of times for it.
+    if (this.offers.every((o) => o.kind === 'heal' || o.kind === 'coins')) {
+      const heal = this.offers.find((o) => o.kind === 'heal');
+      const pick = heal && this.hp < this.maxHp * AUTO_REPAIR_BELOW ? heal : this.offers.find((o) => o.kind === 'coins') ?? this.offers[0];
+      this.choose(pick);
+      this.emit({ t: 'text', x: LAUNCHER_X, y: DEFENSE_Y - 30, text: pick.kind === 'heal' ? t('fx.autoRepair') : t('fx.autoSalvage'), color: pick.kind === 'heal' ? '#7dffa8' : '#ffcf4a' });
+      this.emit({ t: 'sfx', name: pick.kind === 'heal' ? 'pickup' : 'coin', vol: 0.6 });
+      return;
+    }
     this.bus.emit('levelUp', { offers: this.offers });
   }
 
@@ -1466,6 +1485,7 @@ export class World {
     if (!this.victory) return;
     this.state = 'playing';
     this.endTimer = -1;
+    this.hp = Math.max(1, this.hp);
     this.director.startEndless();
     this.banner(t('fx.endless'), '#c77dff', t('fx.endlessSub'), true);
   }

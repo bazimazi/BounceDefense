@@ -97,6 +97,25 @@ export interface Profile {
   awakening: Record<string, number>;
   /** Highest difficulty index won in the Gauntlet, -1 before the first Gauntlet win. */
   gauntlet: number;
+  /** The last Run setup the player launched, restored on the next visit (validated against what is open). */
+  setup: RunSetup;
+  /** A won run not yet claimed (victory screen or Endless): applied on the next load if the app closes first. */
+  pendingRun: PendingRun | null;
+}
+
+export interface RunSetup {
+  arena: string;
+  difficulty: number;
+  pacts: string[];
+  ascension: number;
+  mode: 'standard' | 'gauntlet';
+}
+
+export interface PendingRun {
+  summary: RunSummary;
+  discoveries: { cat: DiscoveryCat; id: string }[];
+  /** UTC day the run started on (Daily Seed bonus). */
+  day: string;
 }
 
 export interface ContractBoard {
@@ -113,6 +132,8 @@ export interface ContractSlot {
   target: number;
   progress: number;
   done: boolean;
+  /** Player strength when the slot was drawn (difficulties won, 0 to 10): sets target, rewards and the minimum tier. */
+  tier?: number;
 }
 
 export interface DailyRecord {
