@@ -20,6 +20,7 @@ import { createArenaSurface, drawArenaAtmosphere } from './arena';
 import { drawResonance } from './resonance';
 import { coreSprite } from './cores';
 import { drawEnemyShell, drawEnemyInsignia, enemyShape } from './enemy-art';
+import { arc, drawBumper, drawPortal, drawRail, drawTurret } from './hardware';
 
 interface Bolt { pts: number[]; life: number; color: string }
 interface Ring { x: number; y: number; r: number; life: number; max: number; color: string }
@@ -31,7 +32,7 @@ interface Banner { text: string; sub?: string; color: string; big: boolean; t: n
 const BANNER_STALE = 2;
 interface Starfall { pts: number[]; life: number }
 interface Debris { x: number; y: number; vx: number; vy: number; spin: number; r: number; life: number; color: string }
-interface Impact { x: number; y: number; life: number; color: string; crit: boolean; angle: number }
+interface Impact { x: number; y: number; life: number; color: string; angle: number; reach: number; rays: number }
 
 export interface RenderOptions {
   shake: boolean;
@@ -165,7 +166,11 @@ export class Renderer {
         this.queueBanner({ text: t('canvas.starfall'), sub: t('canvas.starfallSub'), color: '#bca7ff', big: true, t: 0, dur: 1.8, wait: 0 }, true);
         break;
       case 'hit': {
-        if (this.impacts.length < 100) this.impacts.push({ x: f.x, y: f.y, color: f.color, crit: !!f.crit, life: .18, angle: Math.random() * TAU });
+        const rays = f.crit ? 8 : f.mat === 'metal' || f.mat === 'crystal' ? 5 : 3;
+        if (this.impacts.length < 100) this.impacts.push({
+          x: f.x, y: f.y, color: f.color, life: .18, angle: Math.random() * TAU,
+          reach: (f.crit ? 25 : 12) + Math.min(9, Math.sqrt(Math.max(0, f.power || 0)) * .6), rays,
+        });
         const n = f.crit ? 14 : 6;
         p.burst(f.x, f.y, f.color, n, f.crit ? 340 : 220, f.crit ? 3.5 : 2.5, 0.35);
         if (f.crit) this.rings.push({ x: f.x, y: f.y, r: 26, life: 0.22, max: 0.22, color: '#ffe066' });
@@ -175,10 +180,16 @@ export class Renderer {
         if (!this.opts.damageNumbers || this.texts.length > 90) break;
         this.texts.push({ x: f.x, y: f.y, text: formatNum(f.v), life: 0.7, max: 0.7, color: f.color, size: f.crit ? 22 : 14, vy: f.crit ? -70 : -45 });
         break;
-      case 'wall':
-        p.burst(f.x, f.y, f.color, 4, 140, 2, 0.25);
+      case 'wall': {
+        const angle = Math.atan2(f.ny, f.nx);
+        for (let i = 0; i < 6; i++) {
+          const a = angle + (i - 2.5) * .29;
+          const speed = 120 + Math.random() * 120;
+          p.spawn(f.x, f.y, Math.cos(a) * speed, Math.sin(a) * speed, .23, i % 2 ? 1.5 : 2.5, f.color, 4);
+        }
         this.rings.push({ x: f.x, y: f.y, r: 24, life: .28, max: .28, color: f.color });
         break;
+      }
       case 'explosion':
         this.booms.push({ x: f.x, y: f.y, r: f.r, life: 0.32, color: f.color });
         p.burst(f.x, f.y, f.color, Math.min(26, 8 + f.r / 5), f.r * 4, 3.5, 0.45);
@@ -302,13 +313,13 @@ export class Renderer {
 
     this.drawDefenseLine(w);
     this.drawObstacles(w);
-    drawResonance(ctx, w, this.time);
+    drawResonance(ctx, w, this.time, this.reducedMotion?.matches ?? false);
     this.drawZones(w);
     this.drawPickups(w);
     // Arrivals slide in from under the header instead of covering its telemetry.
     ctx.save();
     ctx.beginPath(); ctx.rect(-40, FIELD_TOP - 2, W + 80, H); ctx.clip();
-    for (const e of w.enemies) if (e.alive) this.drawEnemy(w, e);
+    for (const e of w.enemies) if (e.alive) this.drawEnemy(e);
     this.drawBossExtras(w);
     ctx.restore();
     this.drawProjectiles(w);
@@ -366,17 +377,24 @@ export class Renderer {
   private drawDefenseLine(w: World): void {
     const ctx = this.ctx;
     const hpFrac = w.hp / w.maxHp;
-    const col = hpFrac > 0.5 ? '#5ad7ff' : hpFrac > 0.25 ? '#ffd166' : '#ff3b3b';
-    const shield = ctx.createLinearGradient(0, DEFENSE_Y - 28, 0, DEFENSE_Y + 38);
-    shield.addColorStop(0, col + '00'); shield.addColorStop(.42, col + '22'); shield.addColorStop(1, col + '00');
+    const col = this.hurtFlash > .15 ? '#ff5e76' : hpFrac > 0.5 ? '#5ad7ff' : hpFrac > 0.25 ? '#ffd166' : '#ff3b3b';
+    const shield = ctx.createLinearGradient(0, DEFENSE_Y - 38, 0, DEFENSE_Y + 26);
+    shield.addColorStop(0, col + '00'); shield.addColorStop(.52, col + '30'); shield.addColorStop(.61, col + '47'); shield.addColorStop(1, col + '00');
     ctx.fillStyle = shield;
-    ctx.fillRect(0, DEFENSE_Y - 28, W, 66);
+    ctx.fillRect(0, DEFENSE_Y - 38, W, 64);
+    ctx.fillStyle = '#060d19'; ctx.fillRect(0, DEFENSE_Y + 3, W, 9);
+    ctx.fillStyle = col + '32'; ctx.fillRect(0, DEFENSE_Y + 11, W, 1);
+    for (let x = 18; x < W; x += 28) {
+      ctx.fillStyle = col + '70'; ctx.fillRect(x, DEFENSE_Y + 6, 12, 2);
+      ctx.fillStyle = '#ecffff44'; ctx.fillRect(x + 1, DEFENSE_Y + 6, 3, 1);
+    }
     ctx.fillStyle = col;
-    ctx.globalAlpha = 0.9;
-    ctx.fillRect(0, DEFENSE_Y - 1.5, W, 3);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = col + '80';
-    for (let x = 18; x < W; x += 28) ctx.fillRect(x, DEFENSE_Y + 7, 12, 2);
+    ctx.fillRect(0, DEFENSE_Y - 1.5, W, 3.5);
+    ctx.fillStyle = '#efffffba'; ctx.fillRect(0, DEFENSE_Y, W, 1);
+    if (!this.reducedMotion?.matches) {
+      ctx.fillStyle = '#ecffffa8';
+      for (let i = 0; i < 4; i++) ctx.fillRect((this.time * 106 + i * W / 4) % W, DEFENSE_Y - 2.5, 18, 1.5);
+    }
     // Inset shield emitters give the energy line a physical source.
     for (const x of [18, W - 18]) {
       const casing = ctx.createLinearGradient(x - 7, 0, x + 7, 0);
@@ -418,42 +436,15 @@ export class Renderer {
   private drawObstacles(w: World): void {
     const ctx = this.ctx;
     const th = w.arena.theme;
+    const time = this.reducedMotion?.matches ? 0 : this.time;
     for (const o of w.obstacles) {
       switch (o.kind) {
         case 'bumper':
-          this.drawGlow(o.x, o.y, o.r * 2.2, th.accent, 0.3 + o.flash * 0.6);
-          ctx.fillStyle = '#12102a';
-          ctx.strokeStyle = o.flash > 0 ? '#ffffff' : th.accent;
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(o.x, o.y, o.r * (1 + o.flash * 0.15), 0, TAU);
-          ctx.fill();
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(o.x, o.y, o.r * 0.45, 0, TAU);
-          ctx.fillStyle = th.accent;
-          ctx.fill();
-          ctx.strokeStyle = th.accent + '60';
-          ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 7, 0, TAU); ctx.stroke();
-          for (let i = 0; i < 3; i++) {
-            const a = this.time * .6 + i * TAU / 3;
-            ctx.strokeStyle = '#e1ffff'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(o.x, o.y, o.r * .74, a, a + .6); ctx.stroke();
-          }
-          ctx.fillStyle = '#ffffffb0';
-          ctx.beginPath(); ctx.arc(o.x - o.r * .13, o.y - o.r * .15, o.r * .14, 0, TAU); ctx.fill();
+          this.drawGlow(o.x, o.y, o.r * 2.2, th.accent, .28 + o.flash * (this.opts.reduceFlashes ? .2 : .5));
+          drawBumper(ctx, o.x, o.y, o.r, th.accent, o.flash * (this.opts.reduceFlashes ? .5 : 1), time);
           break;
         case 'deflector':
-          ctx.strokeStyle = o.flash > 0 ? '#ffffff' : th.wall;
-          ctx.lineWidth = 9;
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(o.ax, o.ay);
-          ctx.lineTo(o.bx, o.by);
-          ctx.stroke();
-          ctx.strokeStyle = '#e2faff'; ctx.lineWidth = 2; ctx.stroke();
-          ctx.lineCap = 'butt';
+          drawRail(ctx, o.ax, o.ay, o.bx, o.by, th.wall, o.flash);
           break;
         case 'barrel':
           if (!o.alive) {
@@ -468,12 +459,15 @@ export class Renderer {
             break;
           }
           this.drawGlow(o.x, o.y, o.r * 2, '#ff5a1f', 0.35 + 0.15 * Math.sin(this.time * 6));
-          ctx.fillStyle = '#c0331a';
-          ctx.beginPath();
-          ctx.arc(o.x, o.y, o.r, 0, TAU);
-          ctx.fill();
-          ctx.fillStyle = '#ffd166';
-          ctx.fillRect(o.x - o.r, o.y - 3, o.r * 2, 6);
+          const steel = ctx.createLinearGradient(o.x - o.r, o.y - o.r, o.x + o.r, o.y + o.r);
+          steel.addColorStop(0, '#fa8256'); steel.addColorStop(.4, '#6d2821'); steel.addColorStop(1, '#2b0c11');
+          arc(ctx, o.x, o.y + 2, o.r); ctx.fillStyle = '#08070d'; ctx.fill();
+          arc(ctx, o.x, o.y, o.r); ctx.fillStyle = steel; ctx.fill();
+          ctx.strokeStyle = '#ff9970'; ctx.lineWidth = 1.4; ctx.stroke();
+          ctx.save(); ctx.clip();
+          ctx.fillStyle = '#17131c'; ctx.fillRect(o.x - o.r, o.y - 5, o.r * 2, 10);
+          ctx.fillStyle = '#ffbc60'; ctx.fillRect(o.x - o.r, o.y - 3, o.r * 2, 6);
+          ctx.restore();
           ctx.fillStyle = '#1a0a05';
           ctx.font = `bold 11px ${FONT}`;
           ctx.textAlign = 'center';
@@ -497,25 +491,21 @@ export class Renderer {
           break;
         case 'crate':
           if (!o.alive) break;
-          ctx.fillStyle = o.flash > 0 ? '#fff3d6' : '#8a6a3d';
+          const caseMetal = ctx.createLinearGradient(0, o.y, 0, o.y + o.h);
+          caseMetal.addColorStop(0, '#a9926b'); caseMetal.addColorStop(.26, '#6f5435'); caseMetal.addColorStop(1, '#25212a');
+          ctx.fillStyle = '#070910a0'; ctx.fillRect(o.x + 1, o.y + 3, o.w, o.h);
+          ctx.fillStyle = o.flash > .1 ? '#bea476' : caseMetal;
           ctx.fillRect(o.x, o.y, o.w, o.h);
-          ctx.strokeStyle = '#3d2a14';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(o.x + 1, o.y + 1, o.w - 2, o.h - 2);
-          ctx.fillStyle = '#3d2a14';
-          for (let i = 0; i < o.hp; i++) ctx.fillRect(o.x + 6 + i * 7, o.y + o.h / 2 - 2, 4, 4);
+          ctx.strokeStyle = '#efc584'; ctx.lineWidth = 1;
+          ctx.strokeRect(o.x + .5, o.y + .5, o.w - 1, o.h - 1);
+          ctx.fillStyle = '#10111b'; ctx.fillRect(o.x + 4, o.y + 5, o.w - 8, o.h - 10);
+          ctx.fillStyle = '#ffd18a';
+          for (let i = 0; i < o.hp; i++) ctx.fillRect(o.x + 8 + i * 7, o.y + o.h / 2 - 2, 4, 4);
           break;
         case 'portal':
-          for (const [x, y] of [[o.ax, o.ay], [o.bx, o.by]]) {
-            this.drawGlow(x, y, o.r * 2.4, '#c77dff', 0.5);
-            ctx.strokeStyle = '#e0b3ff';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(x, y, o.r, o.spin, o.spin + TAU * 0.75);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(x, y, o.r * 0.6, -o.spin * 1.5, -o.spin * 1.5 + TAU * 0.6);
-            ctx.stroke();
+          for (const [x, y, spin] of [[o.ax, o.ay, o.spin], [o.bx, o.by, -o.spin]]) {
+            this.drawGlow(x, y, o.r * 2.25, '#c77dff', .48);
+            drawPortal(ctx, x, y, o.r, this.reducedMotion?.matches ? 0 : spin);
           }
           break;
         case 'spore': {
@@ -599,47 +589,71 @@ export class Renderer {
 
   private drawZones(w: World): void {
     const ctx = this.ctx;
+    const time = this.reducedMotion?.matches ? 0 : this.time;
     for (const z of w.zones) {
       const life = 1 - z.t / z.dur;
-      if (z.kind === 'fire') {
-        this.drawGlow(z.x, z.y, z.r * 1.6, '#ff6a2a', life * 0.45);
-        if (this.emits(9)) this.particles.spawn(z.x + (Math.random() - 0.5) * z.r, z.y, 0, -50, 0.4, 3, '#ffb13b', 1);
-      } else if (z.kind === 'toxic') {
-        const fade = Math.min(1, z.t * 4) * Math.min(1, life * 3);
-        this.drawGlow(z.x, z.y, z.r * 1.5, '#7dff3a', fade * 0.38);
-        ctx.strokeStyle = `rgba(166,255,77,${fade * 0.35})`; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.stroke();
-        if (this.emits(10)) {
-          const a = Math.random() * TAU, r = Math.random() * z.r;
-          this.particles.spawn(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, 0, -18, 0.7, 3.5, Math.random() < 0.5 ? '#a6ff4d' : '#6ad13a', 1);
+      if (z.kind === 'fire' || z.kind === 'toxic') {
+        const fire = z.kind === 'fire';
+        const color = fire ? '#ff8a43' : '#a6ff4d';
+        const opacity = Math.min(1, life * 3) * (fire ? 1 : Math.min(1, z.t * 4));
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        const pool = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r);
+        pool.addColorStop(0, color + '17'); pool.addColorStop(.72, color + '11'); pool.addColorStop(1, color + '50');
+        arc(ctx, z.x, z.y, z.r); ctx.fillStyle = pool; ctx.fill();
+        ctx.strokeStyle = color + '6a'; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.strokeStyle = color + '9a'; ctx.lineWidth = 1.1;
+        for (let i = 0; i < 7; i++) {
+          const a = i * TAU / 7 + time * (fire ? .8 : -.4);
+          if (fire) arc(ctx, z.x, z.y, z.r * .92, a, a + .23);
+          else arc(ctx, z.x + Math.cos(a) * z.r * .74, z.y + Math.sin(a) * z.r * .74, 1.6 + i % 3);
+          ctx.stroke();
+        }
+        ctx.restore();
+        if (this.emits(fire ? 13 : 10)) {
+          const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * z.r;
+          this.particles.spawn(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, 0, fire ? -52 : -18,
+            fire ? .4 : .7, 3.5, color, 1);
         }
       } else if (z.kind === 'vortex') {
         ctx.save();
         ctx.translate(z.x, z.y);
-        ctx.strokeStyle = `rgba(180,140,255,${0.55 * life + 0.15})`; ctx.lineWidth = 2;
+        ctx.globalAlpha = .35 + .65 * life;
+        const funnel = ctx.createRadialGradient(0, 0, 0, 0, 0, z.r);
+        funnel.addColorStop(0, '#070517bb'); funnel.addColorStop(.45, '#754df141'); funnel.addColorStop(1, '#965aff00');
+        arc(ctx, 0, 0, z.r); ctx.fillStyle = funnel; ctx.fill();
+        ctx.strokeStyle = '#b48cff58'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.strokeStyle = '#c4acff'; ctx.lineWidth = 1.8;
         for (let i = 0; i < 3; i++) {
-          const a = -this.time * 6 + i * TAU / 3;
-          ctx.beginPath(); ctx.arc(0, 0, z.r * (0.35 + i * 0.22) * (0.6 + life * 0.4), a, a + 2.2); ctx.stroke();
+          const a = -time * 3.4 + i * TAU / 3;
+          ctx.beginPath();
+          for (let step = 0; step <= 12; step++) {
+            const angle = a + step * .19;
+            const r = z.r * (.15 + step * .062);
+            if (!step) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+            else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          }
+          ctx.stroke();
         }
         ctx.restore();
-        this.drawGlow(z.x, z.y, 24, '#b48cff', 0.7);
       } else if (z.kind === 'mine') {
         const armed = z.t > 0.25;
-        const blink = armed && Math.sin(this.time * 10 + z.x) > 0;
-        this.drawGlow(z.x, z.y, 16, '#ffb13b', blink ? 0.9 : 0.35);
-        ctx.fillStyle = '#3a2410';
-        ctx.beginPath(); ctx.arc(z.x, z.y, 7, 0, TAU); ctx.fill();
-        ctx.strokeStyle = blink ? '#ffe066' : '#ffb13b'; ctx.lineWidth = 2; ctx.stroke();
+        const pulse = this.opts.reduceFlashes || this.reducedMotion?.matches ? .5 : .5 + Math.sin(time * 10 + z.x) * .5;
+        this.drawGlow(z.x, z.y, 17, '#ffb13b', armed ? .4 + pulse * .3 : .2);
+        arc(ctx, z.x, z.y, 8); ctx.fillStyle = '#241c1c'; ctx.fill();
+        ctx.strokeStyle = '#ffb13b'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = armed ? '#fff0b2' : '#775b4a';
+        ctx.fillRect(z.x - 2, z.y - 2, 4, 4);
       } else if (z.kind === 'stasis') {
         const fade = Math.min(1, z.t * 3) * Math.min(1, life * 4);
         ctx.fillStyle = `rgba(255,214,122,${fade * 0.12})`;
         ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
         ctx.strokeStyle = `rgba(255,226,150,${fade * 0.6})`; ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 6]);
-        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, this.time * 0.6, this.time * 0.6 + TAU); ctx.stroke();
+        arc(ctx, z.x, z.y, z.r, time * .6, time * .6 + TAU); ctx.stroke();
         ctx.setLineDash([]);
         // a slow clock hand
-        const a = this.time * 1.2;
+        const a = time * 1.2;
         ctx.beginPath(); ctx.moveTo(z.x, z.y); ctx.lineTo(z.x + Math.cos(a) * z.r * 0.6, z.y + Math.sin(a) * z.r * 0.6); ctx.stroke();
       }
     }
@@ -705,7 +719,7 @@ export class Renderer {
     }
   }
 
-  private drawEnemy(w: World, e: Enemy): void {
+  private drawEnemy(e: Enemy): void {
     const ctx = this.ctx;
     const d = e.def;
     const spawn = easeOutBack(clamp(e.spawnT / .35, 0, 1));
@@ -761,36 +775,16 @@ export class Renderer {
       ctx.stroke();
     }
     const rot = d.shape === 'star' ? this.time * 1.5 : d.shape === 'gear' ? this.time * 0.8 : d.shape === 'spike' ? -this.time : 0;
-    enemyShape(ctx, d.shape, x + 1, y + 6, r, rot);
-    ctx.fillStyle = '#00000065'; ctx.fill();
-    enemyShape(ctx, d.shape, x, y, r, rot);
+    drawEnemyShell(ctx, d, x, y, r, rot);
+    drawEnemyInsignia(ctx, d, x, y, r, !e.boss && (this.time + e.id * .73) % 4.7 > 4.55);
     const frozen = e.st.frozenT > 0;
-    const color = frozen ? '#bfe9ff' : d.color;
-    const body = ctx.createLinearGradient(x - r, y - r, x + r * .6, y + r);
-    body.addColorStop(0, '#f0ffff'); body.addColorStop(.15, color);
-    body.addColorStop(.6, color); body.addColorStop(1, '#172134');
-    ctx.fillStyle = e.flash > .02 ? '#ffffff' : body;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = color + 'aa';
-    ctx.stroke();
-    enemyShape(ctx, d.shape, x, y + 1, r * .73, rot);
-    ctx.fillStyle = '#0b14233b'; ctx.fill();
-    ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1; ctx.stroke();
-    this.drawMaterial(e, x, y, r, rot, color);
-    // Metal rivets and pulsing energy cores distinguish enemy materials.
-    if (d.material === 'metal' || e.boss) {
-      ctx.fillStyle = '#efffffaa';
-      for (const side of [-1, 1]) {
-        ctx.beginPath(); ctx.arc(x + r * .5 * side, y - r * .35, Math.max(1, r * .07), 0, TAU); ctx.fill();
-      }
+    if (frozen || e.flash > .02 || e.st.chill > 0 || e.st.burnT > 0 || e.st.poison > 0) {
+      enemyShape(ctx, d.shape, x, y, r, rot);
     }
-    if (d.material === 'energy' || d.shape === 'ring') {
-      ctx.strokeStyle = color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(x, y, r * .48, this.time * 2, this.time * 2 + TAU * .72); ctx.stroke();
+    if (e.flash > .02) {
+      ctx.fillStyle = this.opts.reduceFlashes ? '#f4ffff50' : '#f4ffffab';
+      ctx.fill();
     }
-    // Re-select the silhouette so elemental outlines follow the outer shell.
-    enemyShape(ctx, d.shape, x, y, r, rot);
     if (e.st.chill > 0 && !frozen) {
       ctx.globalAlpha = 0.25 * e.st.chill;
       ctx.fillStyle = '#9fdcff';
@@ -798,9 +792,16 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
     if (frozen) {
-      ctx.strokeStyle = '#e8f8ff';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
+      ctx.fillStyle = '#80cfff55'; ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.strokeStyle = '#e8fbffa0'; ctx.lineWidth = 1.25;
+      ctx.beginPath(); ctx.moveTo(x - r, y - r * .13);
+      ctx.lineTo(x - r * .19, y - r * .28); ctx.lineTo(x + r * .13, y + r * .29);
+      ctx.lineTo(x + r, y + r * .15); ctx.moveTo(x - r * .19, y - r * .28);
+      ctx.lineTo(x + r * .19, y - r); ctx.moveTo(x + r * .13, y + r * .29);
+      ctx.lineTo(x - r * .38, y + r); ctx.stroke(); ctx.restore();
+      enemyShape(ctx, d.shape, x, y, r, rot);
+      ctx.strokeStyle = '#e8f8ff'; ctx.lineWidth = 2.5; ctx.stroke();
     }
     if (e.st.burnT > 0) {
       ctx.strokeStyle = '#ff8a3d';
@@ -839,16 +840,6 @@ export class Renderer {
       ctx.beginPath(); ctx.moveTo(x - r * 0.5, y - r * 0.2);
       ctx.lineTo(x - r * 0.1, y + r * 0.1 * k); ctx.lineTo(x + r * 0.2 * k, y - r * 0.3 * k); ctx.lineTo(x + r * 0.5 * k, y); ctx.stroke();
     }
-    // eyes give silhouettes some life and show "facing"
-    if (!e.boss && r > 9 && d.ai !== 'egg' && d.ai !== 'pylon') {
-      ctx.fillStyle = '#08121f';
-      roundRect(ctx, x - r * .55, y - r * .08, r * 1.1, r * .42, r * .14); ctx.fill();
-      const blink = (this.time + e.id * .73) % 4.7 > 4.55;
-      const eyeH = r * (blink ? .045 : .15);
-      ctx.fillStyle = '#f3fffa';
-      ctx.fillRect(x - r * .34, y + r * .04, r * .22, eyeH);
-      ctx.fillRect(x + r * .12, y + r * .04, r * .22, eyeH);
-    }
     if (d.ai === 'shielder' && e.phase < 3) {
       ctx.strokeStyle = '#bff0ff';
       ctx.lineWidth = 4 - e.phase;
@@ -876,7 +867,7 @@ export class Renderer {
       ctx.closePath();
       ctx.fill();
     }
-    if (e.boss) this.drawBossBody(w, e);
+    if (e.boss) this.drawBossBody(e, r);
     ctx.globalAlpha = 1;
     // hp bar
     if (!e.boss && (e.hp < e.maxHp || e.elite.length)) {
@@ -888,66 +879,29 @@ export class Renderer {
     }
   }
 
-  private drawMaterial(e: Enemy, x: number, y: number, r: number, rot: number, color: string): void {
+  private drawBossBody(e: Enemy, r: number): void {
     const ctx = this.ctx;
+    const halo = e.phase ? '#ff7088' : e.def.color;
+    this.drawGlow(e.x, e.y, r * 2.4, halo, .25);
     ctx.save();
-    enemyShape(ctx, e.def.shape, x, y, r * .93, rot); ctx.clip();
-    if (e.def.material === 'metal' || e.boss) {
-      // Recessed panels, bright bevels and a serial stripe on the armor.
-      ctx.strokeStyle = '#06132255'; ctx.lineWidth = Math.max(1, r * .05);
-      for (const s of [-1, 1]) {
-        ctx.beginPath(); ctx.moveTo(x + s * r * .8, y - r); ctx.lineTo(x + s * r * .48, y - r * .35);
-        ctx.lineTo(x + s * r * .55, y + r); ctx.stroke();
-      }
-      ctx.fillStyle = '#e7ffff66';
-      for (let i = 0; i < 3; i++) ctx.fillRect(x - r * .24 + i * r * .17, y - r * .57, r * .09, Math.max(1, r * .06));
-    } else if (e.def.material === 'flesh') {
-      ctx.strokeStyle = '#06221944'; ctx.lineWidth = Math.max(1, r * .04);
-      for (let i = 0; i < 5; i++) {
-        const a = i * TAU / 5 + e.id;
-        ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * r * .65, y + Math.sin(a) * r * .65, r * .12, r * .19, a, 0, TAU); ctx.stroke();
-      }
-    } else if (e.def.material === 'energy') {
-      ctx.strokeStyle = '#f0faff55'; ctx.lineWidth = 1;
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath(); ctx.ellipse(x, y, r * .8, r * .3, i * TAU / 3 + this.time * .35, 0, TAU); ctx.stroke();
-      }
-    } else {
-      ctx.strokeStyle = '#06132244'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x - r, y - r * .3); ctx.lineTo(x - r * .55, y - r * .45);
-      ctx.lineTo(x - r * .37, y - r * .19); ctx.moveTo(x + r, y + r * .45);
-      ctx.lineTo(x + r * .4, y + r * .3); ctx.lineTo(x + r * .15, y + r * .7); ctx.stroke();
-    }
-    // A reflected rim separates every shell from similarly colored scenery.
-    enemyShape(ctx, e.def.shape, x - r * .025, y - r * .045, r * .94, rot);
-    ctx.strokeStyle = color + '60'; ctx.lineWidth = Math.max(.8, r * .035); ctx.stroke();
-    ctx.restore();
-  }
-
-  private drawBossBody(w: World, e: Enemy): void {
-    const ctx = this.ctx;
-    this.drawGlow(e.x, e.y, e.r * 2.2, e.def.color, 0.4);
+    ctx.translate(e.x, e.y);
+    const time = this.reducedMotion?.matches ? 0 : this.time;
     for (let i = 0; i < 3; i++) {
-      const a = -this.time * .35 + i * TAU / 3;
-      ctx.strokeStyle = e.def.color + '90'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 10, a, a + 1.25); ctx.stroke();
+      const a = -time * .35 + i * TAU / 3;
+      ctx.strokeStyle = '#040713'; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(0, 0, r + 10, a, a + 1.25); ctx.stroke();
+      ctx.strokeStyle = halo; ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = halo + '60'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, r + 15, a + .15, a + 1.1); ctx.stroke();
     }
-    ctx.fillStyle = '#0a0612';
-    ctx.beginPath();
-    ctx.arc(e.x - e.r * 0.3, e.y - e.r * 0.05, e.r * 0.13, 0, TAU);
-    ctx.arc(e.x + e.r * 0.3, e.y - e.r * 0.05, e.r * 0.13, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = e.phase ? '#ff3b3b' : '#fff';
-    ctx.beginPath();
-    ctx.arc(e.x - e.r * 0.3, e.y - e.r * 0.05, e.r * 0.06, 0, TAU);
-    ctx.arc(e.x + e.r * 0.3, e.y - e.r * 0.05, e.r * 0.06, 0, TAU);
-    ctx.fill();
+    ctx.restore();
     if (e.def.id === 'boss_chronarch') {
       // Clock hands: the long hand sweeps toward the next time stop.
       const k = 1 - Math.max(0, Math.min(1, e.t0 / (e.phase ? 7.5 : 10)));
-      ctx.strokeStyle = '#3a2a08'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.strokeStyle = '#ffe9ae'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(-Math.PI / 2 + k * TAU) * e.r * 0.8, e.y + Math.sin(-Math.PI / 2 + k * TAU) * e.r * 0.8); ctx.stroke();
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 3.5;
       ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(this.time * 0.3) * e.r * 0.45, e.y + Math.sin(this.time * 0.3) * e.r * 0.45); ctx.stroke();
       ctx.lineCap = 'butt';
     }
@@ -1013,7 +967,6 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 9, 0, TAU); ctx.stroke();
       }
     }
-    void w;
   }
 
   private drawBossExtras(w: World): void {
@@ -1052,25 +1005,24 @@ export class Renderer {
         const y = e.y + ARCHITECT_WALL.below;
         const half = ARCHITECT_WALL.half * (e.phase ? 1.35 : 1);
         const tilt = e.phase ? Math.sin(w.time * 1.4) * 22 : 0;
-        ctx.strokeStyle = '#e8eef8'; ctx.lineWidth = 9; ctx.lineCap = 'round';
         ctx.globalAlpha = Math.min(1, e.t1 * 2);
-        ctx.beginPath(); ctx.moveTo(e.x - half, y - tilt); ctx.lineTo(e.x + half, y + tilt); ctx.stroke();
-        ctx.strokeStyle = '#7aa8ff'; ctx.lineWidth = 3; ctx.stroke();
-        ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+        drawRail(ctx, e.x - half, y - tilt, e.x + half, y + tilt, '#7aa8ff', 1);
+        ctx.globalAlpha = 1;
       }
     }
     for (const e of w.enemies) {
       if (!e.alive || e.def.id !== 'boss_fortress') continue;
       const n = e.phase ? 4 : 3;
       const R = e.r + FORTRESS_RING;
-      ctx.strokeStyle = e.phase ? '#ff8aa0' : '#bcd0ff';
-      ctx.lineWidth = 7;
+      const color = e.phase ? '#ff8aa0' : '#bcd0ff';
       ctx.lineCap = 'round';
       for (let k = 0; k < n; k++) {
         const a = e.t0 + (k * TAU) / n;
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, R, a - FORTRESS_HALF_ARC, a + FORTRESS_HALF_ARC);
-        ctx.stroke();
+        arc(ctx, e.x, e.y, R, a - FORTRESS_HALF_ARC, a + FORTRESS_HALF_ARC);
+        ctx.strokeStyle = color + '55'; ctx.lineWidth = 14; ctx.stroke();
+        ctx.strokeStyle = '#101929'; ctx.lineWidth = 10; ctx.stroke();
+        ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.stroke();
+        ctx.strokeStyle = '#f4f8ff'; ctx.lineWidth = 1.5; ctx.stroke();
       }
       ctx.lineCap = 'butt';
     }
@@ -1080,6 +1032,13 @@ export class Renderer {
     const ctx = this.ctx;
     for (const p of w.projectiles) {
       this.drawGlow(p.x, p.y, p.r * 3, p.color, 0.7);
+      const speed = Math.hypot(p.vx, p.vy) || 1;
+      const x = p.x - p.vx / speed * p.r * 3.1;
+      const y = p.y - p.vy / speed * p.r * 3.1;
+      const wake = ctx.createLinearGradient(x, y, p.x, p.y);
+      wake.addColorStop(0, '#ffffff00'); wake.addColorStop(1, p.color);
+      ctx.strokeStyle = wake; ctx.lineWidth = p.r * .85;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(p.x, p.y); ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r * 0.6, 0, TAU);
@@ -1102,55 +1061,64 @@ export class Renderer {
     }
     for (const s of this.starfalls) {
       const progress = 1 - s.life / .85;
+      const intensity = this.opts.reduceFlashes ? .55 : 1;
       for (let i = 0; i < s.pts.length; i += 2) {
         const x = s.pts[i], y = s.pts[i + 1];
         ctx.save();
-        const alpha = Math.min(1, s.life * 2);
-        ctx.globalAlpha = alpha;
-        const beam = ctx.createLinearGradient(x - 70, FIELD_TOP, x, y);
-        beam.addColorStop(0, '#bca7ff00'); beam.addColorStop(1, '#bca7ff80');
+        ctx.beginPath(); ctx.rect(0, FIELD_TOP, W, H - FIELD_TOP); ctx.clip();
+        const falloff = 1 - progress;
+        const cut = this.reducedMotion?.matches ? 0 : progress * .75;
+        const topX = x - 75 * (1 - cut), topY = FIELD_TOP + (y - FIELD_TOP) * cut;
+        const width = 12 * falloff;
+        const beam = ctx.createLinearGradient(topX, topY, x, y);
+        beam.addColorStop(0, '#bca7ff00'); beam.addColorStop(.36, '#a48bff4d'); beam.addColorStop(1, '#e7cfffaa');
+        ctx.globalAlpha = falloff * intensity;
         ctx.fillStyle = beam;
-        ctx.beginPath(); ctx.moveTo(x - 90, FIELD_TOP); ctx.lineTo(x - 45, FIELD_TOP);
-        ctx.lineTo(x + 12, y); ctx.lineTo(x - 12, y); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = '#e8dfff'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(x - 67, FIELD_TOP); ctx.lineTo(x, y); ctx.stroke();
-        ctx.strokeStyle = '#bca7ff'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.ellipse(x, y, 18 + progress * 50, 7 + progress * 20, 0, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(topX - width, topY); ctx.lineTo(topX + width, topY);
+        ctx.lineTo(x + width * .45, y); ctx.lineTo(x - width * .45, y); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#f3eaff'; ctx.lineWidth = Math.max(.65, falloff * 3.5);
+        ctx.beginPath(); ctx.moveTo(topX, topY); ctx.lineTo(x, y); ctx.stroke();
+        const radius = 13 + 59 * (1 - falloff ** 2);
+        ctx.strokeStyle = '#c9b9ff'; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.ellipse(x, y, radius, radius * .42, -.2, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = falloff * falloff * intensity;
+        ctx.strokeStyle = '#f8e8ff'; ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.ellipse(x, y, radius * .68, radius * .27, .2, 0, TAU); ctx.stroke();
+        this.drawGlow(x, y, 29, '#ceb4ff', falloff ** 3 * intensity);
         ctx.restore();
       }
     }
     ctx.globalCompositeOperation = 'lighter';
     for (const hit of this.impacts) {
       const age = 1 - hit.life / .18;
-      const reach = (hit.crit ? 26 : 13) * (.4 + age * .8);
+      const reach = hit.reach * (.4 + age * .8);
       ctx.save(); ctx.translate(hit.x, hit.y); ctx.rotate(hit.angle);
       ctx.globalAlpha = (1 - age) ** 2 * (this.opts.reduceFlashes ? .35 : .85);
       ctx.fillStyle = hit.color;
-      for (let i = 0; i < 4; i++) {
-        ctx.rotate(Math.PI / 2);
-        ctx.beginPath(); ctx.moveTo(2, -1.5); ctx.lineTo(reach, 0); ctx.lineTo(2, 1.5); ctx.closePath(); ctx.fill();
+      for (let i = 0; i < hit.rays; i++) {
+        ctx.rotate(TAU / hit.rays);
+        ctx.beginPath(); ctx.moveTo(2, -1.5); ctx.lineTo(reach * (i % 2 ? .63 : 1), 0);
+        ctx.lineTo(2, 1.5); ctx.closePath(); ctx.fill();
       }
       ctx.fillStyle = '#efffff'; ctx.beginPath(); ctx.arc(0, 0, 2.5 * (1 - age), 0, TAU); ctx.fill(); ctx.restore();
     }
     for (const b of this.booms) {
       const t = 1 - b.life / 0.32;
       const r = b.r * (0.4 + 0.6 * Math.sqrt(t));
-      this.drawGlow(b.x, b.y, r * 1.4, b.color, (1 - t) * 0.9);
+      this.drawGlow(b.x, b.y, r * 1.4, b.color, (1 - t) * (this.opts.reduceFlashes ? .35 : .8));
       ctx.strokeStyle = b.color;
       ctx.globalAlpha = 1 - t;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(b.x, b.y, r, 0, TAU);
       ctx.stroke();
-      ctx.strokeStyle = '#ffefd5'; ctx.lineWidth = 1;
-      ctx.globalAlpha = (1 - t) * .7;
-      ctx.beginPath(); ctx.arc(b.x, b.y, r * .8, 0, TAU); ctx.stroke();
-      for (let i = 0; i < 8; i++) {
-        const a = i * TAU / 8 + b.x;
-        ctx.beginPath();
-        ctx.moveTo(b.x + Math.cos(a) * r * .85, b.y + Math.sin(a) * r * .85);
-        ctx.lineTo(b.x + Math.cos(a) * r * (1.2 - t * .2), b.y + Math.sin(a) * r * (1.2 - t * .2));
-        ctx.stroke();
+      ctx.strokeStyle = '#ffefd5'; ctx.lineWidth = 1.2;
+      ctx.globalAlpha = (1 - t) * .62;
+      arc(ctx, b.x, b.y, r * .71); ctx.stroke();
+      const outer = Math.min(b.r * 1.12, r * 1.19);
+      for (let i = 0; i < 10; i++) {
+        const a = i * TAU / 10 + b.x + t * .35;
+        arc(ctx, b.x, b.y, outer, a, a + .18); ctx.stroke();
       }
     }
     for (const r of this.rings) {
@@ -1198,8 +1166,20 @@ export class Renderer {
     const ctx = this.ctx;
     const res = traceAim(w, 520 + this.opts.previewBounces * 260, this.opts.previewBounces, this.trace);
     const pts = this.trace;
-    ctx.fillStyle = w.isPowerWindow() ? '#ffe3a3' : '#ffffff';
-    let acc = (this.time * 36) % 13;
+    const powered = w.isPowerWindow();
+    const color = powered ? '#ffe3a3' : '#d9faff';
+    ctx.save();
+    ctx.beginPath();
+    let broken = true;
+    for (let i = 0; i < pts.length; i += 2) {
+      if (!Number.isFinite(pts[i]) || !Number.isFinite(pts[i + 1])) { broken = true; continue; }
+      if (broken) ctx.moveTo(pts[i], pts[i + 1]); else ctx.lineTo(pts[i], pts[i + 1]);
+      broken = false;
+    }
+    ctx.strokeStyle = powered ? '#e7b96940' : '#8edafa27';
+    ctx.lineWidth = powered ? 4 : 2.5; ctx.stroke();
+    ctx.fillStyle = color;
+    let acc = this.reducedMotion?.matches ? 0 : (this.time * 36) % 13;
     let total = 0;
     for (let i = 2; i < pts.length; i += 2) {
       const x0 = pts[i - 2];
@@ -1213,7 +1193,7 @@ export class Renderer {
         const fade = 1 - Math.min(1, (total + acc) / 900);
         ctx.globalAlpha = 0.25 + 0.65 * fade;
         ctx.beginPath();
-        ctx.arc(x0 + dx * t, y0 + dy * t, 2.4, 0, TAU);
+        ctx.arc(x0 + dx * t, y0 + dy * t, 1.35 + 1.35 * fade, 0, TAU);
         ctx.fill();
         acc += 13;
       }
@@ -1222,12 +1202,16 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     if (res.enemy) {
-      ctx.strokeStyle = '#ffe066';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(res.enemy.x, res.enemy.y, res.enemy.r + 6 + Math.sin(this.time * 10) * 2, 0, TAU);
-      ctx.stroke();
+      const { x, y, r } = res.enemy;
+      const radius = r + 8;
+      ctx.strokeStyle = '#ffe3a3'; ctx.lineWidth = 2.1;
+      for (let i = 0; i < 4; i++) {
+        const a = Math.PI / 4 + i * TAU / 4;
+        arc(ctx, x, y, radius, a - .25, a + .25); ctx.stroke();
+      }
+      arc(ctx, res.ex, res.ey, 3); ctx.fillStyle = '#fff4cd'; ctx.fill();
     }
+    ctx.restore();
   }
 
   /** Sentinel drones: a hovering diamond whose ring fills as the next shot charges. */
@@ -1250,55 +1234,39 @@ export class Renderer {
     const core = CORE_MAP[w.cfg.core];
     const ang = Math.atan2(w.aim.dy, w.aim.dx);
     const color = core.id === 'striker' ? '#9aeadb' : core.color;
+    const charged = w.isPowerWindow();
+    const recoil = this.reducedMotion?.matches ? 0 : this.launcherRecoil;
+    this.drawGlow(LAUNCHER_X, LAUNCHER_Y, 66, charged ? '#ffe3a3' : color, w.aim.active ? .54 : .27);
+    drawTurret(ctx, LAUNCHER_X, LAUNCHER_Y, ang, color, core.id,
+      recoil * (this.opts.reduceFlashes ? .45 : 1), charged, w.hand > 0);
     if (w.aim.active && w.hand > 0 && !w.aim.streamed) {
       const t = clamp(w.aim.holdTime / 1.15, 0, 1);
       const start = -Math.PI / 2;
-      ctx.lineWidth = 4; ctx.strokeStyle = '#ffe3a330';
-      ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 44, start + TAU * POWER_START / 1.15, start + TAU * POWER_END / 1.15); ctx.stroke();
-      ctx.strokeStyle = w.isPowerWindow() ? '#ffe3a3' : '#8debdc'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 44, start, start + TAU * t); ctx.stroke();
-      const a = start + TAU * t;
-      ctx.fillStyle = w.isPowerWindow() ? '#fff4d6' : '#8debdc';
-      ctx.beginPath(); ctx.arc(LAUNCHER_X + Math.cos(a) * 44, LAUNCHER_Y + Math.sin(a) * 44, 4, 0, TAU); ctx.fill();
+      const radius = 44;
+      const from = start + TAU * POWER_START / 1.15;
+      const to = start + TAU * POWER_END / 1.15;
+      const cursor = start + TAU * t;
+      arc(ctx, LAUNCHER_X, LAUNCHER_Y, radius);
+      ctx.strokeStyle = '#040a16'; ctx.lineWidth = 6; ctx.stroke();
+      ctx.strokeStyle = color + '42'; ctx.lineWidth = 1; ctx.stroke();
+      arc(ctx, LAUNCHER_X, LAUNCHER_Y, radius, from, to);
+      ctx.strokeStyle = charged ? '#ffe3a3' : '#bc976b'; ctx.lineWidth = 6; ctx.stroke();
+      arc(ctx, LAUNCHER_X, LAUNCHER_Y, radius, start, cursor);
+      ctx.strokeStyle = charged ? '#fff3ce' : color; ctx.lineWidth = 2; ctx.stroke();
+      const x = LAUNCHER_X + Math.cos(cursor) * radius;
+      const y = LAUNCHER_Y + Math.sin(cursor) * radius;
+      arc(ctx, x, y, 3.5); ctx.fillStyle = '#efffff'; ctx.fill();
     }
-    this.drawGlow(LAUNCHER_X, LAUNCHER_Y, 58, color, w.aim.active ? .65 : .3);
-    ctx.strokeStyle = color + '40'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 36, 0, TAU); ctx.stroke();
-    for (let i = 0; i < 8; i++) {
-      const a = i * TAU / 8 + this.time * .15;
-      ctx.strokeStyle = color + (w.aim.active ? 'bb' : '66'); ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 30, a, a + .35); ctx.stroke();
-    }
-    ctx.save();
-    ctx.translate(LAUNCHER_X, LAUNCHER_Y);
-    ctx.rotate(ang);
-    ctx.translate(-this.launcherRecoil * 7, 0);
-    ctx.fillStyle = '#08131e'; ctx.strokeStyle = '#50707c'; ctx.lineWidth = 1.5;
-    roundRect(ctx, 2, -10, 34, 20, 4); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = color; ctx.fillRect(28, -8, 6, 16);
-    ctx.fillStyle = '#dbfff1'; ctx.fillRect(10, -2, 18, 4);
-    ctx.restore();
-    const dome = ctx.createRadialGradient(LAUNCHER_X - 6, LAUNCHER_Y - 8, 1, LAUNCHER_X, LAUNCHER_Y, 22);
-    dome.addColorStop(0, '#47616d'); dome.addColorStop(.6, '#203646'); dome.addColorStop(1, '#0a1422');
-    ctx.fillStyle = dome;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(LAUNCHER_X, LAUNCHER_Y, 20, 0, TAU);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(LAUNCHER_X, LAUNCHER_Y, 7 + (w.aim.active ? Math.sin(this.time * 5) : 0), 0, TAU); ctx.fill();
-    ctx.fillStyle = '#ecfff7';
-    ctx.beginPath(); ctx.arc(LAUNCHER_X - 2, LAUNCHER_Y - 2, 3, 0, TAU); ctx.fill();
     // balls in hand
     const total = w.maxBallsAllowed();
     for (let i = 0; i < total; i++) {
       const x = LAUNCHER_X - ((total - 1) * 12) / 2 + i * 12;
-      ctx.fillStyle = i < w.hand ? '#ffffff' : 'rgba(255,255,255,0.18)';
-      ctx.beginPath();
-      ctx.arc(x, LAUNCHER_Y + 34, 4, 0, TAU);
-      ctx.fill();
+      const y = LAUNCHER_Y + 37;
+      ctx.fillStyle = i < w.hand ? '#edffff' : '#162434';
+      ctx.strokeStyle = i < w.hand ? color : '#607383';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 4, y);
+      ctx.lineTo(x, y + 4); ctx.lineTo(x - 4, y); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
   }
 
@@ -1331,14 +1299,14 @@ export class Renderer {
         }
         ctx.closePath(); ctx.fill();
       };
-      ctx.fillStyle = main; ctx.globalAlpha = .12;
-      ribbon(b.r * 1.8);
+      ctx.fillStyle = main; ctx.globalAlpha = .14;
+      ribbon(b.r * (b.kind === 'main' ? 2.05 : 1.4));
       const trail = ctx.createLinearGradient(tr[0], tr[1], b.x, b.y);
       trail.addColorStop(0, main + '00'); trail.addColorStop(.5, main + 'a0'); trail.addColorStop(1, c0);
       ctx.fillStyle = trail; ctx.globalAlpha = b.kind === 'main' ? .85 : .5;
       ribbon(b.r * (railgun ? .4 : .8));
-      ctx.fillStyle = '#efffff'; ctx.globalAlpha = .65;
-      ribbon(b.r * .22);
+      ctx.fillStyle = '#efffff'; ctx.globalAlpha = .77;
+      ribbon(b.r * .24);
       ctx.globalAlpha = 1;
     }
     const r = b.r * (1 + b.pulse * 0.25);
@@ -1348,13 +1316,20 @@ export class Renderer {
     ctx.arc(b.x, b.y, r + 1.5, 0, TAU);
     ctx.fill();
     const sprite = coreSprite(b.kind === 'main' ? w.cfg.core : 'striker', main);
-    ctx.drawImage(sprite, b.x - r * 1.09, b.y - r * 1.09, r * 2.18, r * 2.18);
-    ctx.strokeStyle = '#ffffffa0'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r * .82, Math.PI, Math.PI * 1.65); ctx.stroke();
+    const half = r * 1.09;
+    ctx.save(); ctx.translate(b.x, b.y);
+    if (!this.reducedMotion?.matches) ctx.rotate(this.time * (2.2 + tier * .65) + b.id);
+    ctx.drawImage(sprite, -half, -half, half * 2, half * 2);
+    ctx.restore();
+    ctx.strokeStyle = '#edffff'; ctx.lineWidth = b.kind === 'main' ? 1.2 : .75;
+    arc(ctx, b.x, b.y, r * .97, 3.15, 5.38); ctx.stroke();
     if (tier > 0 || b.powered) {
       ctx.strokeStyle = main; ctx.lineWidth = 1.5;
-      const spin = this.time * (2 + tier);
-      ctx.beginPath(); ctx.arc(b.x, b.y, r + 4, spin, spin + Math.PI * 1.25); ctx.stroke();
+      const spin = this.reducedMotion?.matches ? 0 : this.time * (2 + tier);
+      for (let i = 0; i <= tier; i++) {
+        const a = spin + i * TAU / (tier + 1);
+        arc(ctx, b.x, b.y, r + 3.5, a, a + TAU / (tier + 1) * .7); ctx.stroke();
+      }
     }
     if (tier >= 3 && this.emits(30)) this.particles.spawn(b.x, b.y, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, 0.3, 3, tierColor, 2);
     if (evo === 'inferno' && this.emits(36)) this.particles.spawn(b.x, b.y, (Math.random() - 0.5) * 50, -40, 0.35, 4, Math.random() < 0.5 ? '#ff6a2a' : '#ffd166', 2);
