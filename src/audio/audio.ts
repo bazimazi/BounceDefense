@@ -21,6 +21,7 @@ export class AudioEngine {
   private musicTimer: number | null = null;
   private nextNote = 0;
   private step = 0;
+  private musicFilter!: BiquadFilterNode;
 
   unlock(): void {
     if (this.ctx) {
@@ -33,14 +34,36 @@ export class AudioEngine {
     const ctx = new AC();
     this.ctx = ctx;
     this.comp = ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -14;
-    this.comp.ratio.value = 6;
+    this.comp.threshold.value = -18;
+    this.comp.knee.value = 16;
+    this.comp.ratio.value = 5;
+    this.comp.attack.value = .004;
+    this.comp.release.value = .18;
     this.master = ctx.createGain();
     this.master.gain.value = 0.9;
     this.sfxBus = ctx.createGain();
     this.musicBus = ctx.createGain();
-    this.sfxBus.connect(this.comp);
-    this.musicBus.connect(this.comp);
+    this.sfxBus.gain.value = this.musicBus.gain.value = 0;
+    const rumbleCut = ctx.createBiquadFilter();
+    rumbleCut.type = 'highpass'; rumbleCut.frequency.value = 32; rumbleCut.Q.value = .5;
+    this.sfxBus.connect(rumbleCut); rumbleCut.connect(this.comp);
+    this.musicFilter = ctx.createBiquadFilter();
+    this.musicFilter.type = 'lowpass'; this.musicFilter.frequency.value = 3200; this.musicFilter.Q.value = .5;
+    this.musicBus.connect(this.musicFilter); this.musicFilter.connect(this.comp);
+    // A short stereo room adds depth without blurring the attack of rapid impacts.
+    const room = ctx.createConvolver();
+    const impulse = ctx.createBuffer(2, Math.ceil(ctx.sampleRate * .72), ctx.sampleRate);
+    for (let channel = 0; channel < 2; channel++) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3.5) * .4;
+    }
+    room.buffer = impulse;
+    const roomTone = ctx.createBiquadFilter(); roomTone.type = 'lowpass'; roomTone.frequency.value = 3600;
+    const sfxSend = ctx.createGain(); sfxSend.gain.value = .13;
+    const musicSend = ctx.createGain(); musicSend.gain.value = .28;
+    rumbleCut.connect(sfxSend); sfxSend.connect(room);
+    this.musicFilter.connect(musicSend); musicSend.connect(room);
+    room.connect(roomTone); roomTone.connect(this.comp);
     this.comp.connect(this.master);
     this.master.connect(ctx.destination);
     const len = ctx.sampleRate;
@@ -62,19 +85,21 @@ export class AudioEngine {
     this.sfxVolume = sfx;
     this.musicVolume = music;
     if (!this.ctx) return;
-    this.sfxBus.gain.value = sfx;
-    this.musicBus.gain.value = music * 0.5;
+    const now = this.ctx.currentTime;
+    this.sfxBus.gain.setTargetAtTime(sfx, now, .025);
+    this.musicBus.gain.setTargetAtTime(music * 0.5, now, .04);
   }
 
-  private voice(dur: number): boolean {
+  private voice(dur: number, important = false): boolean {
     const now = this.ctx!.currentTime;
     this.voiceEnds = this.voiceEnds.filter((t) => t > now);
-    if (this.voiceEnds.length > 26) return false;
+    if (this.voiceEnds.length >= (important ? 32 : 26)) return false;
     this.voiceEnds.push(now + dur);
     return true;
   }
 
-  private tone(wave: Wave, f0: number, f1: number, dur: number, vol: number, delay = 0, bus?: AudioNode): void {
+  private tone(wave: Wave, f0: number, f1: number, dur: number, vol: number, delay = 0, bus?: AudioNode, pan = 0): void {
+    if (vol <= 0) return;
     const ctx = this.ctx!;
     const t = ctx.currentTime + delay;
     const o = ctx.createOscillator();
@@ -86,16 +111,22 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g);
-    g.connect(bus ?? this.sfxBus);
+    const destination = bus ?? this.sfxBus;
+    const stereo = pan ? ctx.createStereoPanner() : null;
+    if (stereo) { stereo.pan.value = pan; g.connect(stereo); stereo.connect(destination); }
+    else g.connect(destination);
+    o.onended = () => { o.disconnect(); g.disconnect(); stereo?.disconnect(); };
     o.start(t);
     o.stop(t + dur + 0.02);
   }
 
   private hiss(dur: number, vol: number, type: BiquadFilterType, f0: number, f1: number, delay = 0, bus?: AudioNode): void {
+    if (vol <= 0) return;
     const ctx = this.ctx!;
     const t = ctx.currentTime + delay;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
+    src.loop = true;
     src.playbackRate.value = 0.8 + Math.random() * 0.4;
     const f = ctx.createBiquadFilter();
     f.type = type;
@@ -107,27 +138,50 @@ export class AudioEngine {
     src.connect(f);
     f.connect(g);
     g.connect(bus ?? this.sfxBus);
+    src.onended = () => { src.disconnect(); f.disconnect(); g.disconnect(); };
     src.start(t, Math.random() * 0.5);
     src.stop(t + dur + 0.02);
   }
 
+  /** A struck resonator: a soft fundamental and a short, slightly inharmonic overtone. */
+  private chime(f: number, dur: number, vol: number, delay = 0, bus?: AudioNode, pan = 0): void {
+    this.tone('sine', f, f * .998, dur, vol, delay, bus, pan);
+    this.tone('sine', f * 2.005, f * 2, dur * .43, vol * .27, delay, bus, -pan);
+    this.tone('sine', f * 3.98, f * 4, dur * .16, vol * .08, delay, bus, pan);
+  }
+
+  private pad(f: number, dur: number, delay: number, pan: number): void {
+    const ctx = this.ctx!, t = ctx.currentTime + delay;
+    const gain = ctx.createGain(); const filter = ctx.createBiquadFilter();
+    const stereo = ctx.createStereoPanner(); stereo.pan.value = pan;
+    filter.type = 'lowpass'; filter.frequency.value = 900 + this.intensity * 900;
+    gain.gain.setValueAtTime(.0001, t); gain.gain.linearRampToValueAtTime(.055, t + .25);
+    gain.gain.setTargetAtTime(.0001, t + dur * .65, dur * .12);
+    filter.connect(gain); gain.connect(stereo); stereo.connect(this.musicBus);
+    for (const detune of [-5, 5]) {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = detune;
+      o.connect(filter); o.start(t); o.stop(t + dur + .2);
+      o.onended = () => { o.disconnect(); if (detune === 5) { filter.disconnect(); gain.disconnect(); stereo.disconnect(); } };
+    }
+  }
+
   play(name: string, pitch = 1, vol = 1): void {
     const ctx = this.ctx;
-    if (!ctx || this.sfxVolume <= 0) return;
+    if (!ctx || this.sfxVolume <= 0 || vol <= 0) return;
     const now = ctx.currentTime;
     const minGap = name === 'hit' || name === 'wall' || name === 'pickup' ? 0.022 : 0.045;
-    if ((this.last[name] ?? 0) + minGap > now) return;
+    if ((this.last[name] ?? -Infinity) + minGap > now) return;
+    const important = ['hurt', 'boss', 'warning', 'victory', 'defeat', 'levelup', 'evolve', 'relic', 'select', 'click'].includes(name);
+    if (!this.voice(important ? 1.5 : .35, important)) return;
     this.last[name] = now;
     const p = pitch * (0.97 + Math.random() * 0.06);
     const v = vol;
     switch (name) {
       case 'resonate':
-        if (!this.voice(.3)) return;
-        this.tone('sine', 660 * p, 660 * p, .25, .18 * v);
-        this.tone('triangle', 1320 * p, 1320 * p, .16, .07 * v, .04);
+        this.chime(660 * p, .38, .17 * v);
+        this.chime(990 * p, .24, .05 * v, .045);
         break;
       case 'power':
-        if (!this.voice(.2)) return;
         this.tone('triangle', 220, 880, .16, .2 * v);
         this.hiss(.12, .12 * v, 'highpass', 800, 3200);
         break;
@@ -136,68 +190,62 @@ export class AudioEngine {
         this.tone('triangle', 880, 440, .24, .08 * v, .03);
         break;
       case 'starfall':
-        if (!this.voice(.8)) return;
         [330, 494, 659, 988, 1318].forEach((f, i) => this.tone('sine', f, f * 1.005, .5, .12 * v, i * .055));
         this.hiss(.65, .2 * v, 'bandpass', 3200, 240);
         this.tone('sine', 100, 40, .7, .25 * v);
         break;
       case 'hit':
-        if (!this.voice(0.08)) return;
-        this.tone('triangle', 520 * p, 240 * p, 0.07, 0.22 * v);
-        this.hiss(0.03, 0.08 * v, 'highpass', 3000, 2000);
+        this.tone('sine', 240 * p, 95 * p, .065, .2 * v);
+        this.chime(740 * p, .09, .09 * v);
+        this.hiss(.018, .065 * v, 'bandpass', 2600, 1600);
         break;
       case 'crit':
-        if (!this.voice(0.14)) return;
-        this.tone('square', 900 * p, 420 * p, 0.1, 0.16 * v);
-        this.tone('triangle', 1500 * p, 1400 * p, 0.08, 0.12 * v, 0.02);
+        this.tone('triangle', 450 * p, 110 * p, .12, .19 * v);
+        this.chime(1480 * p, .18, .13 * v, .008);
         this.hiss(0.06, 0.12 * v, 'bandpass', 2500, 1200);
         break;
       case 'wall':
-        if (!this.voice(0.04)) return;
-        this.tone('sine', 820 * p, 700 * p, 0.035, 0.08 * v);
+        this.chime(880 * p, .075, .065 * v);
         break;
       case 'bumper':
-        if (!this.voice(0.14)) return;
-        this.tone('sine', 480 * p, 1100 * p, 0.12, 0.2 * v);
+        this.tone('sine', 230 * p, 740 * p, .085, .16 * v);
+        this.chime(1175 * p, .26, .14 * v, .012);
         break;
       case 'explode':
-        if (!this.voice(0.45)) return;
-        this.hiss(0.45, 0.5 * v, 'lowpass', 1400, 120);
-        this.tone('sine', 110, 38, 0.35, 0.45 * v);
+        this.hiss(.36, .34 * v, 'lowpass', 1800, 110);
+        this.hiss(.05, .17 * v, 'bandpass', 2800, 800);
+        this.tone('sine', 135, 38, .4, .4 * v);
+        this.tone('triangle', 75, 45, .22, .12 * v, .025);
         break;
       case 'zap':
-        if (!this.voice(0.1)) return;
         this.tone('sawtooth', 1900 * p, 700 * p, 0.08, 0.08 * v);
         this.hiss(0.08, 0.12 * v, 'highpass', 4000, 2500);
         break;
       case 'kill':
-        if (!this.voice(0.1)) return;
-        this.tone('triangle', 520 * p, 1300 * p, 0.08, 0.16 * v);
+        this.chime(660 * p, .13, .11 * v);
+        this.hiss(.055, .06 * v, 'bandpass', 1800, 420);
         break;
       case 'bigkill':
-        if (!this.voice(0.4)) return;
         this.tone('triangle', 300 * p, 1200 * p, 0.2, 0.25 * v);
         this.hiss(0.35, 0.3 * v, 'lowpass', 2000, 200);
         break;
       case 'levelup':
-        [523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.12, 0.18, i * 0.07));
+        [523, 659, 784, 1046].forEach((f, i) => this.chime(f, .42, .13 * v, i * .075));
         break;
       case 'pickup':
-        if (!this.voice(0.05)) return;
-        this.tone('sine', 1100 * p, 1400 * p, 0.04, 0.05 * v);
+        this.chime(1320 * p, .085, .045 * v);
         break;
       case 'coin':
-        this.tone('square', 1500, 2100, 0.05, 0.05 * v);
+        this.chime(1760 * p, .13, .06 * v);
         break;
       case 'core':
-        [880, 1320, 1760].forEach((f, i) => this.tone('triangle', f, f, 0.1, 0.15, i * 0.05));
+        [880, 1320, 1760].forEach((f, i) => this.chime(f, .32, .12 * v, i * .06));
         break;
       case 'hurt':
         this.tone('sine', 160, 50, 0.3, 0.5);
         this.hiss(0.25, 0.3, 'lowpass', 900, 100);
         break;
       case 'shield':
-        if (!this.voice(0.1)) return;
         this.tone('square', 310 * p, 290 * p, 0.08, 0.08 * v);
         this.tone('square', 467 * p, 440 * p, 0.08, 0.06 * v);
         break;
@@ -206,12 +254,11 @@ export class AudioEngine {
         this.tone('square', 600, 150, 0.2, 0.1);
         break;
       case 'launch':
-        if (!this.voice(0.07)) return;
-        this.tone('sine', 280, 620, 0.06, 0.12);
+        this.tone('sine', 170 * p, 530 * p, .075, .17 * v);
+        this.hiss(.055, .08 * v, 'bandpass', 900, 3400);
         break;
       case 'freeze':
-        this.tone('sine', 2400, 1500, 0.15, 0.08 * v);
-        this.tone('sine', 3100, 2200, 0.12, 0.05 * v, 0.03);
+        [1760, 2349, 3136].forEach((f, i) => this.chime(f, .22, .055 * v, i * .025));
         break;
       case 'shatter':
         this.hiss(0.2, 0.3, 'highpass', 5000, 2000);
@@ -233,21 +280,22 @@ export class AudioEngine {
         this.hiss(0.6, 0.15, 'lowpass', 300, 1200);
         break;
       case 'boss':
-        this.tone('sawtooth', 55, 45, 1.2, 0.25);
-        this.tone('sawtooth', 82, 70, 1.2, 0.15);
-        this.hiss(1.0, 0.2, 'lowpass', 400, 80);
+        this.tone('triangle', 73.4, 55, 1.2, .24 * v);
+        this.tone('triangle', 110, 82.4, 1.1, .15 * v, .06);
+        this.tone('sine', 55, 36.7, 1.3, .26 * v);
+        this.hiss(.9, .15 * v, 'lowpass', 600, 80);
         break;
       case 'warning':
         [0, 0.3, 0.6].forEach((d) => {
-          this.tone('square', 440, 440, 0.14, 0.1, d);
-          this.tone('square', 330, 330, 0.14, 0.1, d + 0.15);
+          this.tone('triangle', 440, 440, .14, .13 * v, d);
+          this.tone('sine', 330, 330, .14, .1 * v, d + .15);
         });
         break;
       case 'event':
         [392, 523, 659].forEach((f, i) => this.tone('square', f, f, 0.1, 0.07, i * 0.06));
         break;
       case 'synergy':
-        [523, 659, 784, 988].forEach((f, i) => this.tone('triangle', f, f * 1.01, 0.2, 0.16, i * 0.06));
+        [523, 659, 784, 988].forEach((f, i) => this.chime(f, .46, .14 * v, i * .065));
         break;
       case 'evolve':
         [262, 330, 392, 523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.3, 0.18, i * 0.06));
@@ -265,7 +313,8 @@ export class AudioEngine {
         this.hiss(0.5, 0.3, 'bandpass', 500, 3000);
         break;
       case 'victory':
-        [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.2, i * 0.11));
+        [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.chime(f, .65, .16 * v, i * .12));
+        [262, 330, 392].forEach(f => this.tone('triangle', f, f, 1.1, .07 * v, .35));
         break;
       case 'defeat':
         [392, 330, 262, 196].forEach((f, i) => this.tone('triangle', f, f * 0.98, 0.3, 0.2, i * 0.18));
@@ -284,10 +333,12 @@ export class AudioEngine {
         this.tone('sawtooth', 150, 300, 0.3, 0.12);
         break;
       case 'click':
-        this.tone('sine', 900, 700, 0.03, 0.1);
+        this.tone('sine', 1200, 800, .025, .065 * v);
+        this.hiss(.012, .025 * v, 'highpass', 4000, 2200);
         break;
       case 'select':
-        this.tone('triangle', 660, 990, 0.1, 0.15);
+        this.chime(660, .16, .1 * v);
+        this.chime(990, .22, .085 * v, .045);
         break;
       case 'poison':
         this.hiss(0.35, 0.22 * v, 'bandpass', 900, 300);
@@ -328,28 +379,43 @@ export class AudioEngine {
     if (!ctx || this.musicVolume <= 0) return;
     const bpm = this.boss ? 138 : 118 + this.intensity * 12;
     const sixteenth = 60 / bpm / 4;
-    // A minor pentatonic bass line, shifts up during bosses for tension
-    const root = this.boss ? 49 : 55;
-    const bassPat = [0, 0, 7, 0, 10, 0, 7, 5, 0, 0, 7, 0, 12, 10, 7, 5];
-    const lead = [12, 15, 17, 19, 22, 19, 17, 15];
+    const energy = Math.max(0, Math.min(1, this.intensity));
+    this.musicFilter.frequency.setTargetAtTime(1800 + energy * 3600 + (this.boss ? 1200 : 0), ctx.currentTime, .3);
+    // Am / Dm / C / G: two bars per harmony, with an eight-bar melodic answer.
+    const progression = [0, -5, 3, -2];
+    const bassPat = [0, 0, 12, 0, 7, 0, 0, 12, 0, 0, 7, 0, 12, 0, 7, 0];
+    const melody = [12, 7, 14, 15, 19, 14, 7, 10, 12, 19, 15, 14, 7, 10, 7, 0];
     // Background tabs throttle the timer; skip missed notes instead of playing them all at once.
     if (this.nextNote < ctx.currentTime) this.nextNote = ctx.currentTime + 0.05;
     while (this.nextNote < ctx.currentTime + 0.2) {
       const s = this.step % 16;
       const d = this.nextNote - ctx.currentTime;
       const bus = this.musicBus;
-      if (s % 4 === 0) {
-        this.tone('sine', 140, 42, 0.18, 0.5, d, bus); // kick
+      const chord = Math.floor(this.step / 32) % 4;
+      const root = (this.boss ? 49 : 55) * Math.pow(2, progression[chord] / 12);
+      if (this.step % 32 === 0) {
+        const third = chord < 2 ? 3 : 4;
+        [0, third, 7, 14].forEach((note, i) => this.pad(root * 4 * Math.pow(2, note / 12), sixteenth * 32, d, (i - 1.5) * .32));
       }
-      if (s % 2 === 0) {
+      if (s === 0 || s === 8 || (energy > .45 && (s === 6 || s === 14))) {
+        this.tone('sine', 155, 43, .2, .38, d, bus);
+        this.hiss(.017, .045, 'lowpass', 1800, 600, d, bus);
+      }
+      if (s % 2 === 0 || (this.boss && s === 15)) {
         const f = root * Math.pow(2, bassPat[s] / 12);
-        this.tone('triangle', f, f, sixteenth * 1.8, 0.16, d, bus);
+        this.tone('triangle', f, f * .997, sixteenth * 1.7, .17, d, bus);
+        this.tone('sine', f / 2, f / 2, sixteenth * 1.4, .1, d, bus);
       }
-      if (this.intensity > 0.25 && s % 2 === 1) this.hiss(0.04, 0.05, 'highpass', 8000, 6000, d, bus);
-      if (this.intensity > 0.5 && (s === 4 || s === 12)) this.hiss(0.12, 0.14, 'bandpass', 1800, 900, d, bus); // snare
-      if ((this.intensity > 0.7 || this.boss) && s % 2 === 0) {
-        const f = root * 4 * Math.pow(2, lead[(this.step / 2) % lead.length | 0] / 12);
-        this.tone('square', f, f, sixteenth * 1.5, 0.035, d, bus);
+      if (energy > .2 && s % 2 === 1) this.hiss(s === 15 ? .1 : .035, s % 4 === 3 ? .045 : .025, 'highpass', 7800, 5500, d, bus);
+      if ((energy > .4 || this.boss) && (s === 4 || s === 12)) {
+        this.hiss(.11, .1, 'bandpass', 1900, 1000, d, bus);
+        this.tone('triangle', 185, 115, .09, .075, d, bus);
+      }
+      if (s % 4 === 2 || ((energy > .7 || this.boss) && s % 4 === 0)) {
+        let note = melody[Math.floor(this.step / 2) % melody.length];
+        if (chord >= 2 && note % 12 === 3) note++;
+        const f = root * 4 * Math.pow(2, note / 12);
+        this.chime(f, sixteenth * 2.8, .045 + energy * .025, d, bus, s % 4 ? -.35 : .35);
       }
       this.nextNote += sixteenth;
       this.step++;

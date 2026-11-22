@@ -15,6 +15,19 @@ export class Particles {
   drag: Float32Array;
   grav: Float32Array;
   color: string[];
+  private sprites = new Map<string, HTMLCanvasElement>();
+
+  private sprite(color: string): HTMLCanvasElement {
+    const cached = this.sprites.get(color);
+    if (cached) return cached;
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 24;
+    const c = canvas.getContext('2d')!;
+    const light = c.createRadialGradient(12, 12, 0, 12, 12, 12);
+    light.addColorStop(0, '#f3ffff'); light.addColorStop(.15, color);
+    light.addColorStop(.4, color + '80'); light.addColorStop(1, color + '00');
+    c.fillStyle = light; c.fillRect(0, 0, 24, 24);
+    this.sprites.set(color, canvas); return canvas;
+  }
 
   constructor(cap = 1200) {
     this.cap = cap;
@@ -85,6 +98,7 @@ export class Particles {
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < this.n; i++) {
       const t = this.life[i] / this.max[i];
@@ -101,11 +115,8 @@ export class Particles {
         ctx.moveTo(this.x[i], this.y[i]);
         ctx.lineTo(this.x[i] - this.vx[i] / speed * stretch, this.y[i] - this.vy[i] / speed * stretch);
         ctx.stroke();
-      } else {
-        ctx.fillRect(this.x[i] - s / 2, this.y[i] - s / 2, s, s);
-      }
+      } else ctx.drawImage(this.sprite(this.color[i]), this.x[i] - s * 1.5, this.y[i] - s * 1.5, s * 3, s * 3);
     }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
   }
 }

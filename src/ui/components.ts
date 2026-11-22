@@ -2,6 +2,10 @@ import { formatNum } from '../core/math';
 import { localizeDigits, t } from '../i18n';
 import { h } from './dom';
 import { CURRENCY_ICON, icon, type Currency, type IconName } from './icons';
+import { CORES } from '../data/balls';
+import { coreSprite } from '../render/cores';
+
+const portraits = new Map<string, string>();
 
 /** An amount with its currency glyph: `[coin] 1.2K`. */
 export function amount(currency: Currency, n: number, cls = ''): HTMLElement {
@@ -40,7 +44,16 @@ export function iconButton(name: IconName, label: string, onclick: (e: MouseEven
 
 /** A glossy sphere tinted by a core's color: the ball, as the player will see it. */
 export function orb(color: string, cls = ''): HTMLElement {
-  return h('span', { class: `orb ${cls}`.trim(), style: `--orb:${color}`, 'aria-hidden': 'true' });
+  const el = h('span', { class: `orb ${cls}`.trim(), style: `--orb:${color}`, 'aria-hidden': 'true' });
+  if (!cls.split(' ').includes('enemy')) {
+    let src = portraits.get(color);
+    if (!src) {
+      src = coreSprite(CORES.find(c => c.color === color)?.id ?? 'striker', color).toDataURL();
+      portraits.set(color, src);
+    }
+    el.append(h('img', { src, width: 192, height: 192, class: 'core-art', alt: '', draggable: false }));
+  }
+  return el;
 }
 
 /** Numbers in effect text carry the information; they are set bold so a card scans at a glance. */

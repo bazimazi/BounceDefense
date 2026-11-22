@@ -1,6 +1,7 @@
 import { TAU } from '../core/math';
 import { DEFENSE_Y, FIELD_TOP, FLOOR_Y, H, W } from '../sim/types';
 import type { ArenaDef } from '../data/types';
+import { drawScenery } from './scenery';
 
 /** Static arena architecture is baked once, keeping the live effects inexpensive. */
 export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
@@ -15,7 +16,7 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, W, H);
   const light = ctx.createRadialGradient(W / 2, 310, 10, W / 2, 380, 510);
-  light.addColorStop(0, accent + '15');
+  light.addColorStop(0, accent + '08');
   light.addColorStop(1, '#00000070');
   ctx.fillStyle = light;
   ctx.fillRect(0, FIELD_TOP, W, FLOOR_Y - FIELD_TOP);
@@ -34,9 +35,9 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
       ctx.closePath();
-      ctx.strokeStyle = accent + '0c';
+      ctx.strokeStyle = accent + '07';
       ctx.stroke();
-      ctx.fillStyle = accent + '20';
+      ctx.fillStyle = accent + '12';
       ctx.fillRect(x - 1, y - 1, 2, 2);
     }
   }
@@ -103,6 +104,8 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
   }
   ctx.restore();
 
+  drawScenery(ctx, arena);
+
   // A navigational star chart under the floor gives the reactor a sense of scale.
   ctx.save();
   ctx.beginPath(); ctx.rect(14, FIELD_TOP, W - 28, DEFENSE_Y - FIELD_TOP); ctx.clip();
@@ -114,14 +117,21 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
     if (i % 7 === 0) ctx.fillRect(x + .5, y - 1, 1, 3);
   }
   ctx.strokeStyle = '#aaa8ff0d'; ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 2; i++) {
     ctx.beginPath(); ctx.ellipse(270, 395, 105 + i * 39, 155 + i * 49, -.3, 0, TAU); ctx.stroke();
   }
   ctx.restore();
 
+  const vignette = ctx.createRadialGradient(W / 2, 410, 100, W / 2, 420, 420);
+  vignette.addColorStop(0, '#02081100'); vignette.addColorStop(1, '#02081188');
+  ctx.fillStyle = vignette; ctx.fillRect(0, FIELD_TOP, W, DEFENSE_Y - FIELD_TOP);
+
   // Armored side rails and inset luminous strips frame the collision boundary.
   for (const x of [0, W - 12]) {
     ctx.fillStyle = '#060d18'; ctx.fillRect(x, FIELD_TOP, 12, FLOOR_Y - FIELD_TOP);
+    const metal = ctx.createLinearGradient(x, 0, x + 12, 0);
+    metal.addColorStop(0, '#030913'); metal.addColorStop(.5, '#324753'); metal.addColorStop(1, '#060e19');
+    ctx.fillStyle = metal; ctx.fillRect(x, FIELD_TOP, 12, FLOOR_Y - FIELD_TOP);
     ctx.fillStyle = wall + '70'; ctx.fillRect(x === 0 ? 2 : W - 4, FIELD_TOP, 2, FLOOR_Y - FIELD_TOP);
     for (let y = FIELD_TOP + 18; y < FLOOR_Y; y += 54) {
       ctx.fillStyle = '#243647'; ctx.fillRect(x + 3, y, 6, 27);
@@ -159,11 +169,20 @@ export function drawArenaAtmosphere(ctx: CanvasRenderingContext2D, arena: ArenaD
   }
   // Deterministic drifting motes: visual time never enters simulation state.
   for (let i = 0; i < 25; i++) {
-    const x = 20 + ((i * 137.51 + Math.sin(time * .2 + i) * 14) % 500 + 500) % 500;
-    const y = FIELD_TOP + ((i * 71.3 - time * (4 + i % 5)) % 690 + 690) % 690;
+    let x = 20 + ((i * 137.51 + Math.sin(time * .2 + i) * 14) % 500 + 500) % 500;
+    let y = FIELD_TOP + ((i * 71.3 - time * (4 + i % 5)) % 690 + 690) % 690;
+    if (arena.id === 'rift' || arena.id === 'spire') {
+      const a = i * 2.4 + time * (arena.id === 'rift' ? -.07 : .035);
+      const r = 75 + i * 8;
+      x = W / 2 + Math.cos(a) * r; y = 420 + Math.sin(a) * r * 1.15;
+    }
     ctx.globalAlpha = .12 + (1 + Math.sin(time + i * 2)) * .1;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, i % 3 === 0 ? 2 : 1, i % 3 === 0 ? 2 : 1);
+    ctx.fillStyle = arena.id === 'foundry' && i % 3 === 0 ? '#ffd291' : color;
+    if (arena.id === 'foundry') {
+      ctx.fillRect(x, y, 1.2, 3 + i % 3);
+    } else if (arena.id === 'blight') {
+      ctx.beginPath(); ctx.ellipse(x, y, 1.5 + i % 2, 1, i + time * .1, 0, TAU); ctx.fill();
+    } else ctx.fillRect(x, y, i % 3 === 0 ? 2 : 1, i % 3 === 0 ? 2 : 1);
   }
   const scanY = FIELD_TOP + (time * 23) % (DEFENSE_Y - FIELD_TOP);
   const scan = ctx.createLinearGradient(0, scanY - 60, 0, scanY);

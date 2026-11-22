@@ -7,6 +7,7 @@ const ease = 'cubic-bezier(.22, .8, .25, 1)';
 const active = new Set<Animation>();
 const byElement = new WeakMap<HTMLElement, Animation>();
 const ghosts = new Set<HTMLElement>();
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let layer: HTMLElement | null = null;
 
 export function cancelWithin(el: HTMLElement | null): void {
@@ -20,6 +21,7 @@ export function cancelWithin(el: HTMLElement | null): void {
 function play(el: HTMLElement, frames: Keyframe[], duration: number, id: string, delay = 0, done?: () => void): void {
   byElement.get(el)?.cancel();
   if (!el.isConnected) { done?.(); return; }
+  if (reducedMotion()) { done?.(); return; }
   const animation = el.animate(frames, { duration, delay, easing: ease, fill: 'backwards', id: `ui:${id}` });
   active.add(animation); byElement.set(el, animation);
   const clean = () => {
@@ -70,7 +72,7 @@ export function feedback(el: HTMLElement | null): void {
 
 /** Freeze a departing view outside #ui; it has no focus, input, IDs or live handlers. */
 export function retire(el: HTMLElement | null, kind: MotionKind = 'content', direction: MotionDirection = 1): void {
-  if (!el || !el.isConnected) return;
+  if (!el || !el.isConnected || reducedMotion()) return;
   const rect = el.getBoundingClientRect();
   if (!rect.width || !rect.height || getComputedStyle(el).visibility === 'hidden') return;
   if (!layer) {

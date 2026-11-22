@@ -147,10 +147,12 @@ button.big .icon { width: 22px; height: 22px; }
 .badge { position: absolute; top: -5px; inset-inline-end: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--red); color: #fff; font-size: 10px; font-weight: 900; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
 .badge.dot { min-width: 10px; width: 10px; height: 10px; padding: 0; top: -2px; inset-inline-end: -2px; }
 .orb {
-  display: inline-block; flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+  position: relative; display: inline-block; flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
   background: radial-gradient(circle at 32% 26%, #fff 0, #fff 5%, color-mix(in srgb, var(--orb) 55%, #fff) 20%, var(--orb) 46%, color-mix(in srgb, var(--orb) 45%, #061020) 76%, #050a14 100%);
   box-shadow: inset -4px -5px 10px #0008, 0 0 18px color-mix(in srgb, var(--orb) 40%, transparent);
 }
+.orb:has(.core-art) { background: none; box-shadow: 0 0 22px color-mix(in srgb, var(--orb) 25%, transparent); }
+.core-art { position: absolute; inset: -4.5%; width: 109%; height: 109%; object-fit: contain; pointer-events: none; }
 .orb.small { width: 34px; height: 34px; }
 .orb.tiny { width: 18px; height: 18px; box-shadow: inset -2px -2px 4px #0008, 0 0 8px color-mix(in srgb, var(--orb) 40%, transparent); }
 .rich .num { color: #fff; font-weight: 800; }
@@ -220,8 +222,22 @@ button.big .icon { width: 22px; height: 22px; }
 .battle { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 14px; overflow: hidden; }
 .battle-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding-bottom: 4vh; text-align: center; pointer-events: none; }
 /* A soft pool of shade behind the title keeps it legible over whatever the arena is doing. */
-.battle-stage { background: radial-gradient(ellipse min(240px, 46%) min(150px, 30%) at 50% calc(50% - 2vh), #070b16b0, #070b1600); }
-.title.logo { --logo-scale: 1; margin: 0; font-size: calc(var(--logo-scale) * clamp(34px, 10.5vw, 54px)); line-height: .9; font-weight: 950; letter-spacing: -1.5px; color: #f4fbff; text-shadow: 0 4px 30px #000b; }
+.battle-stage { position: relative; isolation: isolate; background: radial-gradient(ellipse min(240px, 46%) min(150px, 30%) at 50% calc(50% - 2vh), #070b16b0, #070b1600); }
+.battle-stage::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  width: min(72vw, 310px); aspect-ratio: 1; border-radius: 50%;
+  border: 1px solid #8ae9d524;
+  background: repeating-conic-gradient(from 0deg, #a0f7e330 0deg 1deg, transparent 1deg 15deg);
+  mask: radial-gradient(circle, transparent 64%, #000 65% 66%, transparent 67% 69%, #000 70%);
+  box-shadow: 0 0 65px #6de2ff10; animation: orbit-dial 90s linear infinite;
+}
+.battle-stage::after {
+  content: ''; position: absolute; z-index: -2; pointer-events: none;
+  width: min(85vw, 360px); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(ellipse at 40% 36%, #8affdf12, transparent 60%);
+  border: 1px solid #7ef0d20c; transform: rotate(-30deg) scaleY(.72);
+}
+.title.logo { --logo-scale: 1; margin: 0; font-size: calc(var(--logo-scale) * clamp(34px, 10.5vw, 54px)); line-height: .9; font-weight: 950; letter-spacing: -1.5px; color: #f4fbff; text-shadow: 0 2px 0 #9eb5c9, 0 5px 0 #183444, 0 9px 24px #000b; }
 .first-run .title.logo { font-size: calc(var(--logo-scale) * clamp(38px, 12.5vw, 64px)); }
 .title.logo span, html[lang='fa'] .title.logo { display: block; background: linear-gradient(100deg, #c2ffec, #6fe0d0 50%, #8fb6ff); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 20px #000a); }
 /* "توپاد" is one short word: larger, with room for the script's taller letterforms. */
@@ -255,6 +271,8 @@ html[lang='fa'] .title.logo { --logo-scale: 1.45; line-height: 1.3; padding-inli
 .play-row { display: flex; gap: 10px; align-items: stretch; }
 .play-btn { flex: 1; min-width: 0; min-height: 60px; gap: 10px; border-radius: 18px; }
 .play-btn .icon { width: 24px; height: 24px; }
+.launch-button { position: relative; overflow: hidden; isolation: isolate; }
+.launch-button::after { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 35%, #ffffff45 48%, transparent 61%); transform: translateX(-135%); animation: launch-sheen 6s ease-in-out 2s infinite; }
 .play-btn strong { font-size: 22px; font-weight: 950; letter-spacing: 1.5px; line-height: 1; }
 .daily-btn {
   position: relative; flex: 0 0 60px; flex-direction: column; gap: 3px; padding: 6px 2px; font-size: 10.5px; border-radius: 18px;
@@ -305,8 +323,8 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .core-showcase { text-align: center; padding: 2px 0 4px; }
 .core-stage { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; touch-action: pan-y; }
 .core-orb-wrap { position: relative; height: 150px; display: grid; place-items: center; }
-.core-orb-wrap::before { content: ''; position: absolute; width: 190px; height: 190px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--core) 28%, transparent), transparent 68%); }
-.core-orb-wrap::after { content: ''; position: absolute; width: 150px; height: 46px; bottom: 6px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--core) 40%, transparent); transform: perspective(200px) rotateX(60deg); }
+.core-orb-wrap::before { content: ''; position: absolute; width: 144px; height: 144px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--core) 22%, transparent), transparent 68%); border: 1px dashed color-mix(in srgb, var(--core) 22%, transparent); animation: orbit-dial 50s linear infinite; }
+.core-orb-wrap::after { content: ''; position: absolute; width: 150px; height: 46px; bottom: 6px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--core) 50%, transparent); background: radial-gradient(ellipse, color-mix(in srgb, var(--core) 18%, transparent), transparent 65%); box-shadow: 0 0 0 7px #ffffff03, 0 0 0 8px color-mix(in srgb, var(--core) 12%, transparent); transform: perspective(200px) rotateX(60deg); animation: core-platform 5s ease-in-out infinite; }
 .orb.core-orb { --orb: var(--core); position: relative; z-index: 1; width: 112px; height: 112px; animation: float 5s ease-in-out infinite; }
 .orb.locked { filter: grayscale(1) brightness(.4); }
 .orb-lock { position: absolute; z-index: 2; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #070b16cc; color: var(--text-2); }
@@ -691,6 +709,8 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .offer.epic::after, .offer.legendary::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 38%, #ffffff26 50%, transparent 62%); transform: translateX(-130%); animation: shine 2.6s ease-in-out .7s infinite; }
 .oicon { display: grid; place-items: center; width: 54px; height: 54px; flex: 0 0 54px; border-radius: 15px; font-size: 30px; line-height: 1; background: color-mix(in srgb, var(--rc) 13%, #0a1222); border: 1px solid color-mix(in srgb, var(--rc) 38%, transparent); }
 .oicon .icon { width: 28px; height: 28px; color: var(--rc); }
+.oicon { background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--rc) 22%, #182b41), #080f1e); box-shadow: inset 0 1px 0 #ffffff22, inset 0 -3px 7px #0005, 0 4px 12px #0005; }
+.offer.legendary .oicon, .offer.evolution .oicon { box-shadow: inset 0 1px 0 #ffffff33, 0 0 24px color-mix(in srgb, var(--rc) 22%, transparent); }
 .obody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ohead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .oname { font-size: 17px; font-weight: 900; color: #fff; line-height: 1.15; }
@@ -873,6 +893,9 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .ui-motion-layer { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: clip; }
 .ui-motion-layer *, [data-motion-ghost] { pointer-events: none !important; animation: none !important; transition: none !important; }
 @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes orbit-dial { to { rotate: 360deg; } }
+@keyframes core-platform { 0%, 100% { opacity: .8; scale: 1; } 50% { opacity: .45; scale: .92; } }
+@keyframes launch-sheen { 0%, 75% { transform: translateX(-135%); } 100% { transform: translateX(135%); } }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 @keyframes glow { 0%, 100% { box-shadow: 0 0 12px #ffcf4a55, 0 4px 0 #6b4300; } 50% { box-shadow: 0 0 30px #ffcf4aaa, 0 4px 0 #6b4300; } }
 @keyframes surge-ready { 0%, 100% { transform: scale(1); box-shadow: 0 0 14px #ffe06677, 0 4px 0 #0008; } 50% { transform: scale(1.07); box-shadow: 0 0 32px #ffe066dd, 0 4px 0 #0008; } }
@@ -895,7 +918,9 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 }
 .card:not(button), .chip, .tag { transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, opacity .18s ease; }
 @media (prefers-reduced-motion: reduce) {
-  .orb.core-orb, .victory-burst, .offer::after, .pips i.next, .offer.evolution { animation: none; }
+  .orb.core-orb, .victory-burst, .offer, .offer::after, .pips i.next, .offer.evolution,
+  .battle-stage::before, .core-orb-wrap::before, .core-orb-wrap::after, .launch-button::after { animation: none; }
+  .launch-button::after { opacity: 0; }
 }
 
 /* ------------------------------------------------------------- responsive */
@@ -914,6 +939,7 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 @media (max-height: 760px) {
   .arena-card { height: 92px; }
   .core-orb-wrap { height: 128px; }
+  .core-orb-wrap::before { width: 122px; height: 122px; }
   .orb.core-orb { width: 96px; height: 96px; }
 }
 @media (max-height: 640px) {
@@ -955,6 +981,7 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
   .first-run.battle { grid-template-columns: 1fr 1fr; }
   .armory, .forge-body, .goals-body, .codex-body { padding-bottom: 8px; }
   .core-orb-wrap { height: 100px; }
+  .core-orb-wrap::before { width: 96px; height: 96px; }
   .orb.core-orb { width: 76px; height: 76px; }
   .codex-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .codex-tile { min-height: 80px; }

@@ -18,6 +18,8 @@ import { effectiveTier } from '../sim/physics';
 import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
 import { drawResonance } from './resonance';
+import { coreSprite } from './cores';
+import { drawEnemyShell, drawEnemyInsignia, enemyShape } from './enemy-art';
 
 interface Bolt { pts: number[]; life: number; color: string }
 interface Ring { x: number; y: number; r: number; life: number; max: number; color: string }
@@ -29,6 +31,7 @@ interface Banner { text: string; sub?: string; color: string; big: boolean; t: n
 const BANNER_STALE = 2;
 interface Starfall { pts: number[]; life: number }
 interface Debris { x: number; y: number; vx: number; vy: number; spin: number; r: number; life: number; color: string }
+interface Impact { x: number; y: number; life: number; color: string; crit: boolean; angle: number }
 
 export interface RenderOptions {
   shake: boolean;
@@ -66,6 +69,7 @@ export class Renderer {
   banners: Banner[] = [];
   starfalls: Starfall[] = [];
   debris: Debris[] = [];
+  private impacts: Impact[] = [];
   shake = 0;
   flash = { color: '#fff', a: 0 };
   hurtFlash = 0;
@@ -81,6 +85,7 @@ export class Renderer {
   private launcherRecoil = 0;
   private lastHand = 0;
   private emissionDt = 0;
+  private readonly reducedMotion = typeof window === 'undefined' ? null : window.matchMedia('(prefers-reduced-motion: reduce)');
 
   private emits(rate: number): boolean {
     return Math.random() < 1 - Math.exp(-rate * this.emissionDt);
@@ -119,6 +124,7 @@ export class Renderer {
     this.banners = [];
     this.starfalls = [];
     this.debris = [];
+    this.impacts = [];
     this.shake = 0;
     this.flash.a = 0;
     this.hurtFlash = 0;
@@ -159,6 +165,7 @@ export class Renderer {
         this.queueBanner({ text: t('canvas.starfall'), sub: t('canvas.starfallSub'), color: '#bca7ff', big: true, t: 0, dur: 1.8, wait: 0 }, true);
         break;
       case 'hit': {
+        if (this.impacts.length < 100) this.impacts.push({ x: f.x, y: f.y, color: f.color, crit: !!f.crit, life: .18, angle: Math.random() * TAU });
         const n = f.crit ? 14 : 6;
         p.burst(f.x, f.y, f.color, n, f.crit ? 340 : 220, f.crit ? 3.5 : 2.5, 0.35);
         if (f.crit) this.rings.push({ x: f.x, y: f.y, r: 26, life: 0.22, max: 0.22, color: '#ffe066' });
@@ -241,6 +248,8 @@ export class Renderer {
     this.emissionDt = dt;
     this.launcherRecoil *= Math.exp(-dt * 15);
     this.particles.update(dt);
+    for (const hit of this.impacts) hit.life -= dt;
+    this.impacts = this.impacts.filter(hit => hit.life > 0);
     for (const s of this.starfalls) s.life -= dt;
     this.starfalls = this.starfalls.filter(s => s.life > 0);
     for (const d of this.debris) {
@@ -351,7 +360,7 @@ export class Renderer {
       this.bgArena = w.arena.id;
     }
     ctx.drawImage(this.bg, 0, 0, W, H);
-    drawArenaAtmosphere(ctx, w.arena, this.time);
+    drawArenaAtmosphere(ctx, w.arena, this.reducedMotion?.matches ? 0 : this.time);
   }
 
   private drawDefenseLine(w: World): void {
@@ -368,6 +377,14 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.fillStyle = col + '80';
     for (let x = 18; x < W; x += 28) ctx.fillRect(x, DEFENSE_Y + 7, 12, 2);
+    // Inset shield emitters give the energy line a physical source.
+    for (const x of [18, W - 18]) {
+      const casing = ctx.createLinearGradient(x - 7, 0, x + 7, 0);
+      casing.addColorStop(0, '#07111e'); casing.addColorStop(.5, '#405969'); casing.addColorStop(1, '#07111e');
+      ctx.fillStyle = casing;
+      roundRect(ctx, x - 7, DEFENSE_Y - 13, 14, 26, 3); ctx.fill();
+      ctx.fillStyle = col; ctx.fillRect(x - 2, DEFENSE_Y - 8, 4, 16);
+    }
     if (w.barrier.charges > 0) {
       ctx.strokeStyle = '#5ad7ff';
       ctx.lineWidth = 2;
@@ -634,13 +651,17 @@ export class Renderer {
       switch (p.kind) {
         case 'xp': {
           const s = p.value > 4 ? 6 : 4;
-          ctx.fillStyle = p.value > 4 ? '#b388ff' : '#6de2ff';
+          const color = p.value > 4 ? '#b388ff' : '#6de2ff';
+          ctx.fillStyle = color;
           ctx.beginPath();
           ctx.moveTo(p.x, p.y - s);
           ctx.lineTo(p.x + s * 0.7, p.y);
           ctx.lineTo(p.x, p.y + s);
           ctx.lineTo(p.x - s * 0.7, p.y);
           ctx.fill();
+          ctx.fillStyle = '#eaffffcc';
+          ctx.beginPath(); ctx.moveTo(p.x, p.y - s); ctx.lineTo(p.x, p.y + s);
+          ctx.lineTo(p.x - s * .7, p.y); ctx.closePath(); ctx.fill();
           break;
         }
         case 'coin':
@@ -648,11 +669,17 @@ export class Renderer {
           ctx.beginPath();
           ctx.arc(p.x, p.y, 4.5, 0, TAU);
           ctx.fill();
+          ctx.strokeStyle = '#fff3a8'; ctx.lineWidth = .8;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, TAU); ctx.stroke();
+          ctx.fillStyle = '#996311'; ctx.fillRect(p.x - .5, p.y - 2, 1, 4);
           break;
         case 'core':
           this.drawGlow(p.x, p.y, 20, '#ff7ad9', 0.8);
           ctx.fillStyle = '#ff7ad9';
-          ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+          ctx.beginPath(); ctx.moveTo(p.x, p.y - 7); ctx.lineTo(p.x + 5, p.y - 1);
+          ctx.lineTo(p.x, p.y + 7); ctx.lineTo(p.x - 5, p.y - 1); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = '#ffe1fa'; ctx.lineWidth = 1; ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(p.x, p.y - 7); ctx.lineTo(p.x - 1, p.y); ctx.lineTo(p.x, p.y + 7); ctx.stroke();
           break;
         case 'heal':
           ctx.fillStyle = '#6dff9c';
@@ -675,106 +702,6 @@ export class Renderer {
           ctx.fillText('?', p.x, p.y);
           break;
       }
-    }
-  }
-
-  private shapePath(shape: string, x: number, y: number, r: number, rot = 0): void {
-    const ctx = this.ctx;
-    ctx.beginPath();
-    const poly = (n: number, off: number, rr = r) => {
-      for (let i = 0; i < n; i++) {
-        const a = off + rot + (i / n) * TAU;
-        const px = x + Math.cos(a) * rr;
-        const py = y + Math.sin(a) * rr;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-    };
-    switch (shape) {
-      case 'triangle': poly(3, Math.PI / 2); break;
-      case 'square': poly(4, Math.PI / 4, r * 1.15); break;
-      case 'hex': poly(6, 0); break;
-      case 'diamond': poly(4, 0, r * 1.1); break;
-      case 'star': {
-        for (let i = 0; i < 10; i++) {
-          const a = rot + (i / 10) * TAU - Math.PI / 2;
-          const rr = i % 2 === 0 ? r * 1.15 : r * 0.55;
-          const px = x + Math.cos(a) * rr;
-          const py = y + Math.sin(a) * rr;
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        break;
-      }
-      case 'cross': {
-        const t = r * 0.38;
-        ctx.moveTo(x - t, y - r);
-        ctx.lineTo(x + t, y - r);
-        ctx.lineTo(x + t, y - t);
-        ctx.lineTo(x + r, y - t);
-        ctx.lineTo(x + r, y + t);
-        ctx.lineTo(x + t, y + t);
-        ctx.lineTo(x + t, y + r);
-        ctx.lineTo(x - t, y + r);
-        ctx.lineTo(x - t, y + t);
-        ctx.lineTo(x - r, y + t);
-        ctx.lineTo(x - r, y - t);
-        ctx.lineTo(x - t, y - t);
-        ctx.closePath();
-        break;
-      }
-      case 'mirror': poly(8, Math.PI / 8); break;
-      case 'pentagon': poly(5, -Math.PI / 2, r * 1.08); break;
-      case 'gear': {
-        const teeth = 8;
-        for (let i = 0; i < teeth * 2; i++) {
-          const a = rot + (i / (teeth * 2)) * TAU;
-          const rr = i % 2 === 0 ? r * 1.1 : r * 0.82;
-          const a2 = a + TAU / (teeth * 2);
-          if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-          else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-          ctx.lineTo(x + Math.cos(a2) * rr, y + Math.sin(a2) * rr);
-        }
-        ctx.closePath();
-        break;
-      }
-      case 'spike': {
-        for (let i = 0; i < 16; i++) {
-          const a = rot + (i / 16) * TAU;
-          const rr = i % 2 === 0 ? r * 1.25 : r * 0.7;
-          if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-          else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-        }
-        ctx.closePath();
-        break;
-      }
-      case 'egg':
-        ctx.ellipse(x, y, r * 0.86, r * 1.08, 0, 0, TAU);
-        break;
-      case 'crescent':
-        ctx.arc(x, y, r, Math.PI * 0.25, Math.PI * 1.75);
-        ctx.arc(x + r * 0.45, y, r * 0.72, Math.PI * 1.62, Math.PI * 0.38, true);
-        ctx.closePath();
-        break;
-      case 'skull':
-        ctx.arc(x, y - r * 0.12, r, Math.PI * 0.82, Math.PI * 2.18);
-        ctx.lineTo(x + r * 0.55, y + r * 0.95);
-        ctx.lineTo(x - r * 0.55, y + r * 0.95);
-        ctx.closePath();
-        break;
-      case 'hourglass':
-        ctx.moveTo(x - r, y - r);
-        ctx.lineTo(x + r, y - r);
-        ctx.lineTo(x - r * 0.2, y);
-        ctx.lineTo(x + r, y + r);
-        ctx.lineTo(x - r, y + r);
-        ctx.lineTo(x + r * 0.2, y);
-        ctx.closePath();
-        break;
-      default:
-        ctx.arc(x, y, r, 0, TAU);
     }
   }
 
@@ -834,9 +761,9 @@ export class Renderer {
       ctx.stroke();
     }
     const rot = d.shape === 'star' ? this.time * 1.5 : d.shape === 'gear' ? this.time * 0.8 : d.shape === 'spike' ? -this.time : 0;
-    this.shapePath(d.shape, x + 1, y + 6, r, rot);
+    enemyShape(ctx, d.shape, x + 1, y + 6, r, rot);
     ctx.fillStyle = '#00000065'; ctx.fill();
-    this.shapePath(d.shape, x, y, r, rot);
+    enemyShape(ctx, d.shape, x, y, r, rot);
     const frozen = e.st.frozenT > 0;
     const color = frozen ? '#bfe9ff' : d.color;
     const body = ctx.createLinearGradient(x - r, y - r, x + r * .6, y + r);
@@ -847,9 +774,10 @@ export class Renderer {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = color + 'aa';
     ctx.stroke();
-    this.shapePath(d.shape, x, y + 1, r * .73, rot);
+    enemyShape(ctx, d.shape, x, y + 1, r * .73, rot);
     ctx.fillStyle = '#0b14233b'; ctx.fill();
     ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1; ctx.stroke();
+    this.drawMaterial(e, x, y, r, rot, color);
     // Metal rivets and pulsing energy cores distinguish enemy materials.
     if (d.material === 'metal' || e.boss) {
       ctx.fillStyle = '#efffffaa';
@@ -862,7 +790,7 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(x, y, r * .48, this.time * 2, this.time * 2 + TAU * .72); ctx.stroke();
     }
     // Re-select the silhouette so elemental outlines follow the outer shell.
-    this.shapePath(d.shape, x, y, r, rot);
+    enemyShape(ctx, d.shape, x, y, r, rot);
     if (e.st.chill > 0 && !frozen) {
       ctx.globalAlpha = 0.25 * e.st.chill;
       ctx.fillStyle = '#9fdcff';
@@ -882,7 +810,7 @@ export class Renderer {
     }
     if (e.st.bleed > 0 && this.emits(4.8 * e.st.bleed)) this.particles.spawn(x, y + r * 0.5, 0, 40, 0.4, 2.5, '#ff2a55', 1, 200);
     if (e.st.poison > 0) {
-      this.shapePath(d.shape, x, y, r, rot);
+      enemyShape(ctx, d.shape, x, y, r, rot);
       ctx.globalAlpha = Math.min(0.45, 0.12 + e.st.poison * 0.025);
       ctx.fillStyle = '#7dff3a';
       ctx.fill();
@@ -958,6 +886,42 @@ export class Renderer {
       ctx.fillStyle = e.elite.length ? '#ff7ad9' : '#ff5d73';
       ctx.fillRect(x - bw / 2, y + e.r + 5, bw * clamp(e.hp / e.maxHp, 0, 1), 4);
     }
+  }
+
+  private drawMaterial(e: Enemy, x: number, y: number, r: number, rot: number, color: string): void {
+    const ctx = this.ctx;
+    ctx.save();
+    enemyShape(ctx, e.def.shape, x, y, r * .93, rot); ctx.clip();
+    if (e.def.material === 'metal' || e.boss) {
+      // Recessed panels, bright bevels and a serial stripe on the armor.
+      ctx.strokeStyle = '#06132255'; ctx.lineWidth = Math.max(1, r * .05);
+      for (const s of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(x + s * r * .8, y - r); ctx.lineTo(x + s * r * .48, y - r * .35);
+        ctx.lineTo(x + s * r * .55, y + r); ctx.stroke();
+      }
+      ctx.fillStyle = '#e7ffff66';
+      for (let i = 0; i < 3; i++) ctx.fillRect(x - r * .24 + i * r * .17, y - r * .57, r * .09, Math.max(1, r * .06));
+    } else if (e.def.material === 'flesh') {
+      ctx.strokeStyle = '#06221944'; ctx.lineWidth = Math.max(1, r * .04);
+      for (let i = 0; i < 5; i++) {
+        const a = i * TAU / 5 + e.id;
+        ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * r * .65, y + Math.sin(a) * r * .65, r * .12, r * .19, a, 0, TAU); ctx.stroke();
+      }
+    } else if (e.def.material === 'energy') {
+      ctx.strokeStyle = '#f0faff55'; ctx.lineWidth = 1;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath(); ctx.ellipse(x, y, r * .8, r * .3, i * TAU / 3 + this.time * .35, 0, TAU); ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = '#06132244'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x - r, y - r * .3); ctx.lineTo(x - r * .55, y - r * .45);
+      ctx.lineTo(x - r * .37, y - r * .19); ctx.moveTo(x + r, y + r * .45);
+      ctx.lineTo(x + r * .4, y + r * .3); ctx.lineTo(x + r * .15, y + r * .7); ctx.stroke();
+    }
+    // A reflected rim separates every shell from similarly colored scenery.
+    enemyShape(ctx, e.def.shape, x - r * .025, y - r * .045, r * .94, rot);
+    ctx.strokeStyle = color + '60'; ctx.lineWidth = Math.max(.8, r * .035); ctx.stroke();
+    ctx.restore();
   }
 
   private drawBossBody(w: World, e: Enemy): void {
@@ -1156,6 +1120,18 @@ export class Renderer {
       }
     }
     ctx.globalCompositeOperation = 'lighter';
+    for (const hit of this.impacts) {
+      const age = 1 - hit.life / .18;
+      const reach = (hit.crit ? 26 : 13) * (.4 + age * .8);
+      ctx.save(); ctx.translate(hit.x, hit.y); ctx.rotate(hit.angle);
+      ctx.globalAlpha = (1 - age) ** 2 * (this.opts.reduceFlashes ? .35 : .85);
+      ctx.fillStyle = hit.color;
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath(); ctx.moveTo(2, -1.5); ctx.lineTo(reach, 0); ctx.lineTo(2, 1.5); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = '#efffff'; ctx.beginPath(); ctx.arc(0, 0, 2.5 * (1 - age), 0, TAU); ctx.fill(); ctx.restore();
+    }
     for (const b of this.booms) {
       const t = 1 - b.life / 0.32;
       const r = b.r * (0.4 + 0.6 * Math.sqrt(t));
@@ -1179,22 +1155,24 @@ export class Renderer {
     }
     for (const r of this.rings) {
       const t = 1 - r.life / r.max;
-      ctx.globalAlpha = 1 - t;
+      ctx.globalAlpha = (1 - t) ** 1.5;
       ctx.strokeStyle = r.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5 * (1 - t) + .5;
       ctx.beginPath();
-      ctx.arc(r.x, r.y, r.r * (0.3 + 0.7 * t), 0, TAU);
+      ctx.arc(r.x, r.y, r.r * (0.3 + 0.7 * (1 - (1 - t) ** 3)), 0, TAU);
       ctx.stroke();
     }
     for (const b of this.bolts) {
       ctx.globalAlpha = b.life / 0.18;
       ctx.strokeStyle = b.color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 7;
       ctx.beginPath();
       for (let i = 0; i < b.pts.length; i += 2) {
         if (i === 0) ctx.moveTo(b.pts[i], b.pts[i + 1]);
         else ctx.lineTo(b.pts[i], b.pts[i + 1]);
       }
+      ctx.globalAlpha *= .2; ctx.stroke();
+      ctx.globalAlpha = b.life / .18; ctx.lineWidth = 3;
       ctx.stroke();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1;
@@ -1203,11 +1181,13 @@ export class Renderer {
     for (const b of this.beams) {
       ctx.globalAlpha = b.life / 0.16;
       ctx.strokeStyle = b.color;
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 8;
       ctx.beginPath();
       ctx.moveTo(b.x0, b.y0);
       ctx.lineTo(b.x1, b.y1);
-      ctx.stroke();
+      ctx.globalAlpha *= .18; ctx.stroke();
+      ctx.globalAlpha = b.life / .16; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.strokeStyle = '#efffff'; ctx.lineWidth = .8; ctx.stroke();
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -1367,12 +1347,8 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(b.x, b.y, r + 1.5, 0, TAU);
     ctx.fill();
-    const sphere = ctx.createRadialGradient(b.x - r * .35, b.y - r * .4, 0, b.x, b.y, r);
-    sphere.addColorStop(0, '#ffffff'); sphere.addColorStop(.25, '#eaffff'); sphere.addColorStop(.55, main); sphere.addColorStop(1, '#13253b');
-    ctx.fillStyle = sphere;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, r, 0, TAU);
-    ctx.fill();
+    const sprite = coreSprite(b.kind === 'main' ? w.cfg.core : 'striker', main);
+    ctx.drawImage(sprite, b.x - r * 1.09, b.y - r * 1.09, r * 2.18, r * 2.18);
     ctx.strokeStyle = '#ffffffa0'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(b.x, b.y, r * .82, Math.PI, Math.PI * 1.65); ctx.stroke();
     if (tier > 0 || b.powered) {
