@@ -3,7 +3,7 @@ import { localizeDigits, t } from '../i18n';
 import { h } from './dom';
 import { CURRENCY_ICON, icon, type Currency, type IconName } from './icons';
 import { CORES } from '../data/balls';
-import { coreSprite } from '../render/cores';
+import { corePortrait } from '../render/cores';
 
 const portraits = new Map<string, string>();
 
@@ -49,7 +49,7 @@ export function orb(color: string, cls = ''): HTMLElement {
   if (!cls.split(' ').includes('enemy')) {
     let src = portraits.get(color);
     if (!src) {
-      src = coreSprite(CORES.find(c => c.color === color)?.id ?? 'striker', color).toDataURL();
+      src = corePortrait(CORES.find(c => c.color === color)?.id ?? 'striker', color).toDataURL();
       portraits.set(color, src);
     }
     el.append(h('img', { src, width: 192, height: 192, class: 'core-art', alt: '', draggable: false }));

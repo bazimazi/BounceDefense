@@ -64,7 +64,7 @@ try {
 
   await page.evaluate(async () => {
     const { CORES } = await import('/src/data/balls.ts');
-    const { coreSprite } = await import('/src/render/cores.ts');
+    const { coreSprite, corePortrait } = await import('/src/render/cores.ts');
     const sheet = document.createElement('div'); sheet.id = 'art-review';
     Object.assign(sheet.style, { position: 'fixed', inset: '0', zIndex: 999, padding: '20px', overflow: 'auto',
       background: '#070b16', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', alignContent: 'start' });
@@ -72,7 +72,7 @@ try {
       const tile = document.createElement('div'); tile.style.textAlign = 'center';
       const sprite = coreSprite(core.id, core.color);
       if (coreSprite(core.id, core.color) !== sprite) throw new Error('Core art is not cached');
-      const art = document.createElement('img'); art.src = sprite.toDataURL(); art.style.width = '100%';
+      const art = document.createElement('img'); art.src = corePortrait(core.id, core.color).toDataURL(); art.style.width = '100%';
       const label = document.createElement('div'); label.textContent = core.name; label.style.fontSize = '11px';
       tile.append(art, label); sheet.append(tile);
     }
