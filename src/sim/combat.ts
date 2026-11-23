@@ -53,14 +53,31 @@ export function immune(e: Enemy, el: Element): boolean {
 }
 
 /** Damage multiplier from where the target stands and what it is (Long Shot, Point Blank, Bounty Hunter...). */
-function targetMult(w: World, e: Enemy): number {
+export function targetMult(w: World, e: Enemy): number {
   const st = w.build.stats;
   let m = 1;
   if (st.farDamage && e.y < FAR_Y) m *= 1 + st.farDamage;
   if (st.nearDamage && e.y > NEAR_Y) m *= 1 + st.nearDamage;
   if (st.eliteDamage && (e.elite.length || e.boss)) m *= 1 + st.eliteDamage;
+  if (st.ruin !== 1 && (e.elite.length || e.boss)) m *= st.ruin;
   if (st.bleedVuln && e.st.bleed > 0) m *= 1 + st.bleedVuln;
   return m;
+}
+
+/** The Bolster Affliction: enemies near a fallen one gain 8% health, up to five stacks each. */
+export const BOLSTER = { radius: 110, step: 0.08, max: 5 };
+function bolster(w: World, dead: Enemy): void {
+  const r2 = BOLSTER.radius * BOLSTER.radius;
+  for (const o of w.enemies) {
+    if (!o.alive || o.boss || o === dead) continue;
+    const dx = o.x - dead.x, dy = o.y - dead.y;
+    if (dx * dx + dy * dy > r2) continue;
+    const n = w.bolster.get(o.id) ?? 0;
+    if (n >= BOLSTER.max) continue;
+    w.bolster.set(o.id, n + 1);
+    o.maxHp *= 1 + BOLSTER.step;
+    o.hp *= 1 + BOLSTER.step;
+  }
 }
 
 // ------------------------------------------------------------------ direct hits
@@ -308,6 +325,7 @@ function killEnemyInner(w: World, e: Enemy, info: HitInfo, overflow: number): vo
   }
   e.alive = false;
   e.killedBy = info.src;
+  if (w.afflictions.has('bolster') && !e.boss) bolster(w, e);
   flushDamageNumber(w, e);
   const st = w.build.stats;
   const r = w.run;

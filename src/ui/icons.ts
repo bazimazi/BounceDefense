@@ -52,6 +52,7 @@ const STROKE: Record<string, string> = {
 const FILLED: Record<string, string> = {
   coin: '<circle cx="12" cy="12" r="9.5" fill="#ffd451"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="#a8650f" stroke-width="1.4"/><circle cx="12" cy="12" r="6.2" fill="none" stroke="#c98012" stroke-width="1.4"/><path d="M10.2 9.2h2.9a1.7 1.7 0 0 1 0 3.4h-2.4m0-3.4v5.6h3a1.6 1.6 0 0 0 0-3.2" fill="none" stroke="#8a4f06" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   gem: '<path d="M12 2.5 20.5 9 12 21.5 3.5 9 12 2.5Z" fill="#ff7ad9"/><path d="M12 2.5 20.5 9 12 21.5 3.5 9 12 2.5Z" fill="none" stroke="#9c2f80" stroke-width="1.2" stroke-linejoin="round"/><path d="M3.5 9h17M12 2.5 8.5 9 12 21.5 15.5 9 12 2.5" fill="none" stroke="#ffd2f2" stroke-width=".9" stroke-linejoin="round" opacity=".8"/>',
+  aether: '<path d="M12 2 14.2 9.8 22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2L12 2Z" fill="#b78bff"/><path d="M12 2 14.2 9.8 22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2L12 2Z" fill="none" stroke="#5a2fb0" stroke-width="1.2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.6" fill="#f3e9ff"/>',
   flask: '<path d="M9.5 3h5v6.5l5.4 8.6a1.9 1.9 0 0 1-1.6 2.9H5.7a1.9 1.9 0 0 1-1.6-2.9L9.5 9.5V3Z" fill="#163a4a" stroke="#6de2ff" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.3 15h11.4l2.2 3.1a1.9 1.9 0 0 1-1.6 2.9H5.7a1.9 1.9 0 0 1-1.6-2.9L6.3 15Z" fill="#6de2ff"/><path d="M8.5 3h7" stroke="#6de2ff" stroke-width="1.6" stroke-linecap="round"/>',
 };
 
@@ -77,5 +78,5 @@ export function icon(name: IconName, cls = ''): SVGSVGElement {
   return svg;
 }
 
-export type Currency = 'coins' | 'cores' | 'research';
-export const CURRENCY_ICON: Record<Currency, IconName> = { coins: 'coin', cores: 'gem', research: 'flask' };
+export type Currency = 'coins' | 'cores' | 'research' | 'aether';
+export const CURRENCY_ICON: Record<Currency, IconName> = { coins: 'coin', cores: 'gem', research: 'flask', aether: 'aether' };

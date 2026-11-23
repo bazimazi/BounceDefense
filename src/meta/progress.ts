@@ -10,6 +10,7 @@ import {
   rankLevel, rankRewards,
 } from '../data/meta';
 import { ASCENSION_REWARD, ASCENSION_TIER, MAX_ASCENSION, ascensionCap, ascensionDifficulty } from '../data/ascension';
+import { DEPTH_MILESTONES, DESCENT, STAR_MAP, aetherFor, fortuneMult, type StarCurrency } from '../data/descent';
 import { CONTRACTS, CONTRACT_MAP, DAILY_CONTRACTS, contractMinDifficulty, contractRewards, contractTarget } from '../data/contracts';
 import { DEFAULT_UNLOCKED_RELICS, RELIC_MAP } from '../data/relics';
 import { EVENT_MAP } from '../data/arenas';
@@ -130,6 +131,11 @@ export function overdriveOpen(p: Profile): number {
   return Math.min(OVERDRIVE_MAX, OVERDRIVE_PER_TIER * (bestCleared(p) + 1) + CATALYST_LEVELS * (p.workshop.bp_catalyst ?? 0));
 }
 
+/** Overdrive levels beyond OVERDRIVE_MAX: one per Descent depth cleared, once the first fifty are open. */
+export function overdriveDeep(p: Profile): number {
+  return overdriveOpen(p) >= OVERDRIVE_MAX ? Math.max(0, p.descent.best) : 0;
+}
+
 /** Refit levels open for a core: one per REFIT_MASTERY_STEP Mastery levels, none while it is locked. */
 export function refitOpen(p: Profile, core: string): number {
   if (!p.unlockedCores.includes(core)) return 0;
@@ -140,7 +146,7 @@ export function refitOpen(p: Profile, core: string): number {
 export function workshopCap(p: Profile, id: string): number {
   const w = WORKSHOP_MAP[id];
   if (!w) return 0;
-  if (w.overdrive) return Math.min(w.maxLevel, overdriveOpen(p));
+  if (w.overdrive) return Math.min(w.maxLevel, overdriveOpen(p)) + overdriveDeep(p);
   if (w.core) return Math.min(w.maxLevel, refitOpen(p, w.core));
   if (w.tiers) {
     if (w.needs && !(p.workshop[w.needs] ?? 0)) return 0;
@@ -163,7 +169,7 @@ export type WorkshopLock =
 export function workshopLock(p: Profile, id: string): WorkshopLock | null {
   const w = WORKSHOP_MAP[id];
   const lvl = p.workshop[id] ?? 0;
-  if (!w || lvl >= w.maxLevel || lvl < workshopCap(p, id)) return null;
+  if (!w || (lvl >= w.maxLevel && !w.overdrive) || lvl < workshopCap(p, id)) return null;
   if (w.overdrive) return { kind: 'overdrive' };
   if (w.core) {
     if (!p.unlockedCores.includes(w.core)) return { kind: 'core', core: w.core };
@@ -226,6 +232,50 @@ export function gauntletUnlocked(p: Profile): boolean {
   return BOSSES.every((b) => (p.bossKills[b.id] ?? 0) > 0);
 }
 
+// ------------------------------------------------------------------ descent
+/** The Descent opens with an Eternity win (any arena, Standard). */
+export function descentUnlocked(p: Profile): boolean {
+  return bestCleared(p) >= DESCENT.tier;
+}
+
+/** The deepest depth that can be started now (0 while the Descent is closed). */
+export function descentOpen(p: Profile): number {
+  return descentUnlocked(p) ? Math.max(1, p.descent.open) : 0;
+}
+
+/** Constellations open with the first Descent win. */
+export function starsUnlocked(p: Profile): boolean {
+  return p.descent.best > 0;
+}
+
+export function starWallet(p: Profile, c: StarCurrency): number {
+  return c === 'aether' ? p.aether : c === 'cores' ? p.cores : p.research;
+}
+
+/** Price of a Constellation's next level, or null while Constellations are closed. */
+export function starCost(p: Profile, id: string): number | null {
+  const s = STAR_MAP[id];
+  if (!s || !starsUnlocked(p)) return null;
+  return s.cost(p.stars[id] ?? 0);
+}
+
+export function canBuyStar(p: Profile, id: string): boolean {
+  const cost = starCost(p, id);
+  return cost !== null && starWallet(p, STAR_MAP[id].currency) >= cost;
+}
+
+export function buyStar(p: Profile, id: string): boolean {
+  const s = STAR_MAP[id];
+  const cost = starCost(p, id);
+  if (!s || cost === null || starWallet(p, s.currency) < cost) return false;
+  if (s.currency === 'aether') p.aether -= cost;
+  else if (s.currency === 'cores') p.cores -= cost;
+  else p.research -= cost;
+  p.stars[id] = (p.stars[id] ?? 0) + 1;
+  analytics.emit('StarPurchased', { id, level: p.stars[id] });
+  return true;
+}
+
 /** Core Resonance's partner: the most-mastered other unlocked core. */
 export function echoCore(p: Profile, core: string): string | undefined {
   let best: string | undefined;
@@ -237,16 +287,19 @@ export function echoCore(p: Profile, core: string): string | undefined {
   return best;
 }
 
-export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean; ascension?: number; mode?: RunMode }): RunConfig {
+export function runConfig(p: Profile, opts: { arena: string; difficulty: number; pacts: string[]; seed: number; daily?: boolean; ascension?: number; mode?: RunMode; depth?: number }): RunConfig {
   const l = p.loadout;
   const flags = researchFlags(p);
   const core = p.unlockedCores.includes(l.core) ? l.core : 'striker';
   // The Gauntlet needs every classic boss beaten, never runs the daily seed, and keeps the Ascension ladder out.
   const gauntlet = opts.mode === 'gauntlet' && !opts.daily && gauntletUnlocked(p);
+  // The Descent needs an Eternity win and is always played on Eternity, at a depth already opened.
+  const depth = opts.mode === 'descent' && !opts.daily && descentUnlocked(p) ? Math.max(1, Math.min(descentOpen(p), Math.floor(opts.depth ?? 1))) : 0;
+  const difficulty = depth ? DESCENT.tier : opts.difficulty;
   return {
     seed: opts.seed,
     arena: opts.arena,
-    difficulty: opts.difficulty,
+    difficulty,
     core,
     parts: [l.shell, l.impact, l.momentum].filter((id) => isPartUnlocked(p, id)),
     pacts: opts.pacts.filter((id) => PACT_MAP[id] && (!PACT_MAP[id].flag || flags.includes(PACT_MAP[id].flag!))),
@@ -258,12 +311,14 @@ export function runConfig(p: Profile, opts: { arena: string; difficulty: number;
     known: Object.fromEntries(Object.entries(p.discoveries).map(([k, v]) => [k, [...v]])),
     tutorial: !p.tutorialDone,
     daily: opts.daily,
-    ascension: opts.difficulty >= ASCENSION_TIER && !gauntlet ? Math.max(0, Math.min(p.ascension, ascensionCap(opts.difficulty), Math.floor(opts.ascension ?? 0))) : 0,
+    ascension: difficulty >= ASCENSION_TIER && !gauntlet && !depth ? Math.max(0, Math.min(p.ascension, ascensionCap(difficulty), Math.floor(opts.ascension ?? 0))) : 0,
     relicPool: relicPool(p),
     bossLore: Object.values(p.bossKills).filter((n) => n > 0).length,
     echoCore: echoCore(p, core),
-    mode: gauntlet ? 'gauntlet' : 'standard',
+    mode: gauntlet ? 'gauntlet' : depth ? 'descent' : 'standard',
     awakening: p.awakening[core] ?? 0,
+    ...(depth ? { depth } : {}),
+    stars: { ...p.stars },
   };
 }
 
@@ -324,28 +379,43 @@ export interface RunRewards {
   cores: number;
   research: number;
   masteryXp: number;
+  /** Paid by Descent runs only. */
+  aether: number;
 }
 
-export function rewardMultiplier(s: Pick<RunSummary, 'difficulty' | 'pacts'> & { ascension?: number }): number {
+export function rewardMultiplier(s: Pick<RunSummary, 'difficulty' | 'pacts'> & { ascension?: number; depth?: number }): number {
   const diff = DIFFICULTIES[s.difficulty] ?? DIFFICULTIES[0];
   const pact = s.pacts.reduce((a, id) => a + (PACT_MAP[id]?.reward ?? 0), 0);
-  return diff.rewardMult * (1 + pact) * (1 + ASCENSION_REWARD * (s.ascension ?? 0));
+  return diff.rewardMult * (1 + pact) * (1 + ASCENSION_REWARD * (s.ascension ?? 0)) * (1 + DESCENT.coinsPerDepth * (s.depth ?? 0));
+}
+
+/**
+ * Aether a Descent run pays: a won depth in full; a lost one up to 15% for the time it lasted before the
+ * first boss (400 s) and up to 35% more for the bosses it felled out of four, so every attempt pays a little.
+ */
+export function aetherReward(s: Pick<RunSummary, 'depth' | 'victory' | 'bossesDefeated' | 'time'>, stars?: Record<string, number>): number {
+  const d = s.depth ?? 0;
+  if (d <= 0) return 0;
+  const share = s.victory ? 1 : 0.15 * Math.min(1, s.time / 400) + 0.35 * Math.min(1, s.bossesDefeated.length / 4);
+  return Math.round(aetherFor(d) * share * fortuneMult(stars));
 }
 
 /** Every run pays out, win or lose. Victories and harder settings pay more. */
-export function computeRewards(s: RunSummary, newDiscoveries: number, flags: string[] = [], workshop: Record<string, number> = {}): RunRewards {
+export function computeRewards(s: RunSummary, newDiscoveries: number, flags: string[] = [], workshop: Record<string, number> = {}, stars?: Record<string, number>): RunRewards {
   // The War Chest blueprint pays on victories only; the Mentor Program speeds Mastery and Rank.
   // Midas Protocol pays on Abyss and above, win or lose.
   const midas = flags.includes('midas') && s.difficulty >= ASCENSION_TIER ? 1.15 : 1;
   const mult = rewardMultiplier(s) * (s.victory ? 1.3 * (1 + 0.1 * (workshop.bp_war_chest ?? 0)) : 1) * midas;
   const base = s.coinsCollected + s.kills * 0.5 + s.eliteKills * 8 + s.bossesDefeated.length * 120 + Math.floor(s.time / 6);
   const asc = s.ascension ?? 0;
+  const depth = s.depth ?? 0;
   const study = (flags.includes('mastery') ? 1.15 : 1) * (1 + 0.1 * (workshop.bp_mentor ?? 0));
   return {
     coins: Math.round(base * mult),
-    cores: s.coresCollected + (s.victory ? 1 + s.difficulty + Math.floor(asc / 2) + (flags.includes('salvage') ? 1 : 0) : 0),
+    cores: s.coresCollected + (s.victory ? 1 + s.difficulty + Math.floor(asc / 2) + Math.floor(depth / 2) + (flags.includes('salvage') ? 1 : 0) : 0),
     research: newDiscoveries + (s.victory ? 1 + (flags.includes('scholar') ? 1 + Math.floor(s.difficulty / 3) : 0) : 0),
-    masteryXp: Math.round((s.kills * 0.6 + s.level * 10 + s.bossesDefeated.length * 80 + (s.victory ? 100 : 0)) * (1 + s.difficulty * 0.25 + asc * 0.05) * study),
+    masteryXp: Math.round((s.kills * 0.6 + s.level * 10 + s.bossesDefeated.length * 80 + (s.victory ? 100 : 0)) * (1 + s.difficulty * 0.25 + asc * 0.05 + depth * 0.05) * study),
+    aether: aetherReward(s, stars),
   };
 }
 
@@ -515,6 +585,8 @@ export function nextGoals(p: Profile, n = 3): Goal[] {
   if (p.ascension > 0 && p.ascension < MAX_ASCENSION) {
     goals.push({ kind: 'asc', text: t('goal.ascension', { n: p.ascension, difficulty: DIFFICULTIES[ascensionDifficulty(p.ascension)].name }), reward: t('goal.unlockAscension', { n: p.ascension + 1 }), cur: 0, max: 1 });
   }
+  // The Descent never runs out: its next depth is always a goal once Eternity is won.
+  if (descentUnlocked(p)) goals.push({ kind: 'depth', text: t('goal.depth', { n: p.descent.best + 1 }), reward: t('goal.depthReward'), cur: 0, max: 1 });
   const board = p.tutorialDone ? contractBoard(p) : null;
   const open = board?.daily.find((c) => !c.done);
   if (open) goals.push({ kind: 'contract', text: contractText(open), reward: t('goal.contractReward'), cur: open.progress, max: open.target });
@@ -549,6 +621,8 @@ export interface RunReport {
   rank: { before: number; after: number; into: number; need: number };
   contracts: string[];
   ascensionUnlocked: number | null;
+  /** The deepest Descent depth this run opened, if it opened any. */
+  depthUnlocked: number | null;
 }
 
 /** An abandoned, lost run shorter than this does not count as a played run (contracts, run-count goals). */
@@ -590,9 +664,28 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   });
   let ascensionUnlocked: number | null = null;
   // A Gauntlet win is its own record: it opens no difficulty and no Ascension step.
+  let depthUnlocked: number | null = null;
+  const depthMilestones: Unlock[] = [];
   if (s.victory && s.mode === 'gauntlet') {
     p.gauntlet = Math.max(p.gauntlet, s.difficulty);
     st.gauntletWins++;
+  } else if (s.mode === 'descent') {
+    // A won depth opens the next one; records pay once.
+    const d = s.depth ?? 0;
+    if (s.victory && d > 0) {
+      for (const m of DEPTH_MILESTONES) {
+        if (m.depth > p.descent.best && m.depth <= d) {
+          depthMilestones.push({ type: 'cores', amount: m.cores }, { type: 'research', amount: m.research });
+          if (m.trail) depthMilestones.push({ type: 'cosmetic', id: m.trail });
+        }
+      }
+      st.descentWins++;
+      p.descent.best = Math.max(p.descent.best, d);
+      const open = Math.max(p.descent.open, d + 1);
+      if (open > p.descent.open) depthUnlocked = open;
+      p.descent.open = open;
+      analytics.emit('DepthCleared', { depth: d });
+    }
   } else if (s.victory) {
     p.cleared[s.arena] = Math.max(p.cleared[s.arena] ?? -1, s.difficulty);
     analytics.emit('ArenaCompleted', { arena: s.arena, difficulty: s.difficulty });
@@ -625,7 +718,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   }
 
   // ---- currencies
-  const rewards = computeRewards(s, researchFromDiscovery, researchFlags(p), p.workshop);
+  const rewards = computeRewards(s, researchFromDiscovery, researchFlags(p), p.workshop, p.stars);
   let daily: RunReport['daily'] = null;
   if (s.daily) {
     const rec = dailyRecord(p, today);
@@ -644,6 +737,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
   p.coins += rewards.coins;
   p.cores += rewards.cores;
   p.research += rewards.research;
+  p.aether += rewards.aether;
   st.coinsEarned += rewards.coins;
 
   const unlocks: string[] = [];
@@ -668,6 +762,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     analytics.emit('RankUp', { rank: r });
   }
   const contracts = counted ? progressContracts(p, s, now, push) : [];
+  depthMilestones.forEach(push);
   const after = masteryLevel(p.mastery[s.core]);
   const masteryTexts: string[] = [];
   for (const r of masteryRewards(s.core)) {
@@ -728,6 +823,7 @@ export function applyRun(p: Profile, s: RunSummary, discoveries: { cat: Discover
     rank: { before: rankBefore.level, after: rankAfter.level, into: rankAfter.into, need: rankAfter.need },
     contracts,
     ascensionUnlocked,
+    depthUnlocked,
   };
 }
 

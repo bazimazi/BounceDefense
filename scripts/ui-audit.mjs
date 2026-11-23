@@ -49,6 +49,8 @@ try {
     // Every Workshop section part-way: some lines empty, some mid-way, some maxed.
     workshop: Object.fromEntries([...OVERDRIVE.map((x, i) => [x.id, i * 5]), ...BLUEPRINTS.map((x, i) => [x.id, i % (x.maxLevel + 1)]), ...REFITS.map((x, i) => [x.id, i])]),
     mastery: Object.fromEntries(CORES.map((x, i) => [x.id, i * 4000])),
+    // The Descent part-way: a record, Constellations at mixed levels and Aether to spend.
+    aether: 1234, descent: { best: 23, open: 24 }, stars: { might: 18, bastion: 20, ward: 15, ruin: 6, fortune: 3 },
     discoveries: { upgrades: UPGRADES.map(x => x.id), synergies: SYNERGIES.map(x => x.id), evolutions: EVOLUTIONS.map(x => x.id),
       reactions: REACTIONS.map(x => x.id), enemies: CODEX_ENEMIES.map(x => x.id), bosses: ALL_BOSSES.map(x => x.id), arenas: ARENAS.map(x => x.id), events: [] },
   };
@@ -216,7 +218,7 @@ try {
         await at(`${label}-armory`, width, height, () => window.game.ui.loadout());
         for (const slot of ['shell', 'impact', 'momentum']) await at(`${label}-sheet-${slot}`, width, height, slot => window.game.ui.partSheet(slot), slot);
         await at(`${label}-trail-sheet`, width, height, () => window.game.ui.trailSheet());
-        for (const screen of ['workshop', 'research', 'talents']) await at(`${label}-${screen}`, width, height, screen => window.game.ui[screen](), screen);
+        for (const screen of ['workshop', 'research', 'talents', 'stars']) await at(`${label}-${screen}`, width, height, screen => window.game.ui[screen](), screen);
         for (const tab of ['blueprints', 'refits', 'overdrive'])
           await at(`${label}-workshop-${tab}`, width, height, tab => { window.game.ui.workshopTab = tab; window.game.ui.workshop(); }, tab);
         await page.evaluate(() => { window.game.ui.workshopTab = 'classic'; });
@@ -242,13 +244,15 @@ try {
       await capture('codex-sheet', width, height);
       await at('settings', width, height, () => window.game.ui.settings());
       await at('run-sheet', width, height, () => { const g = window.game; g.ui.home(); g.ui.runSheet(); });
+      await at('run-sheet-descent', width, height, () => { const g = window.game; g.ui.setup.mode = 'descent'; g.profile.setup.depth = 24; g.ui.home(); g.ui.runSheet(); });
+      await page.evaluate(() => { window.game.ui.setup.mode = 'standard'; });
       await page.evaluate(() => {
-        const p = window.game.profile; p.coins = p.cores = p.research = 999999; window.game.ui.home();
+        const p = window.game.profile; p.coins = p.cores = p.research = p.aether = 999999; window.game.ui.home();
       });
       await capture('wallet-large-home', width, height);
       await page.evaluate(() => window.game.ui.workshop());
       await capture('wallet-large-forge', width, height);
-      await page.evaluate(() => { const p = window.game.profile; p.coins = 2171; p.cores = 5; p.research = 11; });
+      await page.evaluate(() => { const p = window.game.profile; p.coins = 2171; p.cores = 5; p.research = 11; p.aether = 1234; });
     }
     await page.evaluate(profile => Object.assign(window.game.profile, profile), partialProfile);
     await page.evaluate(() => {

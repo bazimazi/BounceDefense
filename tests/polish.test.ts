@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMY_MAP } from '../src/data/enemies';
-import { ascensionCap, ascensionDifficulty } from '../src/data/ascension';
+import { ascensionCap, ascensionDifficulty, ascensionHp } from '../src/data/ascension';
 import { defaultProfile } from '../src/meta/profile';
 import { applyRun, contractBoard, contractText, dailyOptions, runConfig } from '../src/meta/progress';
 import { CONTRACT_MAP, contractMinDifficulty, contractRewards, contractTarget } from '../src/data/contracts';
@@ -29,7 +29,7 @@ describe('boss adds scale from their boss, not from the tier twice', () => {
   it('Hydra heads carry Warlords and Ascension boss health only once', () => {
     const w = makeWorld({ arena: 'blight', difficulty: 4, ascension: 23, pacts: ['warlords'], seed: 9 });
     const hydra = w.spawnEnemy('boss_hydra', 270, 250, { hpMult: 4 })!;
-    expect(hydra.maxHp).toBeCloseTo(ENEMY_MAP.boss_hydra.hp * 4 * 1.2 * 1.4 * 1.5);
+    expect(hydra.maxHp).toBeCloseTo(ENEMY_MAP.boss_hydra.hp * 4 * 1.2 * 1.4 * 1.5 * ascensionHp(23));
     damageEnemy(w, hydra, hydra.hp * 10, hit);
     const heads = w.enemies.filter((e) => e.alive && e.def.id === 'boss_hydra');
     expect(heads.length).toBe(2);
@@ -173,7 +173,7 @@ describe('run accounting', () => {
 
   it('talent points that only locked tiers could hold do not light the red dot', () => {
     const p = defaultProfile();
-    p.mastery.striker = 120000;
+    p.mastery.striker = 400000;
     expect(talentProgress(p).total).toBeGreaterThan(52);
     expect(talentPointsUsable(p)).toBeGreaterThan(0);
     // Learn everything a profile without an Abyss win can learn.

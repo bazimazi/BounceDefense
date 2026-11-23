@@ -76,6 +76,7 @@ export const STAT_DEFAULTS = {
   farDamage: 0, // bonus vs enemies in the upper half of the arena
   nearDamage: 0, // bonus vs enemies close to the defense line
   eliteDamage: 0, // bonus vs elites and bosses
+  ruin: 1, // multiplier vs elites and bosses (the Ruin constellation; compounds)
   // ---- utility
   xpGain: 1,
   coinGain: 1,

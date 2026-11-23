@@ -19,6 +19,7 @@ npm test           # vitest unit + simulation tests (scripts/vitest.mjs runs Vit
                    # lowercase Windows drive such as c:\ no longer breaks every test file)
 npm run sim -- --runs 20 --core striker,pyro,tesla --arena proving --diff 0 [--full] [--tutorial]
 npm run balance -- --runs 16 --core striker,pyro --diff 0,1,2 [--meta none|mid|max] [--full]
+npm run journey -- --runs 900 [--seed 1]   # a whole career from a fresh profile: runs and hours to every milestone
 ```
 
 Browser smoke test (headless Chrome or Edge, with screenshots and console-error capture):
@@ -164,7 +165,7 @@ Without this file, release builds are unsigned. Debug builds are always signed w
 Bump `version` in `package.json`, commit, then push a matching tag:
 
 ```bash
-git tag v0.4.0 && git push origin v0.4.0
+git tag v0.5.0 && git push origin v0.5.0
 ```
 
 It can also be started from the Actions tab. Desktop jobs run the tests and upload the installers;
@@ -315,9 +316,9 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 | Bosses | 6 scripted fights: Fortress, Magnetar, Hydra, Broodmother (eggs and acid), Chronarch (time stop and stasis), Architect (walls and ward pylons); plus 4 apex bosses that close Abyss and every tier above it: Colossus (damage budget and quakes), Twin Eclipse (two bound bosses that revive each other), Overmind (shielded by its swarm) and Void Sovereign (three phases, sealed behind void shards) |
 | Arenas | 6 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells, spore pods, tesla pylons, booster pads |
 | Arena events | 12, five of them hostile (the only kind Abyss allows) |
-| Difficulty | 10 tiers (Normal to Abyss, then Oblivion, Cataclysm, Singularity, Pandemonium and Eternity), and a 30-step Ascension ladder (1–10 on Abyss and up, 11–20 on Singularity and up, 21–30 on Eternity), with stacking rules and growing rewards; 14 Risk Pacts (four of them Abyssal) |
-| Meta | Coins, Cores and Research; Workshop in four sections (14 Foundations, 17 Blueprints, 11 core Refits, 11 Overdrive lines of 50 levels each; 743 levels in all), 55-node Research tree in three branches (Foundations, Advanced, Apex; 667 points in all), Core Awakening (five Cores-bought ranks per core, the last a perk of its own), Mastery 1–30, Pilot Rank 1–100, 47 achievements, 44 challenges, daily and weekly contracts, Codex, 28 trails, build presets |
-| Modes | Standard run, the Gauntlet (every boss back to back, opened by defeating all six), Endless continuation after a victory, Daily Seed (a shared seed played at your strength: the hardest difficulty you have won, the highest Ascension you have won there and, once Risk Pacts are researched, a pact of the day; the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; today's challenge and best are shown on Home) |
+| Difficulty | 10 tiers (Normal to Abyss, then Oblivion, Cataclysm, Singularity, Pandemonium and Eternity, each with its own health pressure), a 30-step Ascension ladder (1–10 on Abyss and up, 11–20 on Singularity and up, 21–30 on Eternity) with stacking rules, growing pressure and growing rewards, and the endless Descent below Eternity (12 Afflictions); 14 Risk Pacts (four of them Abyssal) |
+| Meta | Coins, Cores, Research and Aether (the Descent's currency); 5 endless Constellations (Might, Bastion, Ward, Ruin, Fortune); Workshop in four sections (14 Foundations, 17 Blueprints, 11 core Refits, 11 Overdrive lines of 50 levels each; 743 levels in all), 55-node Research tree in three branches (Foundations, Advanced, Apex; 667 points in all), Core Awakening (five Cores-bought ranks per core, the last a perk of its own), Mastery 1–30, Pilot Rank 1–100, 51 achievements, 44 challenges, daily and weekly contracts, Codex, 28 trails, build presets |
+| Modes | Standard run, the Gauntlet (every boss back to back, opened by defeating all six), the Descent (an endless ladder of depths below Eternity, opened by an Eternity win), Endless continuation after a victory, Daily Seed (a shared seed played at your strength: the hardest difficulty you have won, the highest Ascension you have won there and, once Risk Pacts are researched, a pact of the day; the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; today's challenge and best are shown on Home) |
 
 ### Damage types
 
@@ -357,11 +358,11 @@ Elemental power raises every status and arc.
   extra rerolls and banishes, Surge charged at the start, line regeneration, armor pierce, overkill,
   a barrier, a bigger relic draft, Second Wind (the line holds once per run; at 1 HP under Bloodless), execute, a fifth draft
   card, longer Surge, more opening picks, a seventh ball and the Overdrive Catalyst (Overdrive levels
-  ahead of your wins). Prices run from 1,500 to 450,000 coins, about 2 million in all. The strongest
+  ahead of your wins). Prices run from 6,000 to 1.8 million coins, about 8 million in all. The strongest
   levers (opening picks, Second Wind) open only from Abyss up, so they do not flatten the classic tiers.
 - **Refits.** One ten-level line per ball core (+2% damage and a signature stat such as burn damage,
   chain damage or lifesteal) that only applies to runs with that core. A level opens every three
-  Mastery levels of the core, so tuning every core means playing every core; about 690,000 coins.
+  Mastery levels of the core, so tuning every core means playing every core; about 2.8 million coins.
 - **Advanced and Apex Research.** Eighteen studies beyond the founding tree, each opened by a win
   (Veteran up to Eternity) or an apex kill, priced 8 to 120 Research (553 in all, against 114 for the
   founding tree). Advanced: Scholarship (wins pay more Research, up to +4 on Eternity), Gilded Elites,
@@ -373,7 +374,10 @@ Elemental power raises every status and arc.
   signature upgrade), Industrial Theory (Workshop prices −15%), Fate Weaving (a rare card in every draft),
   Core Resonance (half the passive stats of the most-mastered other core) and Grand Unification, which
   needs every other study and an Eternity win and opens each run with a legendary relic.
-- **Ascension.** Winning on Abyss opens Ascension 1; each win at the highest open level opens the
+- **Ascension.** Every level also adds pressure that grows with the square of the level (enemy and boss
+  health ×1.4 at A10, ×3.6 at A20, ×18 at A30; breaches ×1.1, ×1.55 and ×2.7), carried like a Descent depth.
+  A finished Workshop wins about 85% of Eternity runs but only a few percent at A30: the top of the ladder
+  is climbed with Constellations from the Descent. Winning on Abyss opens Ascension 1; each win at the highest open level opens the
   next, up to 30. The ladder climbs with the tiers: levels 1–10 are played on Abyss and up, 11–20 on
   Singularity and up, and 21–30 only on Eternity, so the top of the ladder is fought against every apex
   boss and cannot be farmed on Abyss (a full kit won 100% of Abyss A30 runs there, paying more than
@@ -405,6 +409,26 @@ Elemental power raises every status and arc.
   **Pactbreaker** asks for three of them on the hardest difficulty you have open, at the highest
   Ascension it allows, so it is a real fight whenever it is attempted (about 60–66% for the bot at a
   fresh frontier); a finished kit used to clear the old "two pacts on Abyss" every time.
+- **The Descent.** Winning Eternity opens a third mode in Run setup: an endless ladder of depths. Every
+  depth is an Eternity run (all its apex bosses) whose ordinary enemies are 15% tougher than the depth above,
+  whose bosses are 15% tougher, and whose breaches hit 5% harder, all compounding. Ordinary enemies carry part
+  of that in the opening and all of it by six minutes, because a late build snowballs past any boss: the
+  depth bites where the permanent kit has to carry the run. From Depth 3 an Affliction joins every five depths
+  (at most six): Bulwark, Frenzy, Tyrant, Horde, Veiled, Sanguine, Grievous, Sapping, Withering, Bolster,
+  Warband and Juggernaut. They are fixed per band of five depths and drawn afresh for every band, so a depth
+  can be read before it is tried and the deep ladder never settles into one set. A win opens the next depth;
+  Play Again on the results screen goes straight on to it. Runs pay Aether (10 × 1.04^depth on a win; a loss
+  pays up to 15% for the time it lasted and 35% more for the bosses it felled), extra Cores and coins, and the
+  records at Depths 5, 10, 20, 30, 50, 75 and 100 pay Cores and Research once (Fathom, Starborn and Infinite
+  trails at 10, 30 and 50). The pause screen lists the depth's Afflictions. Ascension rules never apply in the
+  Descent; the depth is its own ladder.
+- **Constellations.** The Forge's fourth segment, lit by the first depth won. Five lines with no top:
+  Might (+3% damage per level), Bastion (+3% max HP) and Ward (−2.2% damage taken) compound, every level
+  multiplying what the line already gives, and cost Aether (×1.085 per level). Ruin compounds damage to elites
+  and bosses and costs Cores; Fortune adds 4% Aether per level and costs Research, so every currency keeps a
+  use forever. Every depth won also opens one more level on every Overdrive line past 50 (once all fifty are
+  open), so coins stay worth earning too. Prices rise faster than Aether does with depth, so each depth
+  takes a little more play than the one before: about 25 runs per five depths at first, over 100 by Depth 70.
 - **Pilot Rank.** Every run's Mastery XP also fills an account-wide rank from 1 to 100. Each rank pays
   coins; every third adds Research, every fourth Cores, and milestones unlock relics and trails.
 - **Contracts.** Three daily contracts and one weekly contract, drawn from a date seed so every
@@ -428,7 +452,7 @@ across four trees: **Kinetics** rewards bank shots and combos, **Conduit** ampli
 elements acquired during the run, **Warden** improves defense and recovery, and **Havoc**
 amplifies explosions, crits and shards. Each tree has eleven ranked nodes over six tiers,
 prerequisite connections, a capstone and an apex capstone.
-You start with 3 points and earn another per 500 total Mastery XP across all cores for the
+You start with 3 points and earn another per 900 total Mastery XP across all cores for the
 first twenty, then at a rising price up to 100. Existing saves receive credit for their accumulated XP.
 
 Higher tiers require 3 / 8 points in earlier tiers of that tree and a maxed prerequisite.
@@ -446,7 +470,7 @@ but never two capstones.
 **Deep tiers.** Below each capstone, every tree continues for three more tiers (19 more ranks per
 tree): a tier that opens with an Abyss win and 11 points in the tree, one that opens with a Singularity
 win and 16 points, and an apex capstone that needs an Eternity win and 26 points. Points 21 to 100
-cost 800, 900, … 8,700 Mastery XP each (about 390,000 XP for all hundred), so the budget keeps
+cost 1,400, 1,600, … 17,200 Mastery XP each (about 760,000 XP for all hundred), so the budget keeps
 growing for hundreds of runs, and 100 points fill three trees but never all four.
 
 | Tree | Abyss tier | Singularity tier | Apex capstone |
@@ -517,6 +541,7 @@ src/
 | Arena | `data/arenas.ts`: theme, layout variants, squads, events, boss and unlock requirement |
 | Core / part | `data/balls.ts` |
 | Achievement / challenge / research / workshop / rank rewards | `data/meta.ts` |
+| Affliction / Constellation | `data/descent.ts`: an `AFFLICTIONS` entry read with `w.afflictions.has(id)` where it applies; a `STARS` line with `mods(level)`, `cost(level)` and its currency |
 | Relic | `data/relics.ts`: mods and/or a behavior; `locked: true` plus an unlock (achievement, challenge or `RANK_UNLOCKS`) |
 | Contract | `data/contracts.ts`: a metric over `RunSummary`, `sum` or `max`, daily and weekly targets |
 | Ascension rule | `data/ascension.ts`, then read it with `w.asc.has(id)` where it applies |
@@ -670,6 +695,47 @@ as Standard on the same tier for a well-kitted profile and clearly harder for a 
 Squads that keep coming during Gauntlet fights also pay XP, which is why the low tiers do not get
 harder in step with boss health; the fight stream (`GAUNTLET.fightSquads`) and the boss multipliers
 are the levers.
+
+**Long-run pacing (the Descent rebalance).** A finished Workshop used to win nearly every Eternity and A30 run,
+and a fresh profile reached that point fast: `npm run journey` (below) won Eternity on its 22nd run (about
+3.5 hours) and Ascension 30 on its 55th. Three things changed. Workshop prices rose (`PRICE` in
+`data/meta.ts`: Foundations ×4, Blueprints and Refits ×4, Overdrive ×6) with dearer talent points and Pilot
+Ranks. The tiers above Abyss gained `pressure` (enemy and boss health ×1.4 / 2 / 2.8 / 3.8 / 5, carried like a
+depth) and triple boss health, because late builds snowball past almost any boss and only the opening asks
+the permanent kit to carry the run. Ascension gained its quadratic pressure. Some of the older tables above
+predate this and read easier than the game now plays.
+
+`npm run journey -- --runs 900 --seed N` plays a whole career with the human-like bot and the real meta code:
+every run goes through `runConfig` and `applyRun`, the player spends everything cheapest first (Workshop,
+Research, cores, Awakening, Constellations), re-spends talents, and pushes the next difficulty, Ascension step
+or depth, farming the last setting won after two straight losses. It prints the run and hour of each
+milestone, income by source and the win rate of every setting tried. The bot keeps standard parts and never
+uses pacts, rerolls or banishes. Two seeds after the rebalance:
+
+| Milestone | Before | Seed 1 | Seed 2 |
+| --- | --- | --- | --- |
+| Abyss won | run 5 (0.8 h) | run 17 (2.2 h) | run 11 (1.4 h) |
+| Eternity won | run 22 (3.5 h) | run 113 (13 h) | run 88 (11 h) |
+| Ascension 30 won | run 55 (10 h) | run 286 (43 h) | run 314 (50 h) |
+| Depth 25 | — | run 287 (43 h) | run 301 (47 h) |
+| Depth 50 | — | run 507 (72 h) | run 431 (68 h) |
+| Depth 70 | — | run 855 (101 h) | run 819 (100 h) |
+
+Each five depths take more runs than the five before (about 25 around Depth 20, 40–70 around Depth 50, over
+100 past Depth 65), and the ladder has no end. With the whole kit (`--meta end --od 50 --bp 9 --refit 10
+--research 9 --tp 100 --tpwin 9 --awaken 5 --full`; three cores, 12 runs per cell):
+
+| Setting | Win rate |
+| --- | --- |
+| Eternity / A10 / A20 / A30 | ~95% / ~75% / ~39% / ~14% |
+| Descent Depth 1 / 5 / 10 / 15 / 20, no Constellations | ~89% / ~75% / ~67% / ~28% / ~28% |
+| Depth 10 / 20 / 30 with every Constellation at 15 (`--stars 15`) | ~81% / ~44% / ~14% |
+| Depth 20 / 30 / 40 with every Constellation at 30 | ~69% / ~33% / ~19% |
+| Eternity with a mid kit (`--od 15 --bp 5 --refit 3 --research 5 --tp 45`) / the old entry kit (`--od 45 --bp 8 --refit 8 --research 8 --tp 70`) | ~8% / ~40% |
+
+`--depth 1,5,10` plays Descent depths instead of `--diff`, and `--stars N` (or `--star '{"might":30}'`) sets
+Constellation levels. Outcomes stay bimodal (a run either snowballs or falls in its first six minutes), so
+use 12 or more runs per cell; the journey's two seeds differ by 20–30% at the same milestone.
 
 **Cores** are compared with `npm run balance:cores`, which plays every core at eight stages of the
 journey (fresh Veteran and Nightmare, mid-kit Inferno, Abyss with Blueprints, Oblivion right after a first

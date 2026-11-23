@@ -23,8 +23,10 @@ export interface RunOptions {
   daily?: boolean;
   /** Ascension level for an Abyss run. */
   ascension?: number;
-  /** The Gauntlet (every boss back to back) instead of a Standard run. */
+  /** The Gauntlet (every boss back to back) or the Descent instead of a Standard run. */
   mode?: RunMode;
+  /** Descent depth. */
+  depth?: number;
 }
 
 /** Owns the app lifecycle: menus, runs, input, the frame loop, saving. */
@@ -52,6 +54,8 @@ export class Game {
   private tut = { launched: false, t: 0, eliteHint: 0, surgeHinted: false, holdHinted: false, idle: 0 };
   private debugEl: HTMLElement | null = null;
   private runOpts: RunOptions | null = null;
+  /** The depth Play Again starts after a Descent run: the next one after a win, the same one after a loss. */
+  nextDepth = 1;
   /** UTC day the current run started on: a Daily Seed run that crosses midnight still belongs to its own day. */
   private runDay = '';
   /** Game time of the last pending-victory snapshot taken during Endless. */
@@ -165,7 +169,13 @@ export class Game {
       else this.startRun({ arena: 'proving', difficulty: 0, pacts: [] });
       return;
     }
-    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension, mode: opts.mode });
+    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension, mode: opts.mode, depth: this.replayDepth() });
+  }
+
+  /** Play Again in the Descent goes on after a win and retries the same depth after a loss. */
+  replayDepth(): number | undefined {
+    const opts = this.runOpts;
+    return opts?.mode === 'descent' ? this.nextDepth : opts?.depth;
   }
 
   buildName(): string {
@@ -287,6 +297,11 @@ export class Game {
     const best = { combo: this.profile.stats.bestCombo, chain: this.profile.stats.maxWallChain };
     this.profile.pendingRun = null;
     const report = applyRun(this.profile, s, w.newDiscoveries, this.runDay || dailyKey(), new Date(), { abandoned });
+    // A won depth moves Run setup on (to the deepest depth it opened, or the next one); a lost one stays put.
+    if (s.mode === 'descent' && s.depth) {
+      this.nextDepth = s.victory ? report.depthUnlocked ?? Math.min(this.profile.descent.open, s.depth + 1) : s.depth;
+      this.profile.setup.depth = this.nextDepth;
+    }
     const build = s.upgrades.map((u) => u.id);
     analytics.emit(s.victory ? 'RunCompleted' : 'RunFailed', { arena: s.arena, difficulty: s.difficulty, time: s.time, level: s.level, kills: s.kills, build });
     this.save();

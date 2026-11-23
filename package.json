@@ -1,7 +1,7 @@
 {
   "name": "bounce-defense",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Physics-driven roguelite build-crafting game: your ball is the character.",
   "type": "module",
   "license": "MIT",
@@ -35,7 +35,8 @@
     "test:watch": "node scripts/vitest.mjs",
     "sim": "tsx scripts/simulate.ts",
     "balance": "tsx scripts/balance.ts",
-    "balance:cores": "node scripts/core-balance.mjs"
+    "balance:cores": "node scripts/core-balance.mjs",
+    "journey": "tsx scripts/journey.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.2",

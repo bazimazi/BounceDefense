@@ -192,7 +192,8 @@ describe('the Gauntlet', () => {
       return e.maxHp / e.def.hp / DIFFICULTIES[difficulty].bossHpMult;
     };
     expect(first(0)).toBeCloseTo(GAUNTLET.bossHp);
-    expect(first(9)).toBeCloseTo(GAUNTLET.bossHp * Math.sqrt(DIFFICULTIES[9].lateHp!));
+    // ...and carry the tier's pressure like every boss of the tier.
+    expect(first(9)).toBeCloseTo(GAUNTLET.bossHp * Math.sqrt(DIFFICULTIES[9].lateHp!) * (DIFFICULTIES[9].pressure ?? 1));
   });
 
   it('squads keep a thinner stream coming during Gauntlet fights', () => {

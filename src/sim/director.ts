@@ -91,7 +91,8 @@ export class Director {
     const base = 0.3 + t * 0.0034 + Math.max(0, t - 240) * 0.003;
     const asc = this.w.asc.has('spawn10') ? 1.1 : 1;
     const tide = this.w.pacts.has('tide') ? 1.3 : 1;
-    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut * asc * tide;
+    const horde = this.w.afflictions.has('horde') ? 1.2 : 1;
+    return base * this.w.diff.spawnMult * (this.w.arena.spawnMult ?? 1) * tut * asc * tide * horde;
   }
 
   private pickSquad(): SquadDef {
@@ -173,7 +174,7 @@ export class Director {
   /** Elite modifier count ramps up with time: one early, the difficulty's full count from 5 minutes. */
   eliteMods(): number {
     const base = Math.min(this.w.diff.eliteModCount, 1 + Math.floor(this.w.time / 150));
-    return Math.min(ELITE_MODS.length, base + (this.w.asc.has('eliteMod') ? 1 : 0));
+    return Math.min(ELITE_MODS.length, base + (this.w.asc.has('eliteMod') ? 1 : 0) + (this.w.afflictions.has('warband') ? 1 : 0));
   }
 
   private place(s: SquadDef): [string, number, number][] {
@@ -199,7 +200,7 @@ export class Director {
   spawnSquad(s: SquadDef): void {
     const w = this.w;
     // Elite traits on ordinary enemies phase in over the first 90 seconds.
-    const base = w.diff.traitChance + (w.asc.has('traits') ? 0.1 : 0) + (w.asc.has('traits2') ? 0.15 : 0);
+    const base = w.diff.traitChance + (w.asc.has('traits') ? 0.1 : 0) + (w.asc.has('traits2') ? 0.15 : 0) + (w.afflictions.has('veiled') ? 0.15 : 0);
     const traitChance = base * Math.min(1, w.time / 90);
     for (const [id, x, y] of this.place(s)) {
       const e = w.spawnEnemy(id, x, y);

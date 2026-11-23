@@ -215,6 +215,12 @@ export interface DifficultyDef {
    * beyond Abyss open close to Abyss and turn into a wall later, where long-term power decides the run.
    */
   lateHp?: number;
+  /**
+   * Health multiplier for every enemy and boss of the tier, carried like Descent depth pressure: ordinary
+   * enemies hold part of it in the opening and all of it by six minutes (see `pressureAt`). It is what keeps a
+   * half-built kit from riding a lucky run through the top tiers.
+   */
+  pressure?: number;
   /** Bosses from the arena rotation fought before any apex boss (the arena's own boss first). */
   bosses: number;
   /** Apex bosses that close the run, in order, after the rotation bosses. */

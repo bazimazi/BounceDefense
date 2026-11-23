@@ -8,6 +8,7 @@ import { CORE_MAP } from '../data/balls';
 import { talentProgress, talentWins } from './talents';
 import { MASTERY_TRAIL, masteryLevel, rankLevel, rankRewards } from '../data/meta';
 import { applyUnlock } from './progress';
+import { STAR_MAP } from '../data/descent';
 
 export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'bounce-defense-save';
@@ -37,7 +38,7 @@ export function defaultProfile(): Profile {
       runs: 0, wins: 0, kills: 0, damage: 0, bestCombo: 0, maxWallChain: 0, explosionKills: 0, fireKills: 0,
       lightningKills: 0, frozen: 0, bleedKills: 0, healed: 0, coinsEarned: 0, evolutions: 0, maxBallsInFlight: 0,
       maxMomentumTier: 0, elitesKilled: 0, playTime: 0, poisonKills: 0, starfalls: 0, goldenCaught: 0, relicsFound: 0,
-      maxAscension: 0, contractsDone: 0, gauntletWins: 0,
+      maxAscension: 0, contractsDone: 0, gauntletWins: 0, descentWins: 0,
     },
     cleared: {},
     bossKills: {},
@@ -51,8 +52,11 @@ export function defaultProfile(): Profile {
     contracts: { day: '', daily: [], week: '', weekly: null },
     awakening: {},
     gauntlet: -1,
-    setup: { arena: 'proving', difficulty: 0, pacts: [], ascension: 0, mode: 'standard' },
+    setup: { arena: 'proving', difficulty: 0, pacts: [], ascension: 0, mode: 'standard', depth: 1 },
     pendingRun: null,
+    aether: 0,
+    descent: { best: 0, open: 1 },
+    stars: {},
   };
 }
 
@@ -127,6 +131,18 @@ export function migrate(raw: unknown): Profile {
   p.awakening = awakening;
   p.gauntlet = Number.isFinite(p.gauntlet) ? Math.max(-1, Math.min(DIFFICULTIES.length - 1, Math.floor(p.gauntlet))) : -1;
   if (!Array.isArray(p.contracts.daily)) p.contracts.daily = [];
+  // Descent: whole, non-negative numbers; the open depth is never shallower than the next one after the record.
+  const whole = (v: unknown, min: number) => (Number.isFinite(v) ? Math.max(min, Math.floor(v as number)) : min);
+  p.aether = whole(p.aether, 0);
+  p.descent = { best: whole(p.descent.best, 0), open: 1 };
+  p.descent.open = Math.max(p.descent.best + 1, whole((raw as { descent?: { open?: unknown } }).descent?.open, 1));
+  const stars: Record<string, number> = {};
+  for (const [id, level] of Object.entries(isObj(p.stars) ? p.stars : {})) {
+    const l = whole(level, 0);
+    if (STAR_MAP[id] && l > 0) stars[id] = l;
+  }
+  p.stars = stars;
+  p.setup.depth = whole(p.setup.depth, 1);
   return p;
 }
 

@@ -445,7 +445,8 @@ describe('advanced and apex research', () => {
     const before = workshopCost(p, 'od_forge')!;
     p.researchNodes.push('industrial_theory');
     expect(full).toBeNull();
-    expect(workshopCost(p, 'od_forge')).toBeCloseTo(before * (1 - INDUSTRY_DISCOUNT), -1);
+    // Prices round to tidy tens.
+    expect(Math.abs(workshopCost(p, 'od_forge')! - before * (1 - INDUSTRY_DISCOUNT))).toBeLessThanOrEqual(5);
   });
 
   it('Sentinel drones fire shards on their own clock', () => {

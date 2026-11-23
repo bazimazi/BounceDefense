@@ -1,4 +1,4 @@
-import { formatNum, formatTime } from '../core/math';
+import { formatMult, formatNum, formatTime } from '../core/math';
 import { dailySeed } from '../core/rng';
 import { ARENAS, ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACTS, PACT_MAP } from '../data/arenas';
 import { CORES, CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
@@ -10,6 +10,7 @@ import {
 import { ASCENSIONS, ASCENSION_REWARD, ASCENSION_TIER, ascensionCap, ascensionDifficulty } from '../data/ascension';
 import { AWAKEN_MASTERY, AWAKEN_MAX, awakenRankText } from '../data/awakening';
 import { CONTRACT_MAP } from '../data/contracts';
+import { AFFLICTION_MAP, DESCENT, STARS, aetherFor, afflictionCount, descentAfflictions, descentBossHp, descentDamage, descentHp, fortuneMult } from '../data/descent';
 import { RELICS, RELIC_COLOR, RELIC_MAP } from '../data/relics';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
@@ -17,6 +18,7 @@ import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
   awaken, awakenCost, dailyOptions, buyPart, buyWorkshop, canAwaken, canResearch, canUnlockCore, contractBoard, contractSlotRewards, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
+  buyStar, canBuyStar, descentOpen, descentUnlocked, overdriveDeep, starCost, starWallet, starsUnlocked,
   gauntletUnlocked, isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, overdriveOpen, partsForSlot, researchLock, rewardMultiplier, unlockCore, workshopCap, workshopCost, workshopLock,
   type Goal, type RunReport,
 } from '../meta/progress';
@@ -52,7 +54,7 @@ function presetLabel(preset: { core: string; impact: string }): string {
 
 export type HubTab = 'armory' | 'forge' | 'battle' | 'codex' | 'goals';
 const HUB_TABS: HubTab[] = ['armory', 'forge', 'battle', 'codex', 'goals'];
-type ForgeSegment = 'workshop' | 'research' | 'talents';
+type ForgeSegment = 'workshop' | 'research' | 'talents' | 'stars';
 type WorkshopTab = 'classic' | 'blueprints' | 'refits' | 'overdrive';
 type ResearchTab = 'core' | 'advanced' | 'apex';
 const RESEARCH_TABS: ResearchTab[] = ['core', 'advanced', 'apex'];
@@ -123,7 +125,7 @@ export class UI {
     // Restore the last Run setup; battlePage() still clamps it to what this profile has open.
     const saved = game.profile.setup;
     this.setup = { arena: saved.arena, difficulty: Math.max(0, Math.floor(saved.difficulty) || 0), pacts: new Set(saved.pacts),
-      ascension: Math.max(0, Math.floor(saved.ascension) || 0), mode: saved.mode === 'gauntlet' ? 'gauntlet' : 'standard' };
+      ascension: Math.max(0, Math.floor(saved.ascension) || 0), mode: saved.mode === 'gauntlet' || saved.mode === 'descent' ? saved.mode : 'standard' };
     root.addEventListener('click', event => {
       if (!(event.target instanceof Element)) return;
       const control = event.target.closest<HTMLElement>('button, [role="button"]');
@@ -453,7 +455,8 @@ export class UI {
     const choice = this.setupChoices();
     if (!ARENA_MAP[s.arena]) s.arena = 'proving';
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
-    if (!gauntletUnlocked(p)) s.mode = 'standard';
+    if (s.mode === 'gauntlet' && !gauntletUnlocked(p)) s.mode = 'standard';
+    if (s.mode === 'descent' && !descentUnlocked(p)) s.mode = 'standard';
     if (!choice.pacts) s.pacts.clear();
     for (const id of [...s.pacts]) if (!this.pactAvailable(id)) s.pacts.delete(id);
     if (!choice.arena) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
@@ -486,15 +489,21 @@ export class UI {
   /** Saves the Run setup (the chosen Ascension, not the clamped one) so the next visit opens on it. */
   private rememberSetup(): void {
     const s = this.setup;
-    this.p.setup = { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.ascension, mode: s.mode };
+    this.p.setup = { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.ascension, mode: s.mode, depth: this.depthChoice() };
     this.game.save();
   }
 
   /** The current setup as run options; Ascension only rides along on Abyss and above. */
-  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number; mode: RunMode } {
+  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number; mode: RunMode; depth?: number } {
     const s = this.setup;
+    if (s.mode === 'descent') return { arena: s.arena, difficulty: DESCENT.tier, pacts: [...s.pacts], ascension: 0, mode: s.mode, depth: this.depthChoice() };
     const gauntlet = s.mode === 'gauntlet';
     return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER && !gauntlet ? this.ascensionFor(s.difficulty) : 0, mode: s.mode };
+  }
+
+  /** The chosen Descent depth, kept within the depths this profile has opened. */
+  private depthChoice(): number {
+    return Math.max(1, Math.min(descentOpen(this.p), Math.floor(this.p.setup.depth) || 1));
   }
 
   /** The chosen Ascension as far as this difficulty's band and the ladder allow (the choice itself is kept for harder tiers). */
@@ -516,7 +525,7 @@ export class UI {
     };
   }
 
-  private playButton(config: { arena: string; difficulty: number; pacts: string[]; ascension?: number; mode?: RunMode }, enabled = true): HTMLButtonElement {
+  private playButton(config: { arena: string; difficulty: number; pacts: string[]; ascension?: number; mode?: RunMode; depth?: number }, enabled = true): HTMLButtonElement {
     return h('button', {
       class: 'primary big launch-button play-btn', disabled: !enabled,
       onclick: () => { this.click(); this.rememberSetup(); this.game.startRun(config); },
@@ -550,7 +559,7 @@ export class UI {
     const opts = this.runOptions();
     const mult = rewardMultiplier(opts);
     const tier = opts.ascension ? t('home.ascensionTag', { difficulty: difficulty.name, n: opts.ascension }) : difficulty.name;
-    const diffName = opts.mode === 'gauntlet' ? t('home.gauntletTag', { difficulty: tier }) : tier;
+    const diffName = opts.mode === 'gauntlet' ? t('home.gauntletTag', { difficulty: tier }) : opts.mode === 'descent' ? t('home.depthTag', { n: opts.depth ?? 1 }) : tier;
     const card = h('button', {
       class: `run-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}`,
       onclick: () => { this.click(); this.runSheet(); },
@@ -630,7 +639,8 @@ export class UI {
         iconButton('back', t('home.prevArena'), () => move(-1), 'carousel-btn'),
         card,
         iconButton('forward', t('home.nextArena'), () => move(1), 'carousel-btn')) : card,
-      ...(choice.difficulty ? [
+      ...(s.mode === 'descent' ? this.depthPicker(update) : []),
+      ...(choice.difficulty && s.mode !== 'descent' ? [
         sectionTitle(t('setup.difficulty')),
         // Unlocked tiers plus the next one as a visible goal; later tiers stay out of the way.
         h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
@@ -669,10 +679,12 @@ export class UI {
   private modePicker(update: () => void): (Node | null)[] {
     const p = this.p;
     const s = this.setup;
-    if (!gauntletUnlocked(p)) {
-      const beaten = BOSSES.filter(b => (p.bossKills[b.id] ?? 0) > 0).length;
-      return [h('p', { class: 'sheet-intro mode-hint' }, icon('lock'), t('setup.gauntletLocked', { n: beaten, max: BOSSES.length }))];
-    }
+    const gauntlet = gauntletUnlocked(p);
+    const descent = descentUnlocked(p);
+    const beaten = BOSSES.filter(b => (p.bossKills[b.id] ?? 0) > 0).length;
+    const gauntletHint = h('p', { class: 'sheet-intro mode-hint' }, icon('lock'), t('setup.gauntletLocked', { n: beaten, max: BOSSES.length }));
+    // Before any second mode opens, the next one shows as a goal with its progress.
+    if (!gauntlet && !descent) return [gauntletHint];
     const option = (mode: RunMode, title: string, desc: string) => h('button', {
       role: 'radio', 'aria-checked': String(s.mode === mode), class: `mode-option ${s.mode === mode ? 'on' : ''}`, 'data-motion-key': `mode:${mode}`,
       onclick: () => { if (s.mode === mode) return; s.mode = mode; this.click(); update(); },
@@ -681,8 +693,44 @@ export class UI {
       sectionTitle(t('setup.mode')),
       h('div', { class: 'mode-options', role: 'radiogroup', 'aria-label': t('setup.mode') },
         option('standard', t('setup.modeStandard'), t('setup.modeStandardDesc')),
-        option('gauntlet', t('setup.modeGauntlet'), t('setup.modeGauntletDesc'))),
+        gauntlet ? option('gauntlet', t('setup.modeGauntlet'), t('setup.modeGauntletDesc')) : null,
+        descent ? option('descent', t('setup.modeDescent'), t('setup.modeDescentDesc')) : null),
+      gauntlet ? null : gauntletHint,
       s.mode === 'gauntlet' && p.gauntlet >= 0 ? h('p', { class: 'difficulty-info' }, icon('trophy'), t('setup.gauntletBest', { name: DIFFICULTIES[p.gauntlet].name })) : null,
+      descent ? null : h('p', { class: 'sheet-intro mode-hint' }, icon('lock'), t('setup.descentLocked', { name: DIFFICULTIES[DESCENT.tier].name })),
+    ];
+  }
+
+  /**
+   * The Descent: a depth stepper over every depth opened so far, what the chosen depth does (enemy health,
+   * line damage, its Afflictions) and what it pays.
+   */
+  private depthPicker(update: () => void): (Node | null)[] {
+    const p = this.p;
+    const open = descentOpen(p);
+    const depth = this.depthChoice();
+    const set = (n: number) => { const v = Math.max(1, Math.min(open, n)); if (v === depth) return; p.setup.depth = v; this.click(); update(); };
+    const minus = iconButton('back', t('setup.depthMinus'), () => set(depth - 1), 'carousel-btn');
+    const plus = iconButton('forward', t('setup.depthPlus'), () => set(depth + 1), 'carousel-btn');
+    minus.disabled = depth <= 1;
+    plus.disabled = depth >= open;
+    const afflictions = descentAfflictions(depth).map(id => AFFLICTION_MAP[id]);
+    const next = afflictionCount(depth) < 6 ? (Math.floor((depth + 2) / 5) + 1) * 5 - 2 : 0;
+    return [
+      sectionTitle(t('setup.depth')),
+      h('div', { class: 'ascension-stepper depth-stepper', 'data-motion-key': 'depth' },
+        minus,
+        h('div', { class: 'ascension-value' },
+          h('b', {}, t('setup.depthLevel', { n: depth })),
+          h('small', {}, t('setup.depthStats', { hp: formatMult(descentHp(depth)), boss: formatMult(descentBossHp(depth)), dmg: formatMult(descentDamage(depth)) }))),
+        plus),
+      h('p', { class: 'difficulty-info depth-info' }, icon('aether'), t('setup.depthReward', { n: formatNum(Math.round(aetherFor(depth) * fortuneMult(p.stars))) }),
+        p.descent.best > 0 ? h('span', { class: 'depth-best' }, t('setup.depthBest', { n: p.descent.best })) : null),
+      afflictions.length ? h('div', { class: 'affliction-list' }, afflictions.map(a => h('div', { class: 'affliction-row' },
+        h('span', { class: 'pact-icon' }, a.icon), h('span', { class: 'pact-copy' }, h('b', {}, a.name), h('small', {}, a.desc))))) :
+        h('p', { class: 'sheet-intro' }, t('setup.depthClean')),
+      next ? h('p', { class: 'difficulty-info' }, icon('skull'), t('setup.depthNextAffliction', { n: next })) : null,
+      h('p', { class: 'sheet-intro' }, t('setup.depthIntro', { hp: Math.round((DESCENT.hp - 1) * 100), dmg: Math.round((DESCENT.damage - 1) * 100) })),
     ];
   }
 
@@ -886,17 +934,21 @@ export class UI {
   workshop(): void { this.forgeSegment = 'workshop'; this.openTab('forge'); }
   research(): void { this.forgeSegment = 'research'; this.openTab('forge'); }
   talents(): void { this.forgeSegment = 'talents'; this.openTab('forge'); }
+  stars(): void { this.forgeSegment = 'stars'; this.openTab('forge'); }
 
   private forgePage(): HTMLElement {
     const p = this.p;
     const available = talentPointsUsable(p);
     const choose = (id: string) => { this.forgeSegment = id as ForgeSegment; this.click(); this.renderTab('forge'); };
-    const body = this.forgeSegment === 'workshop' ? this.workshopBody() : this.forgeSegment === 'research' ? this.researchBody() : this.talentBody();
+    // Constellations join the Forge once the Descent is open.
+    if (this.forgeSegment === 'stars' && !descentUnlocked(p)) this.forgeSegment = 'workshop';
+    const body = this.forgeSegment === 'workshop' ? this.workshopBody() : this.forgeSegment === 'research' ? this.researchBody() : this.forgeSegment === 'stars' ? this.starsBody() : this.talentBody();
     return h('div', { class: 'forge' },
       segmented([
         { id: 'workshop', label: t('home.nav.workshop'), dot: this.workshopReady() },
         { id: 'research', label: t('home.nav.research'), dot: RESEARCH.some(r => canResearch(p, r.id)) },
         { id: 'talents', label: t('home.nav.talents'), count: available > 0 ? String(available) : undefined },
+        ...(descentUnlocked(p) ? [{ id: 'stars', label: t('home.nav.stars'), dot: STARS.some(st => canBuyStar(p, st.id)) }] : []),
       ], this.forgeSegment, choose, t('tab.forge')),
       this.forgeSegment === 'workshop' ? this.workshopTabs() : this.forgeSegment === 'research' ? this.researchTabs() : null,
       h('div', {
@@ -938,7 +990,7 @@ export class UI {
     const open = overdriveOpen(p);
     const next = maxDifficulty(p);
     // What raises the Overdrive cap next: the first win, then a win on the next tier up.
-    const hint = open >= OVERDRIVE_MAX ? '' : open === 0
+    const hint = open >= OVERDRIVE_MAX ? t('workshop.overdriveDeepHint') : open === 0
       ? t('workshop.overdriveFirst', { n: OVERDRIVE_PER_TIER })
       : t('workshop.overdriveNext', { name: DIFFICULTIES[next].name, n: OVERDRIVE_PER_TIER });
     const bought = ALL_WORKSHOP.reduce((a, wd) => a + Math.min(wd.maxLevel, p.workshop[wd.id] ?? 0), 0);
@@ -988,7 +1040,8 @@ export class UI {
     const lvl = p.workshop[wd.id] ?? 0;
     const cost = workshopCost(p, wd.id);
     const affordable = cost !== null && p.coins >= cost;
-    const maxed = lvl >= wd.maxLevel;
+    // Overdrive never tops out: Descent depths keep opening levels past fifty.
+    const maxed = !wd.overdrive && lvl >= wd.maxLevel;
     const lock = maxed ? null : this.workshopLockText(wd, hint);
     // Long lines show a level counter instead of a row of pips.
     const level = wd.maxLevel > 5
@@ -1007,6 +1060,33 @@ export class UI {
           class: 'gold buy-btn', disabled: !affordable, 'aria-label': t('workshop.buy', { name: wd.name, n: cost }),
           onclick: () => { if (buyWorkshop(p, wd.id)) { this.game.audio.play('select'); this.game.save(); this.renderTab('forge'); } },
         }, icon('coin'), h('b', {}, formatNum(cost, 'up'))));
+  }
+
+  /** Constellations: endless lines paid in Aether, Cores and Research, opened by the first Descent win. */
+  private starsBody(): HTMLElement[] {
+    const p = this.p;
+    const open = starsUnlocked(p);
+    const intro = h('p', { class: 'page-intro' }, t(open ? 'stars.intro' : 'stars.locked'));
+    const status = h('div', { class: 'overdrive-status stars-status' },
+      h('b', {}, p.descent.best > 0 ? t('stars.best', { n: p.descent.best }) : t('stars.noBest')),
+      h('small', {}, icon('workshop'), overdriveDeep(p) > 0 ? t('stars.overdriveDeep', { n: overdriveDeep(p) }) : t('stars.overdriveHint')));
+    const rows = h('div', { class: 'shop-list reveal' }, STARS.map(st => {
+      const lvl = p.stars[st.id] ?? 0;
+      const cost = starCost(p, st.id);
+      const affordable = cost !== null && starWallet(p, st.currency) >= cost;
+      const glyph = st.currency === 'aether' ? 'aether' : st.currency === 'cores' ? 'gem' : 'flask';
+      return h('div', { class: `shop-row star-row ${affordable ? 'affordable' : ''} ${open ? '' : 'locked'}`, 'data-motion-key': `star:${st.id}` },
+        h('span', { class: 'shop-icon' }, st.icon),
+        h('div', { class: 'shop-copy' },
+          h('div', { class: 'shop-name' }, h('b', {}, st.name), h('span', { class: 'chip level-chip' }, t('stars.level', { level: lvl })), h('span', { class: 'star-step' }, t('stars.step', { step: st.step }))),
+          h('div', { class: 'shop-desc' }, richText(lvl > 0 ? t('workshop.now', { text: st.desc(lvl) }) : st.desc(1))),
+          lvl > 0 ? h('div', { class: 'shop-next' }, richText(t('workshop.next', { text: st.desc(lvl + 1) }))) : null),
+        cost === null ? h('span', { class: 'chip max-chip' }, icon('lock')) : h('button', {
+          class: `buy-btn star-btn ${st.currency}`, disabled: !affordable, 'aria-label': t('stars.buy', { name: st.name, n: cost }),
+          onclick: () => { if (buyStar(p, st.id)) { this.game.audio.play('select'); this.game.save(); this.renderTab('forge'); } },
+        }, icon(glyph), h('b', {}, formatNum(cost, 'up'))));
+    }));
+    return [intro, status, rows];
   }
 
   private researchBody(): HTMLElement[] {
@@ -1671,8 +1751,11 @@ export class UI {
     const overlay = h('div', { class: 'levelup pause-overlay' },
       h('div', { class: 'pause-head' },
         h('div', { class: 'lvtitle' }, t('pause.title')),
-        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.gauntlet ? t('home.gauntletTag', { difficulty: w.diff.name }) : w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
+        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.gauntlet ? t('home.gauntletTag', { difficulty: w.diff.name }) : w.depth ? t('home.depthTag', { n: w.depth }) : w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
       h('div', { class: 'scroll pause-body' },
+        // A Descent depth's Afflictions stay readable mid-run.
+        w.afflictions.size ? h('div', { class: 'build-tags pause-afflictions', 'aria-label': t('pause.afflictions') },
+          [...w.afflictions].map(id => h('span', { class: 'tag affliction', title: AFFLICTION_MAP[id].desc }, `${AFFLICTION_MAP[id].icon} ${AFFLICTION_MAP[id].name}`))) : null,
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('pause.currentBuild')), h('div', { class: 'buildname' }, this.game.buildName()))),
           this.buildStrip(w, 'wrap'),
@@ -1709,7 +1792,7 @@ export class UI {
     const overlay = h('div', { class: 'levelup victory-overlay' },
       h('div', { class: 'victory-burst', 'aria-hidden': 'true' }, icon('trophy')),
       h('div', { class: 'result-title win' }, t('victory.title')),
-      h('div', { class: 'results-sub' }, t('victory.cleared', { arena: ARENA_MAP[w.arena.id].name, difficulty: w.diff.name, time: formatTime(w.time) })),
+      h('div', { class: 'results-sub' }, t('victory.cleared', { arena: ARENA_MAP[w.arena.id].name, difficulty: w.depth ? t('home.depthTag', { n: w.depth }) : w.diff.name, time: formatTime(w.time) })),
       h('div', { class: 'col victory-actions' },
         h('button', { class: 'primary big', onclick: () => { this.click(); this.closeOverlay(); this.game.finishRun(); } }, icon('trophy'), t('victory.claim')),
         h('button', { class: 'big endless-btn', onclick: () => { this.click(); this.closeOverlay(); this.game.continueEndless(); } }, icon('fire'), t('victory.endless')),
@@ -1734,14 +1817,15 @@ export class UI {
       ...(r.ascensionUnlocked ? [['fire', ascensionDifficulty(r.ascensionUnlocked) > s.difficulty
         ? t('results.ascensionBandShort', { n: r.ascensionUnlocked, difficulty: DIFFICULTIES[ascensionDifficulty(r.ascensionUnlocked)].name })
         : t('results.ascensionShort', { n: r.ascensionUnlocked })] as [IconName, string]] : []),
+      ...(r.depthUnlocked ? [['aether', t('results.depthShort', { n: r.depthUnlocked })] as [IconName, string]] : []),
       ...r.contracts.map((c): [IconName, string] => ['daily', t('results.contractShort', { name: c })]),
       ...(r.daily?.bonus ? [['daily', t('results.dailyBonusShort')] as [IconName, string]] : []),
       ...(r.daily?.newBest ? [['daily', t('results.dailyBestShort', { n: formatNum(r.daily.best) })] as [IconName, string]] : []),
       ...r.mastery.rewards.map((text): [IconName, string] => ['star', text]),
     ];
     const outcome = s.victory ? 'win' : abandoned ? 'ended' : 'lose';
-    const reward = (currency: 'coins' | 'cores' | 'research', n: number) => h('div', { class: `reward-tile ${currency}` },
-      icon(currency === 'coins' ? 'coin' : currency === 'cores' ? 'gem' : 'flask'),
+    const reward = (currency: 'coins' | 'cores' | 'research' | 'aether', n: number) => h('div', { class: `reward-tile ${currency}` },
+      icon(currency === 'coins' ? 'coin' : currency === 'cores' ? 'gem' : currency === 'aether' ? 'aether' : 'flask'),
       h('b', { 'data-count': String(n) }, `+${formatNum(n)}`), h('span', {}, t(`common.${currency}`)));
     const leveled = r.mastery.after > r.mastery.before;
     const masteryFrac = r.mastery.need ? r.mastery.into / r.mastery.need : 1;
@@ -1749,12 +1833,13 @@ export class UI {
       h('div', { class: 'results-head' },
         h('div', { class: 'results-emblem', 'aria-hidden': 'true' }, icon(s.victory ? 'trophy' : abandoned ? 'flag' : 'skull')),
         h('div', { class: `result-title ${outcome}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),
-        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.mode === 'gauntlet' ? t('results.gauntlet') : ''}${s.daily ? t('results.daily') : ''}`)),
+        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.mode === 'gauntlet' ? t('results.gauntlet') : ''}${s.depth ? t('results.depthTag', { n: s.depth }) : ''}${s.daily ? t('results.daily') : ''}`)),
       h('div', { class: 'scroll results-body' },
         h('div', { class: 'reward-row reveal' },
           reward('coins', r.rewards.coins),
           r.rewards.cores ? reward('cores', r.rewards.cores) : null,
-          r.rewards.research ? reward('research', r.rewards.research) : null),
+          r.rewards.research ? reward('research', r.rewards.research) : null,
+          r.rewards.aether ? reward('aether', r.rewards.aether) : null),
         h('div', { class: `mastery-card ${leveled ? 'leveled' : ''}`, style: `--core:${core.color}` },
           orb(core.color, 'small'),
           h('div', { class: 'mastery-copy' },
@@ -1796,7 +1881,8 @@ export class UI {
       ),
       h('div', { class: 'results-actions' },
         h('button', { class: 'home-btn', onclick: () => { this.click(); this.home(); } }, icon('home'), t('results.home')),
-        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.replay(); } }, icon('play'), t('results.playAgain'))),
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.replay(); } }, icon('play'),
+          s.depth && s.victory && !s.daily ? t('results.descend', { n: this.game.nextDepth }) : t('results.playAgain'))),
     );
     this.show(screen);
     this.celebrate(screen, s.victory);

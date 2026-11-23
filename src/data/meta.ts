@@ -66,6 +66,11 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'awakened', name: 'Awakened', icon: '✴️', desc: 'Fully awaken a core.', progress: (p) => [fullyAwakened(p), 1], rewards: [{ type: 'research', amount: 6 }] },
   { id: 'radiant_arsenal', name: 'Radiant Arsenal', icon: '🌟', desc: 'Fully awaken every core.', progress: (p) => [fullyAwakened(p), CORES.length], rewards: [{ type: 'cosmetic', id: 'radiant' }, { type: 'research', amount: 15 }] },
   { id: 'gladiator', name: 'Gladiator', icon: '🥊', desc: 'Win 10 Gauntlets.', progress: (p) => [p.stats.gauntletWins ?? 0, 10], rewards: [{ type: 'cores', amount: 15 }, { type: 'research', amount: 6 }] },
+  // The Descent: records along an endless ladder.
+  { id: 'deep_diver', name: 'Into the Deep', icon: '🕳️', desc: 'Win Descent Depth 1.', progress: (p) => [p.descent?.best ?? 0, 1], rewards: [{ type: 'research', amount: 5 }] },
+  { id: 'fathomless', name: 'Fathomless', icon: '🌊', desc: 'Win Descent Depth 15.', progress: (p) => [p.descent?.best ?? 0, 15], rewards: [{ type: 'cores', amount: 30 }, { type: 'research', amount: 10 }] },
+  { id: 'bottomless', name: 'Bottomless', icon: '🌀', desc: 'Win Descent Depth 40.', progress: (p) => [p.descent?.best ?? 0, 40], rewards: [{ type: 'cores', amount: 80 }, { type: 'research', amount: 25 }] },
+  { id: 'starwright', name: 'Starwright', icon: '✨', desc: 'Raise Constellations 60 levels in all.', progress: (p) => [Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0), 60], rewards: [{ type: 'research', amount: 12 }] },
 ];
 
 /** Cores at their final Awakening rank (five). */
@@ -255,7 +260,13 @@ export interface WorkshopDef {
   core?: string;
 }
 
-const costCurve = (base: number, growth: number) => (lvl: number) => Math.round(base * Math.pow(growth, lvl));
+/**
+ * Workshop price multipliers by section. The economy pays far more per run on the hard tiers than when the
+ * Workshop was first priced, so these keep the kit a long project (measured with `npm run journey`).
+ */
+export const PRICE = { foundations: 4, blueprints: 4, refits: 4, overdrive: 6 };
+const costCurve = (base: number, growth: number) => (lvl: number) => Math.round((base * PRICE.foundations * Math.pow(growth, lvl)) / 10) * 10;
+const fixed = (price: number) => () => price * PRICE.foundations;
 
 export const WORKSHOP: WorkshopDef[] = [
   { id: 'hull', name: 'Reinforced Line', icon: '🧱', desc: (l) => `+${l * 10} max HP`, maxLevel: 5, cost: costCurve(50, 1.6), mods: (l) => [{ stat: 'maxHp', add: 10 * l }] },
@@ -265,14 +276,14 @@ export const WORKSHOP: WorkshopDef[] = [
   { id: 'salvage', name: 'Salvage', icon: '🪙', desc: (l) => `+${l * 8}% coins`, maxLevel: 5, cost: costCurve(70, 1.6), mods: (l) => [{ stat: 'coinGain', mult: 0.08 * l }] },
   { id: 'study', name: 'Field Study', icon: '📘', desc: (l) => `+${l * 5}% XP`, maxLevel: 4, cost: costCurve(80, 1.7), mods: (l) => [{ stat: 'xpGain', mult: 0.05 * l }] },
   { id: 'primer', name: 'Momentum Primer', icon: '🌀', desc: (l) => `Balls launch with ${l * 2} momentum`, maxLevel: 3, cost: costCurve(150, 1.9), mods: (l) => [{ stat: 'momentumStart', add: 2 * l }] },
-  { id: 'head_start', name: 'Head Start', icon: '🏁', desc: () => 'Begin each run with a free upgrade choice', maxLevel: 1, cost: () => 900, mods: () => [] },
+  { id: 'head_start', name: 'Head Start', icon: '🏁', desc: () => 'Begin each run with a free upgrade choice', maxLevel: 1, cost: fixed(900), mods: () => [] },
   // A whole extra ball at launch doubled early damage; raising the ceiling rewards late runs instead.
-  { id: 'spare_ball', name: 'Spare Ball', icon: '⚪', desc: () => 'Extra Ball can be taken once more (up to 6 balls)', maxLevel: 1, cost: () => 2500, mods: () => [] },
+  { id: 'spare_ball', name: 'Spare Ball', icon: '⚪', desc: () => 'Extra Ball can be taken once more (up to 6 balls)', maxLevel: 1, cost: fixed(2500), mods: () => [] },
   { id: 'plating', name: 'Bastion Plating', icon: '🛡️', desc: (l) => `+${l} armor on the defense line`, maxLevel: 3, cost: costCurve(220, 1.9), mods: (l) => [{ stat: 'armor', add: l }] },
   { id: 'coils', name: 'Surge Coils', icon: '🔋', desc: (l) => `Surge charges ${l * 5}% faster`, maxLevel: 4, cost: costCurve(160, 1.7), mods: (l) => [{ stat: 'surgeGain', mult: 0.05 * l }] },
   { id: 'quick_hands', name: 'Quick Hands', icon: '↩️', desc: (l) => `Recall cooldown −${l}s`, maxLevel: 2, cost: costCurve(320, 2), mods: (l) => [{ stat: 'recallCooldown', add: -l }] },
   { id: 'lucky_charm', name: 'Lucky Charm', icon: '🍀', desc: (l) => `+${l} luck: better upgrade and relic rarity`, maxLevel: 2, cost: costCurve(450, 2.2), mods: (l) => [{ stat: 'luck', add: l }] },
-  { id: 'relic_cache', name: 'Relic Cache', icon: '🏺', desc: () => 'Begin each run with a relic choice', maxLevel: 1, cost: () => 3500, mods: () => [] },
+  { id: 'relic_cache', name: 'Relic Cache', icon: '🏺', desc: () => 'Begin each run with a relic choice', maxLevel: 1, cost: fixed(3500), mods: () => [] },
 ];
 
 // ---------------------------------------------------------------- overdrive
@@ -283,7 +294,7 @@ export const WORKSHOP: WorkshopDef[] = [
  */
 export const OVERDRIVE_PER_TIER = 5;
 export const OVERDRIVE_MAX = 50;
-const odCost = (base: number) => (lvl: number) => Math.round((base * Math.pow(1.105, lvl) + base * 0.6 * lvl) / 10) * 10;
+const odCost = (base: number) => (lvl: number) => Math.round((PRICE.overdrive * (base * Math.pow(1.105, lvl) + base * 0.6 * lvl)) / 10) * 10;
 const pct1 = (v: number) => (Math.round(v * 1000) / 10).toString();
 
 export const OVERDRIVE: WorkshopDef[] = [
@@ -305,7 +316,7 @@ export const OVERDRIVE: WorkshopDef[] = [
  * Mechanics bought with coins. Each level is gated by a difficulty won, so the price list grows with
  * the player: a few thousand coins after the first wins, hundreds of thousands near Eternity.
  */
-const prices = (list: number[]) => (lvl: number) => list[Math.min(lvl, list.length - 1)];
+const prices = (list: number[]) => (lvl: number) => list[Math.min(lvl, list.length - 1)] * PRICE.blueprints;
 const bp = (d: Omit<WorkshopDef, 'cost' | 'maxLevel'> & { prices: number[]; tiers: number[] }): WorkshopDef => {
   const { prices: list, ...rest } = d;
   return { ...rest, maxLevel: list.length, cost: prices(list) };
@@ -361,7 +372,7 @@ export const BLUEPRINTS: WorkshopDef[] = [
  */
 export const REFIT_MAX = 10;
 export const REFIT_MASTERY_STEP = 3;
-const refitCost = (lvl: number) => Math.round((900 * Math.pow(1.4, lvl)) / 10) * 10;
+const refitCost = (lvl: number) => Math.round((PRICE.refits * 900 * Math.pow(1.4, lvl)) / 10) * 10;
 const REFIT_SIGNATURE: Record<string, { text: (l: number) => string; mods: (l: number) => Modifier[]; damage?: number }> = {
   striker: { text: (l) => `+${l}% crit chance after a wall bounce`, mods: (l) => [{ stat: 'bankCrit', add: 0.01 * l }] },
   pyro: { text: (l) => `+${l * 3}% burn damage`, mods: (l) => [{ stat: 'burnPower', mult: 0.03 * l }] },
@@ -439,7 +450,7 @@ export function masteryRewards(core: string): MasteryReward[] {
 /** Account-wide level fed by every run's Mastery XP: a bar that always moves. */
 export const RANK_MAX = 100;
 /** XP needed to go from `rank` to `rank + 1`. */
-export const rankXpFor = (rank: number): number => 120 + 20 * rank;
+export const rankXpFor = (rank: number): number => 200 + 50 * rank;
 
 export function rankLevel(xp: number): { level: number; into: number; need: number } {
   let level = 1;

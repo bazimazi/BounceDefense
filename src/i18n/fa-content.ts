@@ -7,6 +7,8 @@ const pct = (v: number) => `${Math.round(v * 100)}٪`;
  * `localize()` calls in `src/data`; `desc` entries for upgrades, workshop items and talents are
  * functions of the level/rank just like their English originals.
  */
+const starPct = (v: number): string => { const p = v * 100; return p >= 100 ? Math.round(p).toLocaleString('en-US') : (Math.round(p * 10) / 10).toString(); };
+
 export const faContent: ContentTable = {
   core: {
     striker: { name: 'هستهٔ مهاجم', desc: 'متعادل و دقیق. به شلیک‌های تمیز کمانه‌ای پاداش می‌دهد.', passive: 'مهندسی دقیق: +30٪ آسیب. ضربه‌های پس از کمانه از دیوار +15٪ شانس بحرانی می‌گیرند.' },
@@ -54,6 +56,7 @@ export const faContent: ContentTable = {
     void: { name: 'خلأ' }, gold: { name: 'زرین' }, prism: { name: 'منشور' },
     toxin: { name: 'زهرابه' }, magma: { name: 'ماگما' }, mirror: { name: 'آینه' }, chrono: { name: 'چرخ‌دنده' },
     comet: { name: 'دنباله‌دار' }, phoenix: { name: 'ققنوس' }, volt: { name: 'ولتاژ' }, glacier: { name: 'یخ‌کوه' }, sanguine: { name: 'خونین' }, rift: { name: 'شکاف' },
+    fathom: { name: 'ژرف‌پیما' }, starborn: { name: 'ستاره‌زاد' }, infinite: { name: 'بی‌کران' },
     frost: { name: 'یخبندان' }, storm: { name: 'توفان' }, nebula: { name: 'سحابی' }, sunset: { name: 'غروب' },
     abyssal: { name: 'مغاکی' }, celestial: { name: 'آسمانی' }, ascendant: { name: 'عروج‌یافته' },
     gladiator: { name: 'گلادیاتور' }, zenith: { name: 'سمت‌الرأس' }, radiant: { name: 'درخشان' }, fuse: { name: 'فتیله' },
@@ -343,6 +346,10 @@ export const faContent: ContentTable = {
     apex_slayer: { name: 'کشندهٔ برترها', desc: '25 باس برتر را شکست بده.' },
     hivemind: { name: 'ذهن کندو', desc: '14 توپ را هم‌زمان در پرواز داشته باش.' },
     awakened: { name: 'بیدار', desc: 'یک هسته را کاملاً بیدار کن.' },
+    deep_diver: { name: 'به سوی ژرفا', desc: 'عمق 1 ژرفا را ببر.' },
+    fathomless: { name: 'بی‌انتها', desc: 'عمق 15 ژرفا را ببر.' },
+    bottomless: { name: 'بی‌کف', desc: 'عمق 40 ژرفا را ببر.' },
+    starwright: { name: 'ستاره‌ساز', desc: 'صورت‌های فلکی را روی هم 60 سطح بالا ببر.' },
     radiant_arsenal: { name: 'زرادخانهٔ درخشان', desc: 'همهٔ هسته‌ها را کاملاً بیدار کن.' },
     gladiator: { name: 'گلادیاتور', desc: '10 نبرد پیاپی را ببر.' },
   },
@@ -663,5 +670,26 @@ export const faContent: ContentTable = {
     evolve: { desc: 'توپت را {n} بار تکامل بده' },
     barrels: { desc: '{n} بشکه را منفجر کن' },
     runs: { desc: '{n} دور بازی کن' },
+  },
+  affliction: {
+    bulwark: { name: 'سنگر', desc: 'هر دشمن به جز باس‌ها +4 زره می‌گیرد.' },
+    frenzy: { name: 'جنون', desc: 'دشمنان 12٪ سریع‌تر حرکت می‌کنند.' },
+    tyrant: { name: 'جبار', desc: 'باس‌ها 50٪ جان بیشتری دارند.' },
+    horde: { name: 'انبوه', desc: 'جوخه‌ها 20٪ پرتکرارتر از راه می‌رسند.' },
+    veiled: { name: 'نقاب‌دار', desc: '15٪ دیگر از دشمنان عادی ویژگی نخبه دارند.' },
+    sanguine: { name: 'خون‌آشام', desc: 'هر نخبه‌ای جان بازسازی می‌کند.' },
+    grievous: { name: 'زخم کاری', desc: 'رخنه‌ها 30٪ سخت‌تر به خط دفاع می‌خورند.' },
+    sapping: { name: 'فرسایش', desc: 'موج 30٪ کندتر شارژ می‌شود.' },
+    withering: { name: 'پژمردگی', desc: 'درمان و بازسازی جان خط دفاع نصف می‌شود.' },
+    bolster: { name: 'دلگرمی', desc: 'وقتی دشمنی می‌افتد، دشمنان نزدیکش 8٪ جان می‌گیرند، تا پنج بار.' },
+    warband: { name: 'دستهٔ جنگی', desc: 'نخبه‌ها یک ویژگی اضافه دارند.' },
+    juggernaut: { name: 'غول‌پیکر', desc: 'نخبه‌ها و نیمه‌باس 60٪ جان بیشتری دارند.' },
+  },
+  star: {
+    might: { name: 'توان', desc: (l: number) => `+${starPct(Math.pow(1.03, l) - 1)}٪ آسیب` },
+    bastion: { name: 'دژ', desc: (l: number) => `+${starPct(Math.pow(1.03, l) - 1)}٪ بیشینهٔ جان` },
+    ward: { name: 'حفاظ', desc: (l: number) => `−${starPct(1 - Math.pow(1 - 0.022, l))}٪ آسیب دریافتی خط دفاع` },
+    ruin: { name: 'ویرانی', desc: (l: number) => `+${starPct(Math.pow(1.03, l) - 1)}٪ آسیب به نخبه‌ها و باس‌ها` },
+    fortune: { name: 'بخت', desc: (l: number) => `+${starPct(l * 0.04)}٪ اثیر از هر دور` },
   },
 };

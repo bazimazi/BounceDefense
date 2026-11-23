@@ -54,6 +54,8 @@ export interface LifetimeStats {
   contractsDone: number;
   /** Gauntlet runs won. */
   gauntletWins: number;
+  /** Descent depths won (every win counts). */
+  descentWins: number;
 }
 
 export type DiscoveryCat = 'enemies' | 'bosses' | 'synergies' | 'evolutions' | 'reactions' | 'upgrades' | 'arenas' | 'events' | 'relics';
@@ -101,6 +103,12 @@ export interface Profile {
   setup: RunSetup;
   /** A won run not yet claimed (victory screen or Endless): applied on the next load if the app closes first. */
   pendingRun: PendingRun | null;
+  /** Aether: the Descent's currency, spent on Constellations. */
+  aether: number;
+  /** Descent record: the deepest depth won and the deepest depth open for play. */
+  descent: { best: number; open: number };
+  /** Constellation levels (star id -> level). */
+  stars: Record<string, number>;
 }
 
 export interface RunSetup {
@@ -108,7 +116,9 @@ export interface RunSetup {
   difficulty: number;
   pacts: string[];
   ascension: number;
-  mode: 'standard' | 'gauntlet';
+  mode: 'standard' | 'gauntlet' | 'descent';
+  /** The Descent depth last chosen. */
+  depth: number;
 }
 
 export interface PendingRun {
@@ -196,8 +206,10 @@ export interface RunSummary {
   /** Seconds survived after continuing into Endless. */
   endlessTime?: number;
   ascension?: number;
-  /** Set for Gauntlet runs; Standard runs leave it out. */
-  mode?: 'gauntlet';
+  /** Set for Gauntlet and Descent runs; Standard runs leave it out. */
+  mode?: 'gauntlet' | 'descent';
+  /** Descent depth played (Descent runs only). */
+  depth?: number;
 }
 
 export type Unlock =

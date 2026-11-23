@@ -135,6 +135,7 @@ button.big .icon { width: 22px; height: 22px; }
 .wallet-pill.coins b { color: #ffe08a; }
 .wallet-pill.cores b { color: #ffb3ea; }
 .wallet-pill.research b { color: #a9efff; }
+.wallet-pill.aether b { color: #d9c2ff; }
 .pips { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
 .pips i { width: 7px; height: 7px; border-radius: 2px; background: #ffffff22; transform: rotate(45deg); }
 .pips i.on { background: var(--gold); box-shadow: 0 0 6px #ffcf4a66; }
@@ -272,7 +273,8 @@ html[lang='fa'] .title.logo { --logo-scale: 1.45; line-height: 1.3; padding-inli
 .play-btn { flex: 1; min-width: 0; min-height: 60px; gap: 10px; border-radius: 18px; }
 .play-btn .icon { width: 24px; height: 24px; }
 .launch-button { position: relative; overflow: hidden; isolation: isolate; }
-.launch-button::after { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 35%, #ffffff45 48%, transparent 61%); transform: translateX(-135%); animation: launch-sheen 6s ease-in-out 2s infinite; }
+/* The sheen sweeps its background, not its box: a box slid outside the button counts as scrollable overflow in RTL. */
+.launch-button::after { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 45%, #ffffff45 50%, transparent 55%) 100% 0 / 300% 100% no-repeat; animation: launch-sheen 6s ease-in-out 2s infinite; }
 .play-btn strong { font-size: 22px; font-weight: 950; letter-spacing: 1.5px; line-height: 1; }
 .daily-btn {
   position: relative; flex: 0 0 60px; flex-direction: column; gap: 3px; padding: 6px 2px; font-size: 10.5px; border-radius: 18px;
@@ -353,6 +355,7 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .awaken-btn { align-self: stretch; min-height: 44px; gap: 8px; }
 .awaken-row .shop-req { margin: 0; }
 /* Run setup: Standard or Gauntlet. */
+.mode-options .mode-option:nth-child(odd):last-child { grid-column: 1 / -1; }
 .mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .mode-option { flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; min-height: 64px; padding: 8px 10px; text-align: start; border-radius: 13px; background: var(--surface); box-shadow: none; }
 .mode-option b { font-size: 14px; }
@@ -421,6 +424,8 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .segmented button:active:not(:disabled) { box-shadow: none; }
 .segmented button.on { color: var(--text); }
 .segmented button small { font-size: 10px; color: var(--text-3); font-weight: 800; }
+/* Four segments (the Forge once Constellations open) share a phone's width. */
+.segmented:has(> button:nth-of-type(4)) button { font-size: 12px; padding-inline: 2px; letter-spacing: -0.01em; }
 .seg-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .segmented .badge.dot { top: 7px; inset-inline-end: 8px; }
 .segmented > .ui-tab-indicator { z-index: 1; border: none; border-radius: 11px; background: var(--surface-3); box-shadow: 0 2px 8px #0006, inset 0 1px 0 #ffffff14; }
@@ -788,6 +793,21 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .reward-tile.coins b { color: var(--gold); }
 .reward-tile.cores b { color: var(--pink); }
 .reward-tile.research b { color: var(--cyan); }
+.reward-tile.aether b { color: #d9c2ff; }
+.reward-tile.aether { border-color: #b78bff3a; }
+.affliction-list { display: grid; gap: 8px; }
+.affliction-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: linear-gradient(110deg, #ff3b9a14, var(--surface) 60%); border: 1px solid #ff3b9a33; }
+.depth-info { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.depth-info .icon { width: 18px; height: 18px; }
+.depth-best { margin-inline-start: auto; color: var(--text-2); font-size: 12px; }
+.star-btn { background: linear-gradient(180deg, #cdb4ff, #7b4fd6); color: #160634; border-color: #e6d9ff; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #4a2a8f; }
+.star-btn.cores { background: linear-gradient(180deg, #ffc2ee, #d4479f); border-color: #ffe0f5; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #8f2a6b; color: #33061f; }
+.star-btn.research { background: linear-gradient(180deg, #8de9ff, #2fa8cc); color: #04202b; border-color: #c6f6ff; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #1b6f8a; }
+.star-row.affordable { border-color: #b78bff40; background: linear-gradient(110deg, #b78bff12, var(--surface) 45%); }
+.tag.affliction { background: #ff3b9a1a; border-color: #ff3b9a44; color: #ffc2e0; }
+.pause-afflictions { margin-block-end: 10px; }
+.star-step { font-size: 11px; color: var(--text-2); direction: ltr; unicode-bidi: isolate; }
+.stars-status small { display: flex; align-items: center; gap: 6px; }
 .mastery-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--stroke); border-radius: 16px; }
 .mastery-card.leveled { border-color: #5ef59a55; }
 .mastery-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
@@ -895,7 +915,7 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 @keyframes orbit-dial { to { rotate: 360deg; } }
 @keyframes core-platform { 0%, 100% { opacity: .8; scale: 1; } 50% { opacity: .45; scale: .92; } }
-@keyframes launch-sheen { 0%, 75% { transform: translateX(-135%); } 100% { transform: translateX(135%); } }
+@keyframes launch-sheen { 0%, 75% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 @keyframes glow { 0%, 100% { box-shadow: 0 0 12px #ffcf4a55, 0 4px 0 #6b4300; } 50% { box-shadow: 0 0 30px #ffcf4aaa, 0 4px 0 #6b4300; } }
 @keyframes surge-ready { 0%, 100% { transform: scale(1); box-shadow: 0 0 14px #ffe06677, 0 4px 0 #0008; } 50% { transform: scale(1.07); box-shadow: 0 0 32px #ffe066dd, 0 4px 0 #0008; } }
@@ -924,6 +944,17 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 }
 
 /* ------------------------------------------------------------- responsive */
+/* A fourth currency (Aether) needs the header's width on phones: the page title steps aside. */
+@container menu (max-width: 540px) {
+  .hub-top:has(.wallet-pill.aether) .hub-title { display: none; }
+  .hub:not(.hub-battle) .hub-top:has(.wallet-pill.aether) { justify-content: flex-end; }
+  .hub-top:has(.wallet-pill.aether) .wallet { flex: 1; justify-content: flex-start; }
+}
+@container menu (max-width: 360px) {
+  .wallet:has(.aether) { gap: 3px; }
+  .wallet:has(.aether) .wallet-pill { font-size: 11px; padding-inline: 2px 5px; gap: 2px; }
+  .wallet:has(.aether) .wallet-pill .icon { width: 14px; height: 14px; }
+}
 @container menu (max-width: 390px) {
   .hub-title { display: none; }
   .hub:not(.hub-battle) .hub-top { justify-content: flex-end; }

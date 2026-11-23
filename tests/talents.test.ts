@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TALENTS, TALENT_POINT_CAP, TALENT_TREES, normalizeTalents, talentPointCost, talentRequirement, talentSpent } from '../src/data/talents';
+import { TALENTS, TALENT_POINT_CAP, TALENT_TREES, TALENT_XP_PER_POINT, normalizeTalents, talentPointCost, talentRequirement, talentSpent } from '../src/data/talents';
 import { applyTalents, changeTalent, talentProgress } from '../src/meta/talents';
 import { ENEMY_MAP } from '../src/data/enemies';
 import { killEnemy } from '../src/sim/combat';
@@ -20,12 +20,12 @@ const opts = { seed: 1, arena: 'proving', difficulty: 0, pacts: [] };
 describe('talent progression and save safety', () => {
   it('grants 3 starter points, counts mastery across cores, and makes every point after the twentieth dearer', () => {
     const p = defaultProfile();
-    expect(talentProgress(p)).toEqual({ total: 3, xp: 0, next: 500, need: 500 });
-    p.mastery = { striker: 250, pyro: 249, unknown: 9999 };
+    expect(talentProgress(p)).toEqual({ total: 3, xp: 0, next: TALENT_XP_PER_POINT, need: TALENT_XP_PER_POINT });
+    p.mastery = { striker: TALENT_XP_PER_POINT / 2, pyro: TALENT_XP_PER_POINT / 2 - 1, unknown: 9999 };
     expect(talentProgress(p).next).toBe(1);
     p.mastery.pyro++;
     expect(talentProgress(p).total).toBe(4);
-    p.mastery = { striker: 17 * 500 };
+    p.mastery = { striker: 17 * TALENT_XP_PER_POINT };
     expect(talentProgress(p).total).toBe(20);
     expect(talentProgress(p).need).toBe(talentPointCost(21));
     expect(talentPointCost(21)).toBeGreaterThan(talentPointCost(20));
@@ -39,11 +39,11 @@ describe('talent progression and save safety', () => {
     const p = migrate({ version: 2, coins: 300, research: 5, mastery: { striker: 2000 } });
     expect(p.version).toBe(SAVE_VERSION);
     expect(p.talents).toEqual({});
-    expect(talentProgress(p).total).toBe(7);
-    // The credited Pilot Rank (10) pays its ranks as runs would have: coins, Research every third rank, the Sunset trail.
+    expect(talentProgress(p).total).toBe(3 + Math.floor(2000 / TALENT_XP_PER_POINT));
+    // The credited Pilot Rank (6) pays its ranks as runs would have: coins, Research every third rank, the Sunset trail.
     expect(p.rankXp).toBe(2000);
-    expect(p.coins).toBe(300 + 990);
-    expect(p.research).toBe(5 + 3);
+    expect(p.coins).toBe(300 + 450);
+    expect(p.research).toBe(5 + 2);
     expect(p.cosmetics).toContain('sunset');
     // A save that already has Pilot Rank is not paid twice.
     const again = migrate({ ...p, version: 3 });
@@ -86,7 +86,7 @@ describe('talent progression and save safety', () => {
     const store = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k, v); } };
     saveProfile(store, p);
     expect(loadProfile(store).talents).toEqual(p.talents);
-    p.mastery.striker = 499;
+    p.mastery.striker = TALENT_XP_PER_POINT - 1;
     const report = applyRun(p, emptyWorld().summary(), []);
     expect(report.unlocks.some(s => s.includes('Talent point'))).toBe(true);
     expect(talentProgress(p).total).toBe(4);

@@ -7,11 +7,11 @@ export type TalentTree = 'kinetics' | 'conduit' | 'warden' | 'havoc';
 export type TalentRanks = Record<string, number>;
 export const TALENT_POINT_CAP = 100;
 /** Mastery XP for each of the first twenty points; later points grow steadily dearer. */
-export const TALENT_XP_PER_POINT = 500;
+export const TALENT_XP_PER_POINT = 900;
 export const TALENT_EARLY_POINTS = 20;
 /** Mastery XP needed to earn talent point `point` (the 4th point onwards; three are free). */
 export const talentPointCost = (point: number): number =>
-  point <= TALENT_EARLY_POINTS ? TALENT_XP_PER_POINT : 700 + 100 * (point - TALENT_EARLY_POINTS);
+  point <= TALENT_EARLY_POINTS ? TALENT_XP_PER_POINT : 1200 + 200 * (point - TALENT_EARLY_POINTS);
 export const TALENT_TREES: { id: TalentTree; name: string; icon: string; color: string; desc: string }[] = [
   { id: 'kinetics', name: 'Kinetics', icon: '↗', color: '#ffbf69', desc: 'Master the angle. Turn ricochets into momentum.' },
   { id: 'conduit', name: 'Conduit', icon: '✧', color: '#c49bff', desc: 'Amplify the elements your run build unlocks.' },

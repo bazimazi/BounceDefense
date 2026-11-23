@@ -91,10 +91,19 @@ export function formatNum(n: number, dir: 'nearest' | 'down' | 'up' = 'nearest')
   n = Math.round(n);
   const r = dir === 'down' ? Math.floor : dir === 'up' ? Math.ceil : Math.round;
   const short = (unit: number, suffix: string) => (r((n / unit) * 10) / 10).toFixed(1) + suffix;
+  // Deep Descent numbers outgrow the named units: scientific from a quintillion on.
+  if (n >= 1e18) return n.toExponential(2).replace('e+', 'e');
+  if (n >= 1e15) return short(1e15, 'Qa');
+  if (n >= 1e12) return short(1e12, 'T');
   if (n >= 1e9) return short(1e9, 'B');
   if (n >= 1e6) return short(1e6, 'M');
   if (n >= 1e4) return short(1e3, 'K');
   return n.toLocaleString('en-US');
+}
+
+/** A multiplier as `×1.23`, `×12.5` or `×1.2K`. */
+export function formatMult(x: number): string {
+  return `×${x >= 1e4 ? formatNum(x) : x >= 100 ? Math.round(x).toString() : x >= 10 ? x.toFixed(1) : x.toFixed(2)}`;
 }
 
 export function formatTime(sec: number): string {

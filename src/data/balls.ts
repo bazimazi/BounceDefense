@@ -265,6 +265,10 @@ export const TRAILS = [
   { id: 'glacier', name: 'Glacier', colors: ['#e8fbff', '#2fb8c9'] },
   { id: 'sanguine', name: 'Sanguine', colors: ['#ffc2c2', '#7a0016'] },
   { id: 'rift', name: 'Rift', colors: ['#b9a3ff', '#120030'] },
+  // Descent depth records.
+  { id: 'fathom', name: 'Fathom', colors: ['#9ff6ff', '#062a5a'] },
+  { id: 'starborn', name: 'Starborn', colors: ['#fff6c9', '#7a4dff'] },
+  { id: 'infinite', name: 'Infinite', colors: ['#ffffff', '#ff4df0'] },
 ];
 
 localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);

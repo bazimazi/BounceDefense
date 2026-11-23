@@ -12,13 +12,14 @@ export function amount(currency: Currency, n: number, cls = ''): HTMLElement {
   return h('span', { class: `amount amount-${currency} ${cls}`.trim() }, icon(CURRENCY_ICON[currency]), h('b', {}, formatNum(n)));
 }
 
-export function wallet(p: { coins: number; cores: number; research: number }): HTMLElement {
+export function wallet(p: { coins: number; cores: number; research: number; aether?: number }): HTMLElement {
   const pill = (currency: Currency, n: number) => h('span', {
     class: `chip wallet-pill ${currency}`, title: `${n.toLocaleString()} ${t(`common.${currency}`)}`,
   }, icon(CURRENCY_ICON[currency]), h('b', {}, formatNum(n, 'down')));
   // Cores and Research join the wallet once earned; a row of unexplained zeros only adds noise.
   return h('div', { class: 'chips wallet', 'aria-label': t('common.currencies') },
-    pill('coins', p.coins), p.cores > 0 ? pill('cores', p.cores) : null, p.research > 0 ? pill('research', p.research) : null);
+    pill('coins', p.coins), p.cores > 0 ? pill('cores', p.cores) : null, p.research > 0 ? pill('research', p.research) : null,
+    (p.aether ?? 0) > 0 ? pill('aether', p.aether ?? 0) : null);
 }
 
 /** Level pips: filled for owned ranks, an outlined "next" pip when one is on offer. */

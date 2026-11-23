@@ -6,8 +6,9 @@ import { SpatialHash } from '../core/spatial';
 import { ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACT_MAP } from '../data/arenas';
 import { CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
 import { ENEMY_MAP, INTERNAL_ENEMIES } from '../data/enemies';
-import { ASCENSION_TIER, MAX_ASCENSION, ascensionRules, type AscensionRule } from '../data/ascension';
+import { ASCENSION_TIER, MAX_ASCENSION, ascensionDamage, ascensionHp, ascensionRules, type AscensionRule } from '../data/ascension';
 import { AWAKEN_MAX, AWAKEN_REROLL_RANK, awakenModifiers } from '../data/awakening';
+import { DESCENT, descentAfflictions, descentBossHp, descentDamage, descentHp, pressureAt, starModifiers, type AfflictionRule } from '../data/descent';
 import { DEFAULT_UNLOCKED_RELICS, RELICS, RELIC_MAP, RELIC_WEIGHT } from '../data/relics';
 import { MAX_DRAFT_CARDS, SECOND_WIND, SENTINEL_INTERVAL, SIGNATURE_UPGRADE, WORKSHOP_MAP } from '../data/meta';
 import { normalizeTalents, TALENTS, talentModifiers, type TalentRanks } from '../data/talents';
@@ -60,9 +61,13 @@ export interface RunConfig {
   mode?: RunMode;
   /** Awakening rank of the run's core (0 to 5). */
   awakening?: number;
+  /** Descent depth (mode `descent`): an Eternity run scaled by `DESCENT` with the depth's Afflictions. */
+  depth?: number;
+  /** Constellation levels (star id -> level), applied to every run. */
+  stars?: Record<string, number>;
 }
 
-export type RunMode = 'standard' | 'gauntlet';
+export type RunMode = 'standard' | 'gauntlet' | 'descent';
 
 /** Where the Sentinel drones hover above the line. */
 export const SENTINEL_POS: [number, number][] = [[118, DEFENSE_Y - 26], [422, DEFENSE_Y - 26]];
@@ -266,6 +271,16 @@ export class World {
   noHeal: boolean;
   /** Gauntlet mode: every boss back to back (see `GAUNTLET`). */
   gauntlet: boolean;
+  /** Descent depth, 0 outside the Descent. */
+  readonly depth: number;
+  /** The depth's Afflictions. */
+  readonly afflictions: Set<AfflictionRule>;
+  /** Line damage multiplier from the depth and Ascension pressure. */
+  readonly breachScale: number;
+  /** Full health multiplier from the depth and Ascension pressure (see `pressureAt`). */
+  readonly pressureHp: number;
+  /** Bolster stacks per enemy id. */
+  readonly bolster = new Map<number, number>();
   loneBall: boolean;
   enemySpeedMult: number;
   enemyHpMult: number;
@@ -291,21 +306,28 @@ export class World {
     this.cfg = { ...cfg, talents: { ...this.talents } };
     this.rng = new Rng(cfg.seed);
     this.arena = ARENA_MAP[cfg.arena] ?? ARENA_MAP.proving;
-    this.diff = DIFFICULTIES[clamp(cfg.difficulty, 0, DIFFICULTIES.length - 1)];
+    // A Descent depth is always played on Eternity.
+    this.depth = cfg.mode === 'descent' && !cfg.tutorial ? Math.max(0, Math.floor(cfg.depth ?? 0)) : 0;
+    this.diff = DIFFICULTIES[this.depth > 0 ? DESCENT.tier : clamp(cfg.difficulty, 0, DIFFICULTIES.length - 1)];
+    this.afflictions = new Set(descentAfflictions(this.depth));
     this.pool = new Set(cfg.pool);
     this.flags = new Set(cfg.flags);
     const pacts = cfg.pacts.map((p) => PACT_MAP[p]).filter(Boolean);
     this.pacts = new Set(pacts.map((p) => p.rule ?? p.id));
     // Ascension only applies on the hardest tier.
-    this.asc = ascensionRules(DIFFICULTIES.indexOf(this.diff) >= ASCENSION_TIER ? clamp(Math.floor(cfg.ascension ?? 0), 0, MAX_ASCENSION) : 0);
+    // Ascension only applies on the hardest tiers, and never inside the Descent (depths bring their own rules).
+    this.asc = ascensionRules(DIFFICULTIES.indexOf(this.diff) >= ASCENSION_TIER && !this.depth ? clamp(Math.floor(cfg.ascension ?? 0), 0, MAX_ASCENSION) : 0);
     const asc = this.asc;
+    this.breachScale = descentDamage(this.depth) * ascensionDamage(asc.size);
     this.noHeal = pacts.some((p) => p.rule === 'noHeal');
     this.loneBall = pacts.some((p) => p.rule === 'loneBall');
     this.gauntlet = cfg.mode === 'gauntlet' && !cfg.tutorial;
     const awakening = clamp(Math.floor(cfg.awakening ?? 0), 0, AWAKEN_MAX);
-    this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1) * (asc.has('speed10') ? 1.1 : 1);
+    const aff = this.afflictions;
+    this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1) * (asc.has('speed10') ? 1.1 : 1) * (aff.has('frenzy') ? 1.12 : 1);
     this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) * (pacts.some((p) => p.rule === 'tide') ? 1.15 : 1) *
       (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1) * (asc.has('hp50') ? 1.5 : 1);
+    this.pressureHp = (this.diff.pressure ?? 1) * descentHp(this.depth) * ascensionHp(asc.size);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
     const ws = (id: string) => cfg.workshop[id] ?? 0;
     this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) + ws('bp_draft') + (awakening >= AWAKEN_REROLL_RANK ? 1 : 0) - (asc.has('reroll') ? 1 : 0));
@@ -345,6 +367,9 @@ export class World {
     if (asc.has('heal30')) mods.push({ stat: 'healMult', mult: -0.3 });
     if (asc.has('regen50')) mods.push({ stat: 'regen', mult: -0.5 });
     if (asc.has('surgeSlow')) mods.push({ stat: 'surgeGain', mult: -0.25 });
+    if (aff.has('sapping')) mods.push({ stat: 'surgeGain', mult: -0.3 });
+    if (aff.has('withering')) mods.push({ stat: 'healMult', mult: -0.5 }, { stat: 'regen', mult: -0.5 });
+    mods.push(...starModifiers(cfg.stars));
     if (this.flags.has('tactics')) mods.push({ stat: 'recallCooldown', add: -2 });
     if (this.flags.has('surge1')) mods.push({ stat: 'surgeGain', mult: 0.15 });
     for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
@@ -483,13 +508,15 @@ export class World {
     // Tier and arena toughness phase in over the opening ninety seconds, so early fodder still pops in a hit or two.
     const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
     const crown = this.build.has('relic_cursed_crown') ? 1.25 : 1;
-    const bossAsc = def.boss ? (this.asc.has('boss20') ? 1.2 : 1) * (this.asc.has('boss40') ? 1.4 : 1) * (this.pacts.has('warlords') ? 1.5 : 1) : 1;
+    const bossAsc = def.boss ? (this.asc.has('boss20') ? 1.2 : 1) * (this.asc.has('boss40') ? 1.4 : 1) * (this.pacts.has('warlords') ? 1.5 : 1) * (this.afflictions.has('tyrant') ? 1.5 : 1) * descentBossHp(this.depth) * ascensionHp(this.asc.size) * (this.diff.pressure ?? 1) : 1;
     // Ascension 29 steepens the late ramp on every tier (tiers without one gain half).
     const late = 1 + ((this.diff.lateHp ?? 1) * (this.asc.has('late25') ? 1.5 : 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
-    const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown * late;
+    // Depth and Ascension pressure: ordinary enemies carry part of it in the opening and all of it by six minutes.
+    const pressure = def.boss ? 1 : pressureAt(this.pressureHp, this.time);
+    const hp = def.boss ? def.hp * hpMult * bossAsc : def.hp * tier * timeScale * blood * hpMult * endless * crown * late * pressure;
     return {
       id: this.id(), def, x, y, r: def.radius, _q: 0, hp, maxHp: hp, speed: def.speed,
-      armor: def.armor + (this.pacts.has('ironclad') ? 3 : 0) + (this.asc.has('armor3') && !def.boss ? 3 : 0),
+      armor: def.armor + (this.pacts.has('ironclad') ? 3 : 0) + (this.asc.has('armor3') && !def.boss ? 3 : 0) + (this.afflictions.has('bulwark') && !def.boss ? 4 : 0),
       kx: 0, ky: 0,
       st: {
         burnDps: 0, burnT: 0, burnTick: 0, chill: 0, chillT: 0, frozenT: 0, bleed: 0, bleedT: 0, bleedDps: 0, bleedTick: 0,
@@ -519,8 +546,8 @@ export class World {
   }
 
   makeElite(e: Enemy, mods: string[]): void {
-    e.elite = this.asc.has('eliteRegen') && !mods.includes('regen') ? [...mods, 'regen'] : mods;
-    e.hp *= 3 * (this.pacts.has('warlords') ? 1.5 : 1);
+    e.elite = (this.asc.has('eliteRegen') || this.afflictions.has('sanguine')) && !mods.includes('regen') ? [...mods, 'regen'] : mods;
+    e.hp *= 3 * (this.pacts.has('warlords') ? 1.5 : 1) * (this.afflictions.has('juggernaut') ? 1.6 : 1);
     e.maxHp = e.hp;
     e.r *= 1.3;
     for (const m of mods) {
@@ -681,7 +708,7 @@ export class World {
       }
       return;
     }
-    let amount = Math.max(1, dmg * this.diff.dmgMult * st.damageTaken - st.armor);
+    let amount = Math.max(1, dmg * this.diff.dmgMult * this.breachScale * st.damageTaken - st.armor);
     if (this.talents.last_bastion && this.hp <= this.maxHp * 0.35) amount *= 0.75;
     if (st.comboGuard > 0 && this.combo.count >= 30) amount *= 1 - Math.min(0.6, st.comboGuard);
     this.hp -= amount;
@@ -1499,7 +1526,7 @@ export class World {
     const r = this.run;
     const st = this.build.stats;
     return {
-      arena: this.arena.id, difficulty: this.cfg.difficulty, core: this.cfg.core, pacts: this.cfg.pacts, seed: this.cfg.seed,
+      arena: this.arena.id, difficulty: DIFFICULTIES.indexOf(this.diff), core: this.cfg.core, pacts: this.cfg.pacts, seed: this.cfg.seed,
       daily: !!this.cfg.daily, victory: this.victory, time: this.time, level: this.level,
       kills: r.kills, eliteKills: r.eliteKills, bossesDefeated: r.bossesDefeated, bossFightTimes: r.bossFightTimes,
       bossNoDamage: r.bossNoDamage && r.bossesDefeated.length > 0,
@@ -1514,6 +1541,7 @@ export class World {
       damageBy: this.damageReport(),
       ascension: this.asc.size,
       ...(this.gauntlet ? { mode: 'gauntlet' as const } : {}),
+      ...(this.depth ? { mode: 'descent' as const, depth: this.depth } : {}),
       reactions: [...this.reactionsRun], synergies: [...this.build.synergies], evolutions: [...this.build.evolutions],
       upgrades: [...this.build.upgrades.entries()].map(([id, level]) => ({ id, level })),
       enemiesSeen: [...this.enemiesSeen], eventsSeen: this.eventsSeen,
