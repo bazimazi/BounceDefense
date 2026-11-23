@@ -262,6 +262,13 @@ function bakeShell(def: EnemyDef): HTMLCanvasElement {
   ctx.fillStyle = glint; ctx.fillRect(-1.2, -1.2, 1.4, 1.4);
   enemyShape(ctx, shape, .04, .06, 1);
   ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = .28; ctx.lineWidth = .05; ctx.stroke();
+  // Cool bounce light from the arena wraps the shadowed lower-right edge: warm key, cold rim.
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'lighter';
+  enemyShape(ctx, shape, -.07, -.09, 1);
+  ctx.strokeStyle = '#6fc8ff58'; ctx.lineWidth = .16; ctx.stroke();
+  enemyShape(ctx, shape, -.035, -.045, 1);
+  ctx.strokeStyle = '#bfeaff70'; ctx.lineWidth = .04; ctx.stroke();
   ctx.restore();
   return canvas;
 }
@@ -353,4 +360,54 @@ export function drawEnemyInsignia(ctx: CanvasRenderingContext2D, def: EnemyDef, 
   if (!art) { art = bakeInsignia(def, blink); insignias.set(key, art); }
   const half = RESOLUTION / (2 * SCALE) * r;
   ctx.drawImage(art, x - half, y - half, half * 2, half * 2);
+}
+
+const shadowArt = new Map<string, HTMLCanvasElement>();
+const SHADOW_RES = 96;
+/** Shadow sprites span 3 radii, leaving room for the blur penumbra. */
+const SHADOW_SPAN = 3;
+
+/**
+ * A soft shadow in the enemy's own silhouette, baked once per type. The blur comes from the
+ * canvas shadow itself: the shape is drawn off-canvas and only its shadow lands in frame.
+ */
+function bakeShadow(def: EnemyDef): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SHADOW_RES;
+  const ctx = canvas.getContext('2d')!;
+  const unit = SHADOW_RES / (SHADOW_SPAN * 2);
+  ctx.setTransform(unit, 0, 0, unit, SHADOW_RES / 2 - SHADOW_RES * 2, SHADOW_RES / 2);
+  ctx.shadowColor = 'rgba(0,0,0,1)';
+  ctx.shadowBlur = unit * .55;
+  ctx.shadowOffsetX = SHADOW_RES * 2;
+  enemyShape(ctx, def.shape, 0, 0, 1.02);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  return canvas;
+}
+
+/** Draws the silhouette shadow `lift` units below and right of the body. */
+export function drawEnemyShadow(ctx: CanvasRenderingContext2D, def: EnemyDef, x: number, y: number, r: number,
+  rotation: number, lift: number, alpha: number): void {
+  let art = shadowArt.get(def.id);
+  if (!art) { art = bakeShadow(def); shadowArt.set(def.id, art); }
+  const half = r * SHADOW_SPAN;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x + lift * .55, y + lift);
+  if (rotation) ctx.rotate(rotation);
+  ctx.drawImage(art, -half, -half, half * 2, half * 2);
+  ctx.restore();
+}
+
+/**
+ * Where the pupils of a visored enemy sit, in units of its radius, or null when its face is a
+ * glyph. Mirrors the offsets `bakeInsignia` applies.
+ */
+export function eyeAnchor(def: EnemyDef): { x: number; y: number; spread: number } | null {
+  if (def.ai === 'egg' || symbols[def.id] || symbols[def.ai]) return null;
+  let x = 0, y = .065;
+  if (def.shape === 'crescent') x -= .23;
+  if (def.ai === 'runner' || def.shape === 'triangle') y -= .08;
+  return { x, y, spread: .22 };
 }

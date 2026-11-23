@@ -78,13 +78,40 @@ export class PostFx {
   }
 
   /** Vignette, cool shadows and a warm center: one cached overlay over the playfield. */
-  finish(ctx: CanvasRenderingContext2D): void {
+  finish(ctx: CanvasRenderingContext2D, animate = true, grain = true): void {
     if (!this.grade) {
       if (typeof document === 'undefined') return;
       this.grade = buildGrade();
     }
     ctx.drawImage(this.grade, 0, 0, W, H);
+    // Film grain at device resolution, re-seeded every frame unless motion is reduced.
+    if (!grain) return;
+    this.grain ??= ctx.createPattern(buildGrain(), 'repeat');
+    if (this.grain) {
+      const ox = animate ? Math.floor(Math.random() * 128) : 0, oy = animate ? Math.floor(Math.random() * 128) : 0;
+      if (typeof DOMMatrix !== 'undefined') this.grain.setTransform(new DOMMatrix([1, 0, 0, 1, ox, oy]));
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = this.grain;
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.restore();
+    }
   }
+  private grain: CanvasPattern | null = null;
+}
+
+function buildGrain(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random();
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v > .5 ? 255 : 0;
+    img.data[i + 3] = Math.round(Math.abs(v - .5) * 2 * 11);
+  }
+  g.putImageData(img, 0, 0);
+  return c;
 }
 
 function buildGrade(): HTMLCanvasElement {

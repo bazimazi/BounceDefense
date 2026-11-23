@@ -182,11 +182,17 @@ export function drawTurret(ctx: CanvasRenderingContext2D, x: number, y: number, 
     const rod = ctx.createLinearGradient(0, -3, 0, 3);
     rod.addColorStop(0, '#e9f5fa'); rod.addColorStop(.5, '#6f8796'); rod.addColorStop(1, '#1a2a36');
     ctx.fillStyle = rod; ctx.fillRect(24, -2.5, 11, 5);
+    // Capacitor lamp on each piston breathes with the charge.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = hasBall ? .55 + .45 * Math.sin(time * 4 + i * 1.6) : .2;
+    ctx.fillStyle = live; ctx.fillRect(36, -2, 2.5, 4);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
   }
   // Status ring: a lit segment per charge state.
   for (let i = 0; i < 16; i++) {
-    ctx.save(); ctx.rotate(i * TAU / 16 + TAU / 32);
+    ctx.save(); ctx.rotate(i * TAU / 16 + TAU / 32 + time * .4);
     ctx.fillStyle = hasBall ? (i % 2 ? live + 'b0' : live + '60') : '#26323e';
     ctx.fillRect(28, -1.4, 4, 2.8);
     ctx.restore();

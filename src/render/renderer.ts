@@ -19,7 +19,7 @@ import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
 import { drawResonance } from './resonance';
 import { coreSprite, orbLighting } from './cores';
-import { drawEnemyShell, drawEnemyInsignia, enemyShape, shade } from './enemy-art';
+import { drawEnemyShadow, drawEnemyShell, drawEnemyInsignia, enemyShape, eyeAnchor, shade } from './enemy-art';
 import { arc, contactShadow, drawBumper, drawPortal, drawRail, drawTurret } from './hardware';
 import { PostFx } from './post';
 
@@ -80,6 +80,8 @@ export class Renderer {
   private decals: Decal[] = [];
   private smoke: Smoke[] = [];
   private hpGhost = new Map<number, HpGhost>();
+  /** Render-side velocity estimates, for lean, exhaust and motion trails. */
+  private motion = new Map<number, { x: number; y: number; vx: number; vy: number; seen: number }>();
   private readonly post = new PostFx();
   private shadow: HTMLCanvasElement | null = null;
   private barrierArt = new Map<string, HTMLCanvasElement>();
@@ -97,6 +99,9 @@ export class Renderer {
   private iconSprites = new Map<string, HTMLCanvasElement>();
   private launcherRecoil = 0;
   private hullGhost = 1;
+  /** What visored enemies look at this frame. */
+  private gaze: [number, number] = [LAUNCHER_X, LAUNCHER_Y];
+  private shakeAt: [number, number] = [0, 0];
   private bossGhost = 1;
   private lastHand = 0;
   private emissionDt = 0;
@@ -143,6 +148,7 @@ export class Renderer {
     this.decals = [];
     this.smoke = [];
     this.hpGhost.clear();
+    this.motion.clear();
     this.shake = 0;
     this.flash.a = 0;
     this.hurtFlash = 0;
@@ -174,6 +180,31 @@ export class Renderer {
     ctx.drawImage(this.glowSprite(color), x - r, y - r, r * 2, r * 2);
     ctx.globalAlpha = 1;
   }
+
+  /** Glows deferred to one additive pass, so dozens of small lights cost one blend-mode switch. */
+  private lightQueue: (string | number)[] = [];
+  private queueLight(x: number, y: number, r: number, color: string, a: number): void {
+    if (a > .01) this.lightQueue.push(x, y, r, color, a);
+  }
+  private flushLights(): void {
+    const q = this.lightQueue;
+    if (!q.length) return;
+    const ctx = this.ctx;
+    const op = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < q.length; i += 5) {
+      const x = q[i] as number, y = q[i + 1] as number, r = q[i + 2] as number;
+      ctx.globalAlpha = q[i + 4] as number;
+      ctx.drawImage(this.glowSprite(q[i + 3] as string), x - r, y - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = op;
+    q.length = 0;
+  }
+  /** High quality: full detail until the device proves too slow for the bloom pass. */
+  private get hq(): boolean { return this.post.enabled; }
+  /** Swarm scenes drop per-unit flourishes to keep the frame rate. */
+  private dense = false;
 
   /** Additive light: glows that add to what is under them, so overlapping lights burn hotter. */
   private drawLight(x: number, y: number, r: number, color: string, a = 1): void {
@@ -383,6 +414,7 @@ export class Renderer {
 
     const sx = this.shake > 0 ? (Math.random() - 0.5) * this.shake : 0;
     const sy = this.shake > 0 ? (Math.random() - 0.5) * this.shake : 0;
+    this.shakeAt = [sx, sy];
     ctx.setTransform(k, 0, 0, k, sx * k, sy * k);
 
     this.drawDecals();
@@ -395,10 +427,20 @@ export class Renderer {
     // Arrivals slide in from under the header instead of covering its telemetry.
     ctx.save();
     ctx.beginPath(); ctx.rect(-40, FIELD_TOP - 2, W + 80, H); ctx.clip();
+    // Every shadow lands on the floor before any body, so bodies never sit under a neighbor's shadow.
+    let alive = 0;
+    for (const e of w.enemies) if (e.alive) alive++;
+    this.dense = alive > 45;
+    for (const e of w.enemies) if (e.alive && !e.phased && e.spawnT > .2) this.drawEnemyGroundShadow(e);
+    this.flushLights();
+    const lead = w.balls.find(b => b.kind === 'main' && b.state === 'flight') ?? w.balls[0];
+    this.gaze = lead ? [lead.x, lead.y] : [LAUNCHER_X, LAUNCHER_Y];
     for (const e of w.enemies) if (e.alive) this.drawEnemy(e);
+    this.flushLights();
     this.drawBossExtras(w);
     ctx.restore();
     this.drawThreats(w);
+    this.drawRefraction();
     this.drawSmoke();
     this.drawProjectiles(w);
     this.drawEffects();
@@ -416,7 +458,7 @@ export class Renderer {
     // Bloom gathers every emissive surface drawn so far; flashes are toned down on request.
     this.post.bloom(ctx, this.canvas, this.opts.reduceFlashes ? .55 : 1);
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    this.post.finish(ctx);
+    this.post.finish(ctx, !this.reducedMotion?.matches, this.hq);
     ctx.setTransform(k, 0, 0, k, sx * k, sy * k);
     this.drawTexts();
 
@@ -449,11 +491,11 @@ export class Renderer {
   private drawBackground(w: World): void {
     const ctx = this.ctx;
     if (!this.bg || this.bgArena !== w.arena.id) {
-      this.bg = createArenaSurface(w.arena);
+      this.bg = createArenaSurface(w.arena, 2);
       this.bgArena = w.arena.id;
     }
     ctx.drawImage(this.bg, 0, 0, W, H);
-    drawArenaAtmosphere(ctx, w.arena, this.reducedMotion?.matches ? 0 : this.time);
+    drawArenaAtmosphere(ctx, w.arena, this.reducedMotion?.matches ? 0 : this.time, this.hq);
   }
 
   private decalArt = new Map<string, HTMLCanvasElement>();
@@ -732,20 +774,34 @@ export class Renderer {
         case 'oil': {
           const burning = o.burning > 0;
           ctx.save(); ctx.translate(o.x, o.y);
-          // Circular, matching the ignition and burn area used by the simulation.
-          const slick = ctx.createRadialGradient(-o.r * .2, -o.r * .25, 2, 0, 0, o.r);
-          slick.addColorStop(0, burning ? '#3a1404' : '#1a1428'); slick.addColorStop(.85, burning ? '#200802' : '#07050c'); slick.addColorStop(1, '#00000000');
-          arc(ctx, 0, 0, o.r); ctx.fillStyle = slick; ctx.fill();
+          // A spill of lobes filling the simulated burn circle, so it reads as liquid, not a hole.
+          const lobe = (lx: number, ly: number, rx: number, ry: number, rot: number) => {
+            ctx.beginPath(); ctx.ellipse(lx, ly, rx, ry, rot, 0, TAU);
+          };
+          const lobes: [number, number, number, number, number][] = [
+            [0, 0, o.r * .86, o.r * .8, 0], [-o.r * .38, -o.r * .3, o.r * .55, o.r * .42, .5],
+            [o.r * .4, o.r * .25, o.r * .52, o.r * .46, -.3], [o.r * .25, -o.r * .45, o.r * .4, o.r * .35, .2],
+            [-o.r * .35, o.r * .42, o.r * .44, o.r * .36, .9],
+          ];
+          // The rim strokes go down first; the fills cover their inner halves, leaving one outline.
+          ctx.strokeStyle = burning ? 'rgba(255,120,40,0.35)' : 'rgba(190,160,255,0.3)'; ctx.lineWidth = 2.2;
+          for (const l of lobes) { lobe(...l); ctx.stroke(); }
+          ctx.fillStyle = burning ? '#2a0c03' : '#07050c';
+          for (const l of lobes) { lobe(...l); ctx.fill(); }
           if (!burning) {
-            // Glossy slick with an oily rainbow film.
+            ctx.save();
+            ctx.beginPath(); for (const l of lobes) ctx.ellipse(l[0], l[1], l[2], l[3], l[4], 0, TAU); ctx.clip();
+            // Oily rainbow film and the reflection of the overhead rig on the glossy surface.
             const film = ctx.createLinearGradient(-o.r, -o.r, o.r, o.r);
-            film.addColorStop(0, '#5af0ff00'); film.addColorStop(.3, '#5af0ff1c'); film.addColorStop(.45, '#c77dff22');
-            film.addColorStop(.6, '#ffd16618'); film.addColorStop(.8, '#5af0ff00');
-            ctx.fillStyle = film; arc(ctx, 0, 0, o.r * .92); ctx.fill();
-            // Ripples catch the light as faint concentric sheens.
-            ctx.strokeStyle = '#b8a0ff14'; ctx.lineWidth = 1;
-            for (const k of [.35, .58, .8]) { arc(ctx, 0, 0, o.r * k); ctx.stroke(); }
-            ctx.strokeStyle = 'rgba(160,120,255,0.22)'; ctx.lineWidth = 1.2; arc(ctx, 0, 0, o.r * .95); ctx.stroke();
+            film.addColorStop(0, '#5af0ff00'); film.addColorStop(.3, '#5af0ff22'); film.addColorStop(.45, '#c77dff2a');
+            film.addColorStop(.6, '#ffd1661e'); film.addColorStop(.8, '#5af0ff00');
+            ctx.fillStyle = film; ctx.fillRect(-o.r * 1.3, -o.r * 1.3, o.r * 2.6, o.r * 2.6);
+            const shift = Math.sin(time * .6 + o.x) * o.r * .1;
+            const glare = ctx.createLinearGradient(-o.r + shift, 0, o.r + shift, 0);
+            glare.addColorStop(0, '#ffffff00'); glare.addColorStop(.42, '#ffffff00'); glare.addColorStop(.5, '#e8f6ff38');
+            glare.addColorStop(.58, '#ffffff00'); glare.addColorStop(1, '#ffffff00');
+            ctx.save(); ctx.rotate(-.7); ctx.fillStyle = glare; ctx.fillRect(-o.r * 1.4, -o.r * 1.4, o.r * 2.8, o.r * 2.8); ctx.restore();
+            ctx.restore();
           } else {
             ctx.globalCompositeOperation = 'lighter';
             const fire = ctx.createRadialGradient(0, 0, 0, 0, 0, o.r);
@@ -943,13 +999,30 @@ export class Renderer {
         ctx.globalAlpha = opacity;
         ctx.translate(z.x, z.y);
         // A dark scorched or corroded floor under the effect.
-        const bed = ctx.createRadialGradient(0, 0, 0, 0, 0, z.r);
-        bed.addColorStop(0, fire ? '#1a0602a0' : '#0a1a02a0'); bed.addColorStop(.85, fire ? '#2a080270' : '#10260470'); bed.addColorStop(1, '#00000000');
-        arc(ctx, 0, 0, z.r); ctx.fillStyle = bed; ctx.fill();
-        ctx.globalCompositeOperation = 'lighter';
-        const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, z.r);
-        pool.addColorStop(0, color + '30'); pool.addColorStop(.75, color + '16'); pool.addColorStop(.95, color + '30'); pool.addColorStop(1, color + '00');
-        arc(ctx, 0, 0, z.r); ctx.fillStyle = pool; ctx.fill();
+        if (fire) {
+          // Burning ground is irregular: overlapping soot and flame lobes, never a clean disc.
+          for (let i = 0; i < 7; i++) {
+            const ang = i * 2.39996 + z.x, dist = i ? z.r * .42 : 0, br = z.r * (i ? .62 : .8);
+            ctx.globalAlpha = opacity * .75;
+            ctx.drawImage(this.glowSprite('#000000'), Math.cos(ang) * dist - br, Math.sin(ang) * dist - br, br * 2, br * 2);
+          }
+          ctx.globalCompositeOperation = 'lighter';
+          for (let i = 0; i < 6; i++) {
+            const ang = i * 2.39996 + z.y + time * .3, dist = z.r * (.15 + (i % 3) * .2);
+            const br = z.r * (.45 + .1 * Math.sin(time * 7 + i * 2));
+            ctx.globalAlpha = opacity * .32;
+            ctx.drawImage(this.glowSprite(i % 2 ? '#ff5a14' : '#ff9a3c'), Math.cos(ang) * dist - br, Math.sin(ang) * dist - br, br * 2, br * 2);
+          }
+          ctx.globalAlpha = opacity;
+        } else {
+          const bed = ctx.createRadialGradient(0, 0, 0, 0, 0, z.r);
+          bed.addColorStop(0, '#0a1a02a0'); bed.addColorStop(.85, '#10260470'); bed.addColorStop(1, '#00000000');
+          arc(ctx, 0, 0, z.r); ctx.fillStyle = bed; ctx.fill();
+          ctx.globalCompositeOperation = 'lighter';
+          const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, z.r);
+          pool.addColorStop(0, color + '30'); pool.addColorStop(.75, color + '16'); pool.addColorStop(.95, color + '30'); pool.addColorStop(1, color + '00');
+          arc(ctx, 0, 0, z.r); ctx.fillStyle = pool; ctx.fill();
+        }
         if (fire) {
           // Soft flickering wisps scattered over the pool, and a hot core.
           for (let i = 0; i < 18; i++) {
@@ -979,7 +1052,7 @@ export class Renderer {
           }
           ctx.globalAlpha = opacity;
         }
-        ctx.strokeStyle = color + '50'; ctx.lineWidth = 1;
+        ctx.strokeStyle = color + (fire ? '28' : '50'); ctx.lineWidth = 1;
         ctx.setLineDash([z.r * .2, z.r * .12]);
         arc(ctx, 0, 0, z.r * .97, time * .3, time * .3 + TAU); ctx.stroke();
         ctx.setLineDash([]);
@@ -1180,7 +1253,8 @@ export class Renderer {
     const r = e.r * spawn * (1 + e.flash * .7) * breath;
     if (r <= 0.5) return;
     const x = e.x;
-    const y = e.y;
+    // Hovering units bob a pixel or two; the shadow stays put, which sells the height.
+    const y = e.y + (e.boss ? 0 : Math.sin(time * 2.4 + e.id * 1.7) * 1.3);
     if (e.spawnT < .65) {
       // Arrivals drop in through a teleport column.
       const k = 1 - e.spawnT / .65;
@@ -1196,7 +1270,6 @@ export class Renderer {
       ctx.restore();
     }
     const phasedAlpha = e.phased ? 0.28 : 1;
-    if (!e.phased) this.drawShadow(x, y + r * .35, r * (e.boss ? 1.05 : 1.15), e.boss ? .6 : .5, e.boss ? 1.4 : 1);
     if (e.elite.length) {
       const col = ELITE_MAP[e.elite[0]]?.color ?? '#fff';
       this.drawLight(x, y, r * 2.6, col, 0.35 + 0.2 * Math.sin(this.time * 5));
@@ -1249,8 +1322,46 @@ export class Renderer {
       }
     }
     const rot = d.shape === 'star' ? this.time * 1.5 : d.shape === 'gear' ? this.time * 0.8 : d.shape === 'spike' ? -this.time : 0;
+    // Motion, estimated from frame to frame: lean into it, burn exhaust behind it, smear when fast.
+    let m = this.motion.get(e.id);
+    if (!m) { m = { x: e.x, y: e.y, vx: 0, vy: d.speed || 0, seen: this.time }; this.motion.set(e.id, m); }
+    const dt = this.emissionDt;
+    if (dt > 0) {
+      const ix = e.x - m.x, iy = e.y - m.y;
+      if (Math.abs(ix) + Math.abs(iy) < 60) {
+        const k = Math.min(1, dt * 10);
+        m.vx += (ix / dt - m.vx) * k; m.vy += (iy / dt - m.vy) * k;
+      }
+      m.x = e.x; m.y = e.y;
+    }
+    m.seen = this.time;
+    const speed = Math.hypot(m.vx, m.vy);
+    const machine = d.material !== 'flesh' && !e.boss && d.ai !== 'egg';
+    const detail = this.hq && !this.dense;
+    if (detail && !e.boss && !e.phased && speed > 90 && !this.reducedMotion?.matches) {
+      for (let i = 3; i >= 1; i--) {
+        ctx.globalAlpha = .16 / i * Math.min(1, (speed - 90) / 120);
+        drawEnemyShell(ctx, d, x - m.vx * .018 * i, y - m.vy * .018 * i, r, rot);
+      }
+      ctx.globalAlpha = phasedAlpha;
+    }
+    const lean = e.boss || this.reducedMotion?.matches ? 0 : clamp(m.vx / 900, -.12, .12);
+    if (lean) { ctx.save(); ctx.translate(x, y); ctx.rotate(lean); ctx.translate(-x, -y); }
     drawEnemyShell(ctx, d, x, y, r, rot);
-    drawEnemyInsignia(ctx, d, x, y, r, !e.boss && (this.time + e.id * .73) % 4.7 > 4.55);
+    const blink = !e.boss && (this.time + e.id * .73) % 4.7 > 4.55;
+    drawEnemyInsignia(ctx, d, x, y, r, blink);
+    if (!blink && !e.phased && this.hq) this.drawPupils(e, x, y, r);
+    if (detail) this.drawSheen(e, x, y, r, rot, time);
+    if (detail && machine && r > 7 && !e.phased) {
+      // Running lights on the hull blink in a per-unit rhythm.
+      for (let k = 0; k < 2; k++) {
+        const on = ((time * 1.7 + e.id * .41 + k * .5) % 1) < .32;
+        if (!on) continue;
+        const a = rot + (k ? -Math.PI * .2 : Math.PI * 1.2);
+        this.queueLight(x + Math.cos(a) * r * .9, y + Math.sin(a) * r * .9, r * .3, k ? '#ff7a7a' : '#9dffc4', .95);
+      }
+    }
+    if (lean) ctx.restore();
     const frozen = e.st.frozenT > 0;
     if (frozen || e.flash > .02 || e.st.chill > 0 || e.st.burnT > 0 || e.st.poison > 0) {
       enemyShape(ctx, d.shape, x, y, r, rot);
@@ -1415,9 +1526,70 @@ export class Renderer {
       ctx.fillStyle = hp;
       roundRect(ctx, bx, by, bw * frac, 3, 1.5); ctx.fill();
     }
+    if (this.motion.size > 400) {
+      for (const [id, m] of this.motion) if (this.time - m.seen > 2) this.motion.delete(id);
+    }
     if (this.hpGhost.size > 400) {
       for (const [id, g] of this.hpGhost) if (this.time - g.seen > 2) this.hpGhost.delete(id);
     }
+  }
+
+  private drawEnemyGroundShadow(e: Enemy): void {
+    const d = e.def;
+    const r = e.r * easeOutBack(clamp(e.spawnT / .35, 0, 1));
+    if (r <= .5) return;
+    const rot = d.shape === 'star' ? this.time * 1.5 : d.shape === 'gear' ? this.time * 0.8 : d.shape === 'spike' ? -this.time : 0;
+    const lift = e.boss ? r * .28 + 8 : r * .42 + 4;
+    drawEnemyShadow(this.ctx, d, e.x, e.y, r * (e.boss ? 1.02 : .98), rot, lift, e.boss ? .62 : .55);
+    // Machines burn a small exhaust behind their motion, under the hull.
+    if (this.hq && !this.dense && d.material !== 'flesh' && !e.boss && d.ai !== 'egg' && e.spawnT > .2) {
+      const m = this.motion.get(e.id);
+      const speed = m ? Math.hypot(m.vx, m.vy) : 0;
+      const nx = m && speed > 8 ? m.vx / speed : 0, ny = m && speed > 8 ? m.vy / speed : 1;
+      const flick = .75 + .25 * Math.sin(this.time * 31 + e.id * 5);
+      const ex = e.x - nx * r * .95, ey = e.y - ny * r * .95;
+      this.queueLight(ex, ey, r * .85 * flick, d.color, .45);
+      this.queueLight(ex, ey, r * .3, '#ffffff', .5 * flick);
+    }
+  }
+
+  /** Lit pupils inside the visor slits, turned toward the ball in play. */
+  private drawPupils(e: Enemy, x: number, y: number, r: number): void {
+    const eye = eyeAnchor(e.def);
+    if (!eye || r < 6) return;
+    const [tx, ty] = this.gaze;
+    const dx = tx - x, dy = ty - y;
+    const len = Math.hypot(dx, dy) || 1;
+    const look = .05 * r;
+    const ox = dx / len * look, oy = dy / len * look * .6;
+    for (const side of [-1, 1]) {
+      const px = x + (eye.x + side * eye.spread) * r + ox;
+      const py = y + eye.y * r + oy;
+      this.queueLight(px, py, r * .2, e.def.color, .55);
+      if (!this.dense) this.queueLight(px, py, Math.max(1.6, r * .1), '#ffffff', .95);
+    }
+  }
+
+  /**
+   * Every few seconds a band of light glides across the armor, clipped to the silhouette.
+   * Staggered by id, so only a handful of enemies pay for the clip in any frame.
+   */
+  private drawSheen(e: Enemy, x: number, y: number, r: number, rot: number, time: number): void {
+    if (this.reducedMotion?.matches || r < 7) return;
+    const period = e.boss ? 2.6 : 3.8;
+    const k = ((time + e.id * 1.37) % period) / .55;
+    if (k >= 1) return;
+    const ctx = this.ctx;
+    ctx.save();
+    enemyShape(ctx, e.def.shape, x, y, r, rot);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    const c = -1.6 + k * 3.2;
+    const band = ctx.createLinearGradient(x + (c - .45) * r, y + (c - .45) * r * .6, x + (c + .45) * r, y + (c + .45) * r * .6);
+    band.addColorStop(0, '#ffffff00'); band.addColorStop(.5, e.def.material === 'crystal' ? '#ffffff90' : '#ffffff55'); band.addColorStop(1, '#ffffff00');
+    ctx.fillStyle = band;
+    ctx.fillRect(x - r * 1.3, y - r * 1.3, r * 2.6, r * 2.6);
+    ctx.restore();
   }
 
   private drawBossBody(e: Enemy, r: number): void {
@@ -1610,6 +1782,51 @@ export class Renderer {
     }
   }
 
+  /** An anamorphic lens streak: the horizontal flare a camera lens throws off a hot light. */
+  private flare(x: number, y: number, len: number, color: string, a: number): void {
+    if (a <= .01 || len < 2) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const wide = ctx.createLinearGradient(x - len, 0, x + len, 0);
+    wide.addColorStop(0, color + '00'); wide.addColorStop(.5, color + hex2(a * .55)); wide.addColorStop(1, color + '00');
+    ctx.fillStyle = wide; ctx.fillRect(x - len, y - 1.6, len * 2, 3.2);
+    const core = ctx.createLinearGradient(x - len * .55, 0, x + len * .55, 0);
+    core.addColorStop(0, '#ffffff00'); core.addColorStop(.5, '#ffffff' + hex2(a)); core.addColorStop(1, '#ffffff00');
+    ctx.fillStyle = core; ctx.fillRect(x - len * .55, y - .55, len * 1.1, 1.1);
+    const up = ctx.createLinearGradient(0, y - len * .22, 0, y + len * .22);
+    up.addColorStop(0, '#ffffff00'); up.addColorStop(.5, '#ffffff' + hex2(a * .6)); up.addColorStop(1, '#ffffff00');
+    ctx.fillStyle = up; ctx.fillRect(x - .5, y - len * .22, 1, len * .44);
+    ctx.restore();
+  }
+
+  /**
+   * Blast shockwaves bend the light behind them: the frame under a thin annulus is redrawn
+   * slightly magnified about the blast, like heat refraction.
+   */
+  private drawRefraction(): void {
+    if (this.reducedMotion?.matches || this.opts.reduceFlashes || !this.canvas.width || !this.post.enabled) return;
+    const ctx = this.ctx;
+    let n = 0;
+    for (const b of this.booms) {
+      if (b.r < 30 || n >= 2) continue;
+      const t = 1 - b.life / .42;
+      if (t <= .02 || t >= .9) continue;
+      n++;
+      const front = b.r * (.5 + .75 * (1 - (1 - Math.min(1, t * 1.15)) ** 3));
+      const band = 7 + b.r * .1;
+      const strength = (1 - t) * .06;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, front + band, 0, TAU);
+      ctx.arc(b.x, b.y, Math.max(0, front - band), 0, TAU, true);
+      ctx.clip();
+      ctx.translate(b.x, b.y); ctx.scale(1 + strength, 1 + strength); ctx.translate(-b.x, -b.y);
+      ctx.drawImage(this.canvas, 0, 0, this.canvas.width, this.canvas.height, -this.shakeAt[0], -this.shakeAt[1], W, H);
+      ctx.restore();
+    }
+  }
+
   private drawEffects(): void {
     const ctx = this.ctx;
     for (const d of this.debris) {
@@ -1704,6 +1921,13 @@ export class Renderer {
         const a = i * TAU / 10 + b.x + t * .35;
         arc(ctx, b.x, b.y, outer, a, a + .18); ctx.stroke();
       }
+    }
+    for (const b of this.booms) {
+      const t = 1 - b.life / .42;
+      if (t >= 0) this.flare(b.x, b.y, b.r * 1.8 * (1 - t * .5), b.color, (1 - t) ** 2 * .9 * flashScale);
+    }
+    for (const hit of this.impacts) {
+      if (hit.rays >= 8) this.flare(hit.x, hit.y, hit.reach * 2.2, hit.color, hit.life / .18 * .8 * flashScale);
     }
     for (const r of this.rings) {
       const t = 1 - r.life / r.max;
@@ -1858,6 +2082,29 @@ export class Renderer {
     const charged = w.isPowerWindow();
     const recoil = this.reducedMotion?.matches ? 0 : this.launcherRecoil;
     this.drawLight(LAUNCHER_X, LAUNCHER_Y, 80, charged ? '#ffe3a3' : color, w.aim.active ? .4 : .2);
+    const live = charged ? '#ffe3a3' : color;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    if (w.aim.active && w.hand > 0) {
+      // A searchlight cone thrown up the field along the aim.
+      ctx.save();
+      ctx.translate(LAUNCHER_X, LAUNCHER_Y); ctx.rotate(ang);
+      const cone = ctx.createLinearGradient(30, 0, 330, 0);
+      cone.addColorStop(0, live + '30'); cone.addColorStop(1, live + '00');
+      ctx.fillStyle = cone;
+      ctx.beginPath(); ctx.moveTo(30, -10); ctx.lineTo(330, -70); ctx.lineTo(330, 70); ctx.lineTo(30, 10); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // Pit lights chase around the launch well.
+    const spin = this.reducedMotion?.matches ? 0 : this.time * (w.hand > 0 ? 1.4 : .4);
+    for (let i = 0; i < 24; i++) {
+      const a = i * TAU / 24;
+      const k = (((a - spin) % TAU) + TAU) % TAU / TAU;
+      ctx.globalAlpha = .15 + .85 * k ** 4;
+      ctx.fillStyle = live;
+      ctx.save(); ctx.translate(LAUNCHER_X, LAUNCHER_Y); ctx.rotate(a); ctx.fillRect(53, -1.2, 6, 2.4); ctx.restore();
+    }
+    ctx.restore();
     drawTurret(ctx, LAUNCHER_X, LAUNCHER_Y, ang, color, core.id,
       recoil * (this.opts.reduceFlashes ? .45 : 1), charged, w.hand > 0, this.reducedMotion?.matches ? 0 : this.time);
     if (w.aim.active && w.hand > 0 && !w.aim.streamed) {
@@ -1880,6 +2127,20 @@ export class Renderer {
       const y = LAUNCHER_Y + Math.sin(cursor) * radius;
       this.drawLight(x, y, 12, charged ? '#ffe3a3' : color, .9);
       arc(ctx, x, y, 3.5); ctx.fillStyle = '#efffff'; ctx.fill();
+    }
+    // Energy feeds the turret through the deck conduits.
+    if (!this.reducedMotion?.matches) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const s of [-1, 1]) {
+        const x0 = s < 0 ? 14 : W - 14, x1 = LAUNCHER_X + s * 58;
+        for (let i = 0; i < 3; i++) {
+          const k = (this.time * (w.hand > 0 ? .9 : .35) + i / 3) % 1;
+          const px = x0 + (x1 - x0) * k;
+          this.drawGlow(px, LAUNCHER_Y + 4, 9, charged ? '#ffe3a3' : color, Math.sin(k * Math.PI) * .9);
+        }
+      }
+      ctx.restore();
     }
     // Balls in hand: a row of lit cells under the turret.
     const total = w.maxBallsAllowed();
@@ -1959,6 +2220,14 @@ export class Renderer {
     ctx.restore();
     ctx.drawImage(orbLighting(), -half, -half, half * 2, half * 2);
     ctx.restore();
+    // A white-hot core and an energy rim make the ball the brightest thing on the field.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    this.drawGlow(b.x, b.y, r * 1.5, main, isMain ? .55 : .35);
+    ctx.strokeStyle = main; ctx.lineWidth = 1.2; ctx.globalAlpha = .7;
+    arc(ctx, b.x, b.y, r * 1.02, Math.PI * .1, Math.PI * .9); ctx.stroke();
+    ctx.restore();
+    if (isMain) this.flare(b.x, b.y, r * (5 + tier), main, b.powered ? .7 : .45);
     if (tier > 0 || b.powered) {
       // Momentum halos: one orbiting arc per tier.
       ctx.save(); ctx.globalCompositeOperation = 'lighter';

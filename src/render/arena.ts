@@ -58,34 +58,62 @@ function drawPlates(ctx: CanvasRenderingContext2D, arena: ArenaDef): void {
     for (let col = -1; col <= f.cols; col++) {
       const x = x0 + col * pw + offset, y = y0 + row * ph;
       if (x + pw < 0 || x > W) continue;
-      const shade = r();
-      const plate = ctx.createLinearGradient(x, y, x + pw * .4, y + ph);
-      plate.addColorStop(0, f.tone + 'ff'); plate.addColorStop(1, '#00000000');
-      ctx.globalAlpha = .38 + shade * .3;
-      ctx.fillStyle = plate; ctx.fillRect(x + 2, y + 2, pw - 4, ph - 4);
+      const tone = r();
+      // Plate body: a lit upper-left falling into shade, slightly varied per plate.
+      ctx.globalAlpha = .5 + tone * .25;
+      ctx.fillStyle = f.tone; ctx.fillRect(x + 2, y + 2, pw - 4, ph - 4);
       ctx.globalAlpha = 1;
-      // seam
-      ctx.fillStyle = f.seam + 'd0';
-      ctx.fillRect(x, y, pw, 2); ctx.fillRect(x, y, 2, ph);
-      // bevel light and shade
-      ctx.fillStyle = '#ffffff0c'; ctx.fillRect(x + 2, y + 2, pw - 4, 1); ctx.fillRect(x + 2, y + 2, 1, ph - 4);
-      ctx.fillStyle = '#0000002e'; ctx.fillRect(x + 2, y + ph - 2, pw - 3, 1); ctx.fillRect(x + pw - 2, y + 2, 1, ph - 3);
+      const key = ctx.createLinearGradient(x, y, x + pw * .55, y + ph);
+      key.addColorStop(0, '#ffffff10'); key.addColorStop(.45, '#ffffff00'); key.addColorStop(1, '#00000048');
+      ctx.fillStyle = key; ctx.fillRect(x + 2, y + 2, pw - 4, ph - 4);
+      // Brushed grain and a few scuffs catch the light at grazing angles.
       if (arena.id !== 'citadel' && arena.id !== 'blight') {
-        for (const [bx, by] of [[x + 7, y + 7], [x + pw - 7, y + 7], [x + 7, y + ph - 7], [x + pw - 7, y + ph - 7]]) {
-          ctx.fillStyle = '#00000060'; ctx.beginPath(); ctx.arc(bx + .6, by + .8, 2, 0, TAU); ctx.fill();
-          ctx.fillStyle = '#ffffff16'; ctx.beginPath(); ctx.arc(bx, by, 1.6, 0, TAU); ctx.fill();
+        for (let i = 0; i < 26; i++) {
+          const sy = y + 4 + r() * (ph - 8), sx = x + 4 + r() * pw * .5, len = pw * (.2 + r() * .5);
+          ctx.fillStyle = i % 3 ? '#ffffff07' : '#00000016';
+          ctx.fillRect(sx, sy, Math.min(len, x + pw - 4 - sx), .6);
         }
-        // An occasional vent grille or service hatch breaks the repetition.
+      }
+      for (let i = 0; i < 3; i++) {
+        const sx = x + 8 + r() * (pw - 16), sy = y + 8 + r() * (ph - 16), a = r() * TAU, l = 4 + r() * 10;
+        ctx.strokeStyle = '#ffffff0c'; ctx.lineWidth = .6;
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * l, sy + Math.sin(a) * l); ctx.stroke();
+      }
+      // Recessed seam with a lit lower lip.
+      ctx.fillStyle = f.seam; ctx.fillRect(x, y, pw, 2.5); ctx.fillRect(x, y, 2.5, ph);
+      ctx.fillStyle = '#ffffff0e'; ctx.fillRect(x + 2.5, y + 2.5, pw - 3, 1);
+      ctx.fillStyle = '#ffffff08'; ctx.fillRect(x + 2.5, y + 2.5, 1, ph - 3);
+      ctx.fillStyle = '#00000050'; ctx.fillRect(x + 2.5, y + ph - 1.5, pw - 3, 1.5); ctx.fillRect(x + pw - 1.5, y + 2.5, 1.5, ph - 3);
+      if (arena.id !== 'citadel' && arena.id !== 'blight') {
+        for (const [bx, by] of [[x + 8, y + 8], [x + pw - 8, y + 8], [x + 8, y + ph - 8], [x + pw - 8, y + ph - 8]]) {
+          ctx.fillStyle = '#00000070'; ctx.beginPath(); ctx.arc(bx + .7, by + .9, 2.3, 0, TAU); ctx.fill();
+          const bolt = ctx.createRadialGradient(bx - .6, by - .6, 0, bx, by, 2);
+          bolt.addColorStop(0, '#ffffff40'); bolt.addColorStop(1, '#ffffff08');
+          ctx.fillStyle = bolt; ctx.beginPath(); ctx.arc(bx, by, 1.9, 0, TAU); ctx.fill();
+        }
         const detail = r();
         if (detail < .12) {
           // Flush service hatch with a recessed grip.
-          ctx.fillStyle = '#00000030'; ctx.fillRect(x + pw / 2 - 16, y + ph / 2 - 3, 32, 6);
-          ctx.fillStyle = '#ffffff0a'; ctx.fillRect(x + pw / 2 - 16, y + ph / 2 + 3, 32, 1);
+          ctx.fillStyle = '#00000038'; ctx.fillRect(x + pw / 2 - 16, y + ph / 2 - 3, 32, 6);
+          ctx.fillStyle = '#ffffff0c'; ctx.fillRect(x + pw / 2 - 16, y + ph / 2 + 3, 32, 1);
         } else if (detail < .26) {
-          ctx.strokeStyle = '#00000050'; ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#00000058'; ctx.lineWidth = 1.5;
           ctx.strokeRect(x + 14, y + 14, pw - 28, ph - 28);
-          ctx.strokeStyle = '#ffffff09'; ctx.lineWidth = 1;
+          ctx.strokeStyle = '#ffffff0b'; ctx.lineWidth = 1;
           ctx.strokeRect(x + 15.5, y + 15.5, pw - 28, ph - 28);
+        } else if (detail < .46) {
+          // A recessed light strip inlaid near one edge.
+          const top = r() < .5;
+          const lx = x + pw * (.2 + r() * .2), lw = pw * (.25 + r() * .2), ly = top ? y + 6 : y + ph - 9;
+          ctx.fillStyle = '#000000a0'; ctx.fillRect(lx - 1, ly - 1, lw + 2, 4);
+          ctx.globalCompositeOperation = 'lighter';
+          const strip = ctx.createLinearGradient(lx, 0, lx + lw, 0);
+          strip.addColorStop(0, f.glow + '20'); strip.addColorStop(.5, f.glow + '90'); strip.addColorStop(1, f.glow + '20');
+          ctx.fillStyle = strip; ctx.fillRect(lx, ly, lw, 2);
+          const spill = ctx.createLinearGradient(0, ly - 8, 0, ly + 10);
+          spill.addColorStop(0, f.glow + '00'); spill.addColorStop(.5, f.glow + '14'); spill.addColorStop(1, f.glow + '00');
+          ctx.fillStyle = spill; ctx.fillRect(lx - 6, ly - 8, lw + 12, 18);
+          ctx.globalCompositeOperation = 'source-over';
         }
       }
     }
@@ -103,12 +131,16 @@ function drawPlates(ctx: CanvasRenderingContext2D, arena: ArenaDef): void {
   ctx.restore();
 }
 
-/** Static arena architecture is baked once, keeping the live effects inexpensive. */
-export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
+/**
+ * Static arena architecture is baked once, keeping the live effects inexpensive. The playfield
+ * bakes at twice the world resolution so the floor stays crisp on high-density phone screens.
+ */
+export function createArenaSurface(arena: ArenaDef, scale = 1): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = W * scale;
+  canvas.height = H * scale;
   const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
   const { accent, wall, bg0, bg1 } = arena.theme;
   const base = ctx.createLinearGradient(0, 0, W * .4, H);
   base.addColorStop(0, bg1);
@@ -204,7 +236,20 @@ export function createArenaSurface(arena: ArenaDef): HTMLCanvasElement {
   }
   ctx.restore();
 
-  drawScenery(ctx, arena);
+  // Floor markings are inlaid: each line casts a hairline shadow into its groove.
+  const etch = document.createElement('canvas');
+  etch.width = canvas.width; etch.height = canvas.height;
+  const e = etch.getContext('2d')!;
+  e.scale(canvas.width / W, canvas.height / H);
+  drawScenery(e, arena);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.shadowColor = 'rgba(0,0,0,.85)';
+  ctx.shadowOffsetX = canvas.width / W * 1.1;
+  ctx.shadowOffsetY = canvas.width / W * 1.4;
+  ctx.shadowBlur = canvas.width / W;
+  ctx.drawImage(etch, 0, 0);
+  ctx.restore();
 
   ctx.save();
   ctx.beginPath(); ctx.rect(14, FIELD_TOP, W - 28, DEFENSE_Y - FIELD_TOP); ctx.clip();
@@ -343,10 +388,91 @@ function drawDeck(ctx: CanvasRenderingContext2D, arena: ArenaDef): void {
   ctx.lineTo(W - 25, FLOOR_Y + 27); ctx.lineTo(W - 25, H - 26); ctx.stroke();
 }
 
-export function drawArenaAtmosphere(ctx: CanvasRenderingContext2D, arena: ArenaDef, time: number): void {
+const fogArt = new Map<string, HTMLCanvasElement>();
+const FOG = 128;
+/** Tileable fractal value noise in one color: slow banks of haze that drift over the floor. */
+function fogTile(color: string): HTMLCanvasElement {
+  let c = fogArt.get(color);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = FOG;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(FOG, FOG);
+  const r = rand(4242);
+  const octaves = [4, 8, 16, 32].map(n => ({ n, v: Array.from({ length: n * n }, r) }));
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const sample = (o: { n: number; v: number[] }, x: number, y: number) => {
+    const fx = x / FOG * o.n, fy = y / FOG * o.n;
+    const ix = Math.floor(fx), iy = Math.floor(fy);
+    const tx = smooth(fx - ix), ty = smooth(fy - iy);
+    const at = (i: number, j: number) => o.v[((j % o.n) * o.n + (i % o.n))];
+    const a = at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx;
+    const b = at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx;
+    return a * (1 - ty) + b * ty;
+  };
+  const v = parseInt(color.slice(1, 7), 16);
+  for (let y = 0; y < FOG; y++) for (let x = 0; x < FOG; x++) {
+    let n = 0, amp = .55, sum = 0;
+    for (const o of octaves) { n += sample(o, x, y) * amp; sum += amp; amp *= .5; }
+    n /= sum;
+    const i = (y * FOG + x) * 4;
+    img.data[i] = (v >> 16) & 255; img.data[i + 1] = (v >> 8) & 255; img.data[i + 2] = v & 255;
+    img.data[i + 3] = Math.max(0, Math.min(255, (n - .38) * 2.4 * 255));
+  }
+  g.putImageData(img, 0, 0);
+  fogArt.set(color, c);
+  return c;
+}
+
+/** Tiles a fog layer across the field, scrolled by (ox, oy) and scaled to `size`. */
+function fogLayer(ctx: CanvasRenderingContext2D, tile: HTMLCanvasElement, size: number, ox: number, oy: number): void {
+  const sx = ((ox % size) + size) % size, sy = ((oy % size) + size) % size;
+  for (let y = FIELD_TOP - sy; y < DEFENSE_Y; y += size) {
+    for (let x = -sx; x < W; x += size) ctx.drawImage(tile, x, y, size + .5, size + .5);
+  }
+}
+
+/** Light packets racing along the floor seams, as if power were being routed under the deck. */
+function seamRunners(ctx: CanvasRenderingContext2D, arena: ArenaDef, time: number): void {
+  const f = floorStyle(arena);
+  const pw = W / f.cols, ph = (DEFENSE_Y - FIELD_TOP) / f.rows;
+  ctx.fillStyle = f.glow;
+  for (let i = 0; i < 6; i++) {
+    const horizontal = i % 2 === 0 || arena.id === 'citadel';
+    const lane = 1 + (i * 3) % ((horizontal ? f.rows : f.cols) - 1);
+    const span = horizontal ? W : DEFENSE_Y - FIELD_TOP;
+    const speed = 70 + (i % 3) * 25;
+    const pos = (time * speed + i * 211) % (span + 160) - 80;
+    const dir = i % 4 < 2 ? 1 : -1;
+    const head = dir > 0 ? pos : span - pos;
+    const tail = 70;
+    const x = horizontal ? head : lane * pw, y = horizontal ? FIELD_TOP + lane * ph : FIELD_TOP + head;
+    const g = horizontal
+      ? ctx.createLinearGradient(x - tail * dir, y, x, y)
+      : ctx.createLinearGradient(x, y - tail * dir, x, y);
+    g.addColorStop(0, f.glow + '00'); g.addColorStop(1, f.glow + 'b0');
+    ctx.fillStyle = g;
+    if (horizontal) ctx.fillRect(Math.min(x, x - tail * dir), y - .8, tail, 1.8);
+    else ctx.fillRect(x - .8, Math.min(y, y - tail * dir), 1.8, tail);
+    const dot = ctx.createRadialGradient(x, y, 0, x, y, 9);
+    dot.addColorStop(0, '#ffffffb0'); dot.addColorStop(.3, f.glow + '60'); dot.addColorStop(1, f.glow + '00');
+    ctx.fillStyle = dot; ctx.fillRect(x - 9, y - 9, 18, 18);
+  }
+}
+
+export function drawArenaAtmosphere(ctx: CanvasRenderingContext2D, arena: ArenaDef, time: number, rich = true): void {
   ctx.save();
   ctx.beginPath(); ctx.rect(12, FIELD_TOP, W - 24, DEFENSE_Y - FIELD_TOP); ctx.clip();
   const color = arena.theme.accent;
+  // Cloud shadows: dark haze drifting slowly, so the floor lighting is never uniform.
+  if (rich) {
+    ctx.globalAlpha = .32;
+    fogLayer(ctx, fogTile('#000000'), 420, time * 6, time * -3);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'lighter';
+    seamRunners(ctx, arena, time);
+    ctx.globalCompositeOperation = 'source-over';
+  }
   // Volumetric shafts from the overhead rig drift slowly across the floor.
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 3; i++) {
