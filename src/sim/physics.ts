@@ -1,6 +1,7 @@
 import { t, type UiKey } from '../i18n';
 import { angleDiff, clamp, closestOnSegment, reflect, segmentsCross, type Vec2 } from '../core/math';
 import { ballHitEnemy, sparkNearest } from './combat';
+import { isPickup, TrickshotRun, type Target } from './arcade';
 import {
   FIELD_TOP, FLOOR_Y, H, LAUNCHER_X, LAUNCHER_Y, SIM_DT, TRAIL_LEN, W,
   type Ball, type Enemy, type Segment,
@@ -18,6 +19,7 @@ export const IDLE_FLIGHT_TIME = 15;
 /** Consecutive portal jumps allowed without a bounce or hit in between. */
 export const MAX_PORTAL_HOPS = 2;
 const tmp: Vec2 = { x: 0, y: 0 };
+const tmp2: Vec2 = { x: 0, y: 0 };
 const rv: Vec2 = { x: 0, y: 0 };
 
 /** Height at which Rift Phase re-enters the arena. */
@@ -87,6 +89,7 @@ export function ballSpeed(w: World, b: Mover): number {
       break;
     }
   }
+  if (w.arcade?.speedMult) s *= w.arcade.speedMult;
   return Math.max(40, s);
 }
 
@@ -308,6 +311,25 @@ function collideObstacles(w: World, b: Ball): void {
         }
         break;
       }
+      case 'prism': {
+        // Launched balls split off two shards on the way through; shards and clones pass untouched.
+        if (b.kind !== 'main' || (b.x - o.x) ** 2 + (b.y - o.y) ** 2 >= o.r * o.r || recentlyHit(w, b, -5000 - i)) break;
+        markHit(w, b, -5000 - i);
+        b.recentT[b.recentT.length - 1] = w.time + 0.6;
+        o.flash = 1;
+        for (const s of [-1, 1]) {
+          const a = Math.atan2(b.dy, b.dx) + s * 0.38;
+          const shard = w.spawnBall('shard', b.x, b.y, Math.cos(a), Math.sin(a), b);
+          if (shard) {
+            shard.life = 4;
+            shard.prism = true;
+          }
+        }
+        w.addCombo(1);
+        w.emit({ t: 'ring', x: o.x, y: o.y, r: o.r * 1.8, color: '#ff9af0', dur: 0.3 });
+        w.emit({ t: 'sfx', name: 'split', pitch: 1.3, vol: 0.5 });
+        break;
+      }
       case 'crate': {
         if (!o.alive) break;
         const cx = clamp(b.x, o.x, o.x + o.w);
@@ -432,6 +454,87 @@ function collideEnemies(w: World, b: Ball): void {
   }
 }
 
+/** Where a ball touches a target, as the surface normal; null when apart. Blocks are squares of half-size `r`. */
+function targetContact(b: { x: number; y: number; r: number; dy: number }, tg: Target, out: Vec2): { nx: number; ny: number } | null {
+  if (tg.shape === 'block') {
+    const hh = tg.hh ?? tg.r;
+    const cx = clamp(b.x, tg.x - tg.r, tg.x + tg.r);
+    const cy = clamp(b.y, tg.y - hh, tg.y + hh);
+    const dx = b.x - cx;
+    const dy = b.y - cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= b.r * b.r) return null;
+    out.x = cx;
+    out.y = cy;
+    if (d2 < 1e-9) {
+      // The centre is inside the block: leave by the nearest face.
+      const ox = b.x - tg.x;
+      const oy = b.y - tg.y;
+      if (Math.abs(ox) / tg.r > Math.abs(oy) / hh) { out.x = tg.x + Math.sign(ox || 1) * tg.r; return { nx: Math.sign(ox || 1), ny: 0 }; }
+      out.y = tg.y + Math.sign(oy || (b.dy > 0 ? -1 : 1)) * hh;
+      return { nx: 0, ny: Math.sign(oy || (b.dy > 0 ? -1 : 1)) };
+    }
+    const d = Math.sqrt(d2);
+    return { nx: dx / d, ny: dy / d };
+  }
+  const dx = b.x - tg.x;
+  const dy = b.y - tg.y;
+  const rr = tg.r + b.r;
+  const d2 = dx * dx + dy * dy;
+  if (d2 >= rr * rr) return null;
+  const d = Math.sqrt(d2) || 1;
+  out.x = tg.x + (dx / d) * tg.r;
+  out.y = tg.y + (dy / d) * tg.r;
+  return { nx: dx / d, ny: dy / d };
+}
+
+/** Arcade targets: crystals and blocks reflect the ball (or let it through), pickups are flown through. */
+function collideTargets(w: World, b: Ball): void {
+  const a = w.arcade!;
+  for (let i = 0; i < a.targets.length; i++) {
+    const tg = a.targets[i];
+    if (!tg.alive) continue;
+    const n = targetContact(b, tg, tmp);
+    if (!n) continue;
+    if (isPickup(tg.kind)) {
+      a.touch(b, tg);
+      continue;
+    }
+    const cx = tmp.x;
+    const cy = tmp.y;
+    if (recentlyHit(w, b, tg.id)) {
+      // Still overlapping a target it just struck: keep it outside rather than tunnelling.
+      if (tg.alive && b.dx * n.nx + b.dy * n.ny < 0) {
+        reflect(b.dx, b.dy, n.nx, n.ny, rv);
+        b.dx = rv.x;
+        b.dy = rv.y;
+        enforceAngle(b);
+      }
+      continue;
+    }
+    markHit(w, b, tg.id);
+    b.stuckT = 0;
+    b.idleT = 0;
+    b.portalHops = 0;
+    if (a.hit(b, tg) === 'pass') continue;
+    // Bounce: push out along the normal and reflect, counting it as a bounce (bank crystals accept it).
+    if (tg.shape === 'block') {
+      b.x = cx + n.nx * (b.r + 0.01);
+      b.y = cy + n.ny * (b.r + 0.01);
+    } else {
+      b.x = tg.x + n.nx * (tg.r + b.r + 0.01);
+      b.y = tg.y + n.ny * (tg.r + b.r + 0.01);
+    }
+    if (b.dx * n.nx + b.dy * n.ny < 0) {
+      reflect(b.dx, b.dy, n.nx, n.ny, rv);
+      b.dx = rv.x;
+      b.dy = rv.y;
+      enforceAngle(b);
+    }
+    onWallBounce(w, b, cx, cy, n.nx, n.ny, 'crate');
+  }
+}
+
 function collideProjectiles(w: World, b: Ball): void {
   for (const p of w.projectiles) {
     if (!p.alive) continue;
@@ -466,7 +569,7 @@ function handleFloor(w: World, b: Ball): void {
 }
 
 /** Ends a main ball's flight: it arcs back to the launcher, keeping momentum if the build allows. */
-function sendHome(w: World, b: Ball, fromY: number): void {
+export function sendHome(w: World, b: Ball, fromY: number): void {
   // preserve momentum for the next launch if the build allows it
   let keep = 0;
   if (w.build.has('perpetual_motion')) keep = b.momentum;
@@ -544,7 +647,10 @@ export function stepBall(w: World, b: Ball, dt: number): void {
     if (w.dynSegments.length) collideSegments(w, b, w.dynSegments);
     collideObstacles(w, b);
     w.resonance.touch(b);
-    collideEnemies(w, b);
+    if (w.arcade) {
+      w.arcade.collideBall?.(b);
+      collideTargets(w, b);
+    } else collideEnemies(w, b);
     if (w.projectiles.length) collideProjectiles(w, b);
     if (b.y < FIELD_TOP + b.r - 2) b.y = FIELD_TOP + b.r; // safety clamp
     if (b.x < b.r - 2 || b.x > W - b.r + 2) b.x = clamp(b.x, b.r, W - b.r);
@@ -580,7 +686,7 @@ export const TRACE_BREAK = NaN;
  * gravity storms) as the real ball, and follows portals, Rift Phase and safety-net
  * floor bounces. Writes polyline points to `out`; a TRACE_BREAK pair separates jumps.
  */
-export function traceAim(w: World, maxLen: number, maxBounces: number, out: number[]): { ex: number; ey: number; enemy: Enemy | null } {
+export function traceAim(w: World, maxLen: number, maxBounces: number, out: number[]): { ex: number; ey: number; enemy: Enemy | null; target?: Target } {
   out.length = 0;
   const st = w.build.stats;
   const g = {
@@ -743,6 +849,16 @@ export function traceAim(w: World, maxLen: number, maxBounces: number, out: numb
       if (e.alive && (e.x - g.x) ** 2 + (e.y - g.y) ** 2 < (e.r + g.r) ** 2) {
         out.push(g.x, g.y);
         return { ex: g.x, ey: g.y, enemy: e };
+      }
+    }
+    if (w.arcade) {
+      const a = w.arcade;
+      for (const tg of a.targets) {
+        if (!tg.alive || isPickup(tg.kind) || !targetContact(g, tg, tmp2)) continue;
+        // A crystal that would shatter lets the preview fly on, as the ball will; anything it bounces off ends it.
+        if (a instanceof TrickshotRun && a.passes(tg, g.wallBounces)) continue;
+        out.push(g.x, g.y);
+        return { ex: g.x, ey: g.y, enemy: null, target: tg };
       }
     }
     if (g.y > FLOOR_Y) {

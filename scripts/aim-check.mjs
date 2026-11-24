@@ -59,6 +59,17 @@ try {
     // Upper, middle and lower regions all start a gesture, far above the gun.
     for (const y of [.16, .38, .65, .84]) for (const x of [.12, .35, .5, .7, .88]) {
       await rearm();
+      // HUD buttons (pause, damage meter, Recall, Surge) keep their own controls: a press there never aims.
+      const onButton = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('button'), point(x, y));
+      if (onButton) {
+        await mouseDown(point(x, y));
+        assert.equal((await state()).active, false, `A HUD button at ${x},${y} does not start aiming`);
+        // Release off the button so the press does not click it.
+        const off = point(.5, .5);
+        await page.mouse.move(off.x, off.y); await page.mouse.up();
+        assert.equal((await state()).paused, false);
+        continue;
+      }
       await mouseDown(point(x, y));
       assert.equal((await state()).active, true, `Mouse starts aiming at ${x},${y}`);
       await matchesPress('Gun points toward the press');
@@ -69,7 +80,10 @@ try {
     }
     for (const y of [.16, .45, .8]) for (const x of [.15, .5, .85]) {
       await rearm();
-      const p = point(x, y); await page.touchscreen.tap(p.x, p.y);
+      const p = point(x, y);
+      // A HUD button there keeps its own control (covered by the mouse pass above).
+      if (await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('button'), p)) continue;
+      await page.touchscreen.tap(p.x, p.y);
       await matchesPress('Touch aims toward its board position'); await launched('Touch release');
     }
     checks.push(`${width}x${height}: mouse and native touch aim across the entire board`);

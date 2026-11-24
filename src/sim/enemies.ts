@@ -1,3 +1,4 @@
+import { WEAK_POINT } from './world';
 import { t } from '../i18n';
 import { clamp } from '../core/math';
 import { damageEnemy, flushDamageNumber, nearestEnemy } from './combat';
@@ -98,6 +99,12 @@ export function updateEnemy(w: World, e: Enemy, dt: number): void {
     if (was !== e.phased) w.emit({ t: 'burst', x: e.x, y: e.y, color: e.def.color, n: 6, speed: 90 });
   }
 
+  // ---- weak point: turns slowly, alternating direction between enemies
+  if (e.boss || e.elite.length) {
+    e.weakA += dt * WEAK_POINT.turn * (e.id % 2 ? 1 : -1);
+    if (e.weakCd > 0) e.weakCd -= dt;
+  }
+
   // ---- knockback integration (rams and pylons cannot be moved)
   if (e.def.ai === 'charger' || e.def.ai === 'pylon') {
     e.kx = 0;
@@ -135,6 +142,17 @@ export function updateEnemy(w: World, e: Enemy, dt: number): void {
     case 'minion':
       vx = Math.sin(e.wobble * 0.9) * 8;
       break;
+    case 'linker': {
+      // Hold the tether taut: drift to keep about 150 px from the partner, level with it.
+      const p = w.tetherPartner(e);
+      vx = Math.sin(e.wobble * 0.7) * 6;
+      if (p) {
+        const want = p.x + (e.x < p.x ? -150 : 150);
+        vx += Math.max(-30, Math.min(30, (want - e.x) * 1.2));
+        sp *= p.y < e.y - 6 ? 0.85 : p.y > e.y + 6 ? 1.15 : 1;
+      }
+      break;
+    }
     case 'healer': {
       e.t0 -= dt;
       if (e.t0 <= 0 && !frozen) {

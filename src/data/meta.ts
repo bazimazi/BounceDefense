@@ -75,6 +75,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'riftwalker', name: 'Riftwalker', icon: '🌀', desc: 'Clear a Rift.', progress: (p) => [p.rifts ?? 0, 1], rewards: [{ type: 'research', amount: 8 }, { type: 'cores', amount: 15 }] },
   { id: 'riftbreaker', name: 'Riftbreaker', icon: '💠', desc: 'Clear five Rifts.', progress: (p) => [p.rifts ?? 0, 5], rewards: [{ type: 'research', amount: 20 }, { type: 'cores', amount: 60 }] },
   { id: 'void_heart', name: 'Heart of the Void', icon: '🕳️', desc: 'Clear all ten Rifts.', progress: (p) => [p.rifts ?? 0, 10], rewards: [{ type: 'cosmetic', id: 'voidheart' }, { type: 'cores', amount: 150 }, { type: 'research', amount: 40 }] },
+  // The Arcade: one badge per mode.
+  { id: 'sharpshooter', name: 'Sharpshooter', icon: '🎯', desc: 'Earn 12 Trickshot stars.', progress: (p) => [Object.values(p.arcade?.stars ?? {}).reduce((a, b) => a + b, 0), 12], rewards: [{ type: 'research', amount: 2 }, { type: 'coins', amount: 300 }] },
+  { id: 'bulwark_breaker', name: 'Siege Breaker', icon: '🧱', desc: 'Hold 20 turns in a Siege.', progress: (p) => [p.arcade?.siegeBest ?? 0, 20], rewards: [{ type: 'research', amount: 2 }, { type: 'coins', amount: 300 }] },
+  { id: 'rebound_ace', name: 'Rebound Ace', icon: '🏓', desc: 'Reach wave 5 in Rebound.', progress: (p) => [p.arcade?.reboundBest ?? 0, 5], rewards: [{ type: 'research', amount: 2 }, { type: 'coins', amount: 300 }] },
 ];
 
 /** Cores at their final Awakening rank (five). */

@@ -23,7 +23,9 @@ import { Director, FURY } from './director';
 import { updateEnemy } from './enemies';
 import { MAX_DISTINCT_UPGRADES, makeOffers, type Offer } from './offers';
 import { RIFTS, riftAt, sigilTotals, type RiftDef } from '../data/rifts';
-import { stepBall } from './physics';
+import { sendHome, stepBall } from './physics';
+import { createArcade, type Arcade } from './arcade';
+import { STAGE_MAP } from '../data/trickshot';
 import { ResonanceCircuit } from './resonance';
 import type { Modifier } from './stats';
 import {
@@ -70,9 +72,13 @@ export interface RunConfig {
   rift?: number;
   /** Sigils the profile holds (earned in the Rifts), applied to every run. */
   sigils?: string[];
+  /** Trickshot stage id (mode `trickshot`). */
+  stage?: string;
 }
 
-export type RunMode = 'standard' | 'gauntlet' | 'descent' | 'rift';
+export type RunMode = 'standard' | 'gauntlet' | 'descent' | 'rift' | 'trickshot' | 'siege' | 'rebound';
+/** Modes with rules of their own (see `src/sim/arcade.ts`): no enemies, upgrades or hull. */
+export const isArcadeMode = (m: RunMode | undefined): m is 'trickshot' | 'siege' | 'rebound' => m === 'trickshot' || m === 'siege' || m === 'rebound';
 
 /** Where the Sentinel drones hover above the line. */
 export const SENTINEL_POS: [number, number][] = [[118, DEFENSE_Y - 26], [422, DEFENSE_Y - 26]];
@@ -116,6 +122,18 @@ export const BARRIER_RECHARGE = 12;
 export const BALL_MILESTONES = [4, 11];
 /** Under Lone Ball each milestone sharpens the single ball instead (damage multiplier per milestone). */
 export const LONE_FOCUS = 0.9;
+/**
+ * Bounty marks: from `first` seconds, every `every` (±15%) seconds outside boss fights, the toughest enemy in
+ * the upper field is marked for `time` seconds. Killing it pays `coins` coin drops and `xp` gems plus `surge`
+ * charge, all doubled for a swift kill.
+ */
+export const BOUNTY = { first: 55, every: 80, time: 18, coins: 6, xp: 4, surge: 30 };
+/**
+ * Weak points: elites and bosses carry a glowing spot on their rim that turns slowly. A ball striking within
+ * `arc` radians of it deals `mult` damage; the spot then closes for `cooldown` seconds and reopens on the far side.
+ */
+export const WEAK_POINT = { arc: 0.5, mult: 1.6, turn: 0.75, cooldown: 1.1 };
+export const hasWeakPoint = (e: Enemy): boolean => e.boss || e.elite.length > 0;
 
 export function momentumTier(m: number): number {
   let t = 0;
@@ -154,6 +172,8 @@ interface Counters {
   bossFightTimes: number[];
   bossNoDamage: boolean;
   poisonKills: number;
+  bounties: number;
+  weakHits: number;
 }
 
 export class World {
@@ -284,6 +304,8 @@ export class World {
   readonly power: number;
   /** Every Sigil effect this run carries. */
   readonly sigils: ReturnType<typeof sigilTotals>;
+  /** Trickshot or Siege rules, when this run is one of the arcade modes. */
+  readonly arcade: Arcade | null;
   /** The depth's Afflictions. */
   readonly afflictions: Set<AfflictionRule>;
   /** Line damage multiplier from the depth and Ascension pressure. */
@@ -300,7 +322,7 @@ export class World {
     kills: 0, eliteKills: 0, damageDealt: 0, damageTaken: 0, healed: 0, bestCombo: 0, maxWallChain: 0, maxBounceChain: 0,
     maxBallsInFlight: 0, maxBallsOwned: 1, maxMomentumTier: 0, fireKills: 0, lightningKills: 0, explosionKills: 0,
     bleedKills: 0, frozenCount: 0, barrelsExploded: 0, goldenCaught: 0, coinsCollected: 0, coresCollected: 0,
-    bossesDefeated: [], bossFightTimes: [], bossNoDamage: true, poisonKills: 0,
+    bossesDefeated: [], bossFightTimes: [], bossNoDamage: true, poisonKills: 0, bounties: 0, weakHits: 0,
   };
   /** Discoveries made during this run (new to the profile). */
   newDiscoveries: { cat: DiscoveryCat; id: string }[] = [];
@@ -400,6 +422,7 @@ export class World {
     this.refreshBehaviors();
     this.maxHp = this.build.stats.maxHp;
     this.hp = this.maxHp;
+    this.arcade = isArcadeMode(cfg.mode) && !cfg.tutorial ? createArcade(this, cfg.mode, cfg.stage) : null;
     this.hand = this.maxBallsAllowed();
     this.barrier.charges = this.build.stats.barrier;
 
@@ -424,6 +447,10 @@ export class World {
       { ax: 0, ay: FIELD_TOP, bx: 0, by: bottom, kind: 'wall' },
       { ax: W, ay: FIELD_TOP, bx: W, by: bottom, kind: 'wall' },
     );
+    if (this.arcade) {
+      this.buildStage();
+      return;
+    }
     const lr = this.rng.fork(7);
     const layout = lr.pick(this.arena.layouts);
     const mirror = lr.chance(0.5);
@@ -450,8 +477,27 @@ export class World {
         case 'spore': this.obstacles.push({ kind: 'spore', x: mx(t.x) + jitter(), y: t.y + jitter(), r: 16, alive: true, respawn: 0 }); break;
         case 'pylon': this.obstacles.push({ kind: 'pylon', x: mx(t.x), y: t.y, r: t.r, flash: 0, cd: 0 }); break;
         case 'booster': this.obstacles.push({ kind: 'booster', x: mx(t.x), y: t.y, r: t.r, flash: 0 }); break;
+        case 'prism': this.obstacles.push({ kind: 'prism', x: mx(t.x), y: t.y, r: t.r, flash: 0 }); break;
       }
     }
+  }
+
+  /** A Trickshot board: its walls and devices exactly where the stage puts them (no mirroring or jitter). */
+  private buildStage(): void {
+    const a = this.arcade;
+    if (!a) return;
+    this.segments.push(...a.walls);
+    const st = a.kind === 'trickshot' ? STAGE_MAP[this.cfg.stage ?? ''] ?? null : null;
+    if (!st) return;
+    for (const [x, y, r] of st.bumpers ?? []) this.obstacles.push({ kind: 'bumper', x, y, r, flash: 0 });
+    for (const [ax, ay, bx, by] of st.deflectors ?? []) {
+      const o: Obstacle = { kind: 'deflector', ax, ay, bx, by, flash: 0 };
+      this.obstacles.push(o);
+      this.segments.push({ ax, ay, bx, by, kind: 'deflector', ref: o });
+    }
+    for (const [ax, ay, bx, by] of st.portals ?? []) this.obstacles.push({ kind: 'portal', ax, ay, bx, by, r: 24, spin: 0 });
+    for (const [x, y, r, strength] of st.wells ?? []) this.obstacles.push({ kind: 'well', x, y, r, strength });
+    for (const [x, y, r] of st.boosters ?? []) this.obstacles.push({ kind: 'booster', x, y, r, flash: 0 });
   }
 
   refreshBehaviors(): void {
@@ -466,6 +512,7 @@ export class World {
   }
 
   maxBallsAllowed(): number {
+    if (this.arcade) return this.arcade.balls;
     return this.loneBall ? 1 : this.build.stats.maxBalls + this.milestoneBalls;
   }
 
@@ -542,6 +589,7 @@ export class World {
       },
       elite: [], shieldHp: 0, flash: 0, alive: true, spawnT: 0, t0: 0, t1: 0, phase: 0, gen: 0, t2: 0, t3: 0, tag: '', phased: false, slowT: 0, lives: 0,
       boss: !!def.boss, killedBy: '', dmgAcc: 0, dmgAccT: 0, dmgAccCrit: false, wobble: this.rng.range(0, 6.28),
+      bounty: 0, partner: 0, weakA: this.rng.range(0, Math.PI * 2), weakCd: 0,
     };
   }
 
@@ -916,6 +964,8 @@ export class World {
 
   beginAim(): void {
     if (this.state !== 'playing' || this.endTimer >= 0) return;
+    // A Siege volley keeps the angle it was fired at: no re-aiming until every ball is home.
+    if (this.arcade?.kind === 'siege' && !this.arcade.canFire()) return;
     this.aim.active = true;
     this.aim.holdTime = 0;
     this.aim.streamed = false;
@@ -928,6 +978,15 @@ export class World {
 
   release(): void {
     if (!this.aim.active) return;
+    if (this.arcade) {
+      // Arcade shots are deliberate turns: no power window, no streaming, nothing while a shot is out.
+      this.aim.active = false;
+      if (!this.arcade.canFire()) return;
+      this.arcade.onFire();
+      this.powerQueue = 0;
+      this.launchQueue = Math.max(this.launchQueue, this.hand);
+      return;
+    }
     if (this.hand > 0) this.powerQueue = this.isPowerWindow() ? this.hand : 0;
     this.aim.active = false;
     this.launchQueue = Math.max(this.launchQueue, this.hand);
@@ -941,7 +1000,14 @@ export class World {
     return this.state === 'playing' && this.endTimer < 0 && this.surge.charge >= this.surge.max && this.surge.active <= 0;
   }
 
+  /** Ends a main ball's flight: it arcs back to the launcher. */
+  sendHome(b: Ball): void {
+    sendHome(this, b, b.y);
+  }
+
   canRecall(): boolean {
+    // Rebound keeps its balls in play by paddle: a recall would only throw one away.
+    if (this.arcade?.kind === 'rebound') return false;
     return this.state === 'playing' && this.endTimer < 0 && this.recallCooldown <= 0 &&
       this.balls.some(b => b.kind === 'main' && b.state === 'flight' && !b.dead);
   }
@@ -1173,6 +1239,10 @@ export class World {
   // ------------------------------------------------------------------ main step
   step(dt: number): void {
     if (this.state !== 'playing') return;
+    if (this.arcade) {
+      this.stepArcade(dt, this.arcade);
+      return;
+    }
     if (this.pendingLevels > 0 && this.endTimer < 0) {
       this.openLevelUp();
       return;
@@ -1259,11 +1329,108 @@ export class World {
         this.launchQueue = Math.max(this.launchQueue, this.hand);
       }
     }
+    this.updateLaunch(dt);
+
+    // grid (enemies) for ball collision queries
+    this.grid.clear();
+    this.fieldEnemies.length = 0;
+    this.commanders.length = 0;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      // Phased enemies are out of reach: nothing collides with or targets them.
+      if (!e.phased) this.grid.insert(e);
+      if (e.def.ai === 'magnet' || e.def.ai === 'warden' || e.def.ai === 'pulsar' || e.def.id === 'boss_magnetar' || e.def.id === 'boss_sovereign') this.fieldEnemies.push(e);
+      if (e.elite.includes('commander')) this.commanders.push(e);
+    }
+
+    // balls
+    this.dynSegments.length = 0;
+    this.director.updateBoss(dt);
+    this.addTethers();
+    this.stepBalls(dt);
+
+    // enemies
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.alive) updateEnemy(this, e, dt);
+    }
+    this.enemies = this.enemies.filter((e) => e.alive);
+
+    this.updateProjectiles(dt);
+    this.updateZones(dt);
+    this.updateObstacles(dt);
+    this.updatePickups(dt);
+    for (const [bh, p] of this.bh) bh.onTick?.(this, dt, p);
+  }
+
+  /** Linker tethers: a deflecting segment between each living pair, stopping short of both bodies. */
+  private addTethers(): void {
+    for (const e of this.enemies) {
+      if (!e.alive || !e.partner || e.def.ai !== 'linker') continue;
+      const p = this.tetherPartner(e);
+      if (!p || p.id < e.id) continue;
+      const dx = p.x - e.x, dy = p.y - e.y;
+      const d = Math.hypot(dx, dy);
+      if (d < e.r + p.r + 12) continue;
+      const ux = dx / d, uy = dy / d;
+      this.dynSegments.push({ ax: e.x + ux * (e.r + 3), ay: e.y + uy * (e.r + 3), bx: p.x - ux * (p.r + 3), by: p.y - uy * (p.r + 3), kind: 'shield' });
+    }
+  }
+
+  /** A Linker's living partner, if the tether still holds. */
+  tetherPartner(e: Enemy): Enemy | null {
+    if (!e.partner) return null;
+    for (const o of this.enemies) if (o.id === e.partner) return o.alive ? o : null;
+    return null;
+  }
+
+  /** One step of an arcade mode: the shot, the balls and the mode's own rules; no director, events or enemies. */
+  private stepArcade(dt: number, a: Arcade): void {
+    this.time += dt;
+    if (this.endTimer >= 0) {
+      this.endTimer -= dt;
+      if (this.endTimer < 0) {
+        this.state = 'over';
+        this.bus.emit('over', { victory: this.victory });
+        return;
+      }
+    }
+    if (this.combo.count > 0) {
+      this.combo.timer -= dt;
+      if (this.combo.timer <= 0) {
+        this.combo.count = 0;
+        this.combo.nextMilestone = 0;
+        this.combo.lastId = -1;
+      }
+    }
+    this.recallCooldown = Math.max(0, this.recallCooldown - dt);
+    if (this.aim.active) this.aim.holdTime += dt;
+    this.updateLaunch(dt, a.launchGap);
+    this.grid.clear();
+    this.dynSegments.length = 0;
+    for (const g of a.gates) this.dynSegments.push(g);
+    this.stepBalls(dt);
+    a.update(dt);
+    this.updateObstacles(dt);
+  }
+
+  private stepBalls(dt: number): void {
+    for (let i = 0; i < this.balls.length; i++) {
+      const b = this.balls[i];
+      if (!b.dead) stepBall(this, b, dt);
+      for (const [bh, p] of this.bh) if (!b.dead && b.state === 'flight') bh.onBallTick?.(this, b, dt, p);
+    }
+    this.balls = this.balls.filter((b) => !b.dead);
+  }
+
+  /** Fires queued balls one after another along the aim. */
+  private updateLaunch(dt: number, gap = 0.075): void {
+    const st = this.build.stats;
     this.launchTimer -= dt;
     while (this.launchQueue > 0 && this.hand > 0 && this.launchTimer <= 0) {
       this.launchQueue--;
       this.hand--;
-      this.launchTimer = 0.075;
+      this.launchTimer = gap;
       const b = this.spawnBall('main', LAUNCHER_X, LAUNCHER_Y - 16, this.aim.dx, this.aim.dy);
       if (!b) {
         this.hand++;
@@ -1288,41 +1455,6 @@ export class World {
       }
     }
     if (this.hand <= 0) this.launchQueue = 0;
-
-    // grid (enemies) for ball collision queries
-    this.grid.clear();
-    this.fieldEnemies.length = 0;
-    this.commanders.length = 0;
-    for (const e of this.enemies) {
-      if (!e.alive) continue;
-      // Phased enemies are out of reach: nothing collides with or targets them.
-      if (!e.phased) this.grid.insert(e);
-      if (e.def.ai === 'magnet' || e.def.ai === 'warden' || e.def.ai === 'pulsar' || e.def.id === 'boss_magnetar' || e.def.id === 'boss_sovereign') this.fieldEnemies.push(e);
-      if (e.elite.includes('commander')) this.commanders.push(e);
-    }
-
-    // balls
-    this.dynSegments.length = 0;
-    this.director.updateBoss(dt);
-    for (let i = 0; i < this.balls.length; i++) {
-      const b = this.balls[i];
-      if (!b.dead) stepBall(this, b, dt);
-      for (const [bh, p] of this.bh) if (!b.dead && b.state === 'flight') bh.onBallTick?.(this, b, dt, p);
-    }
-    this.balls = this.balls.filter((b) => !b.dead);
-
-    // enemies
-    for (let i = 0; i < this.enemies.length; i++) {
-      const e = this.enemies[i];
-      if (e.alive) updateEnemy(this, e, dt);
-    }
-    this.enemies = this.enemies.filter((e) => e.alive);
-
-    this.updateProjectiles(dt);
-    this.updateZones(dt);
-    this.updateObstacles(dt);
-    this.updatePickups(dt);
-    for (const [bh, p] of this.bh) bh.onTick?.(this, dt, p);
   }
 
   private updateProjectiles(dt: number): void {
@@ -1438,6 +1570,7 @@ export class World {
           break;
         case 'pylon':
         case 'booster':
+        case 'prism':
           o.flash = Math.max(0, o.flash - dt * 4);
           break;
         default:
@@ -1522,6 +1655,25 @@ export class World {
     }
   }
 
+  /**
+   * Bounty: a marked enemy pays out if it falls before its mark runs out: coins, experience and Surge
+   * charge, doubled for a swift kill (more than half the mark left).
+   */
+  claimBounty(e: Enemy): void {
+    const swift = e.bounty > BOUNTY.time / 2;
+    e.bounty = 0;
+    this.run.bounties++;
+    const k = swift ? 2 : 1;
+    for (let i = 0; i < BOUNTY.coins * k; i++) this.spawnPickup('coin', e.x, e.y, 3 + Math.floor(this.time / 120));
+    for (let i = 0; i < BOUNTY.xp; i++) this.spawnPickup('xp', e.x, e.y, 2 * k);
+    this.chargeSurge(BOUNTY.surge * k);
+    this.addCombo(5);
+    this.banner(swift ? t('fx.bountySwift') : t('fx.bountyClaimed'), '#ffd166', t('fx.bountySub', { n: BOUNTY.coins * k }));
+    this.emit({ t: 'ring', x: e.x, y: e.y, r: 80, color: '#ffd166', dur: 0.5 });
+    this.emit({ t: 'burst', x: e.x, y: e.y, color: '#ffd166', n: 26, speed: 300, size: 3 });
+    this.emit({ t: 'sfx', name: 'relic' });
+  }
+
   private mysteryTransform(): void {
     const opts: [string, string, Modifier[]][] = [
       [t('fx.mysteryMega'), '#ff7ad9', [{ stat: 'radius', mult: 1 }, { stat: 'damage', mult: 1 }]],
@@ -1578,7 +1730,7 @@ export class World {
       lightningKills: r.lightningKills, explosionKills: r.explosionKills, bleedKills: r.bleedKills,
       frozenCount: r.frozenCount, barrelsExploded: r.barrelsExploded, goldenCaught: r.goldenCaught,
       coinsCollected: Math.round(r.coinsCollected), coresCollected: r.coresCollected,
-      poisonKills: r.poisonKills, relics: [...this.build.relics], endlessTime: this.endlessTime,
+      poisonKills: r.poisonKills, relics: [...this.build.relics], endlessTime: this.endlessTime, bounties: r.bounties, weakHits: r.weakHits,
       damageBy: this.damageReport(),
       ascension: this.asc.size,
       ...(this.gauntlet ? { mode: 'gauntlet' as const } : {}),

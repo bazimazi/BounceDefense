@@ -143,6 +143,8 @@ export function tabFeedback(tabs: HTMLElement, previous?: DOMRect): void {
   else indicator.style.removeProperty('--tree-color');
   if (from) {
     const to = indicator.getBoundingClientRect();
+    // A hidden indicator (a chip row draws its own selection) measures 0×0: nothing to travel.
+    if (!to.width || !from.width) return;
     if (Math.abs(from.left - to.left) < .5 && Math.abs(from.top - to.top) < .5) return;
     play(indicator, [
       { transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)`, opacity: .6 },

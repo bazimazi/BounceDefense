@@ -29,6 +29,11 @@ export const ENEMIES: EnemyDef[] = [
     shape: 'diamond', color: '#7dff8a', material: 'flesh', ai: 'walker', splitsInto: { id: 'splitling', count: 2 },
   },
   {
+    id: 'linker', name: 'Linker', desc: 'Travels in pairs joined by an energy tether that deflects balls.', tip: 'Break either one and the tether falls. Bank around the beam, or burst through with explosions and chains.',
+    hp: 26, speed: 17, radius: 15, armor: 0, damage: 6, xp: 2, coins: 2, threat: 2,
+    shape: 'pentagon', color: '#ffd166', material: 'energy', ai: 'linker',
+  },
+  {
     id: 'splitling', name: 'Splitling', desc: 'Fragment of a Splitter.', tip: '',
     hp: 10, speed: 34, radius: 11, armor: 0, damage: 3, xp: 1, coins: 0, threat: 0,
     shape: 'diamond', color: '#b4ffbd', material: 'flesh', ai: 'runner',

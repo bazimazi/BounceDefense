@@ -12,8 +12,11 @@ import { botChoose, botStep, defaultConfig, FULL_POOL } from './sim/bot';
 import { buildName } from './sim/build';
 import type { Offer } from './sim/offers';
 import { DEFENSE_Y, LAUNCHER_X, LAUNCHER_Y, SIM_DT } from './sim/types';
-import { World, type RunMode } from './sim/world';
+import { World, isArcadeMode, type RunMode } from './sim/world';
 import { RIFTS } from './data/rifts';
+import { arcadeRunConfig } from './sim/arcade';
+import { CHAPTER_MAP, STAGE_MAP } from './data/trickshot';
+import { applyArcade, stageAfter } from './meta/arcade';
 import { UI } from './ui/screens';
 
 export interface RunOptions {
@@ -30,6 +33,8 @@ export interface RunOptions {
   depth?: number;
   /** Rift number (1-based). */
   rift?: number;
+  /** Trickshot stage id. */
+  stage?: string;
 }
 
 /** Owns the app lifecycle: menus, runs, input, the frame loop, saving. */
@@ -110,7 +115,7 @@ export class Game {
 
   /** Keeps a won run in the save until it is claimed, so closing the app cannot lose it. */
   private storePending(w: World): void {
-    if (!w.victory || this.world !== w) return;
+    if (!w.victory || this.world !== w || w.arcade) return;
     this.profile.pendingRun = { summary: w.summary(), discoveries: [...w.newDiscoveries], day: this.runDay };
     this.pendingAt = w.time;
     this.save();
@@ -169,6 +174,10 @@ export class Game {
   /** Results' Play Again: the same arena, difficulty and pacts, straight into a new run. */
   replay(): void {
     const opts = this.runOpts;
+    if (opts && isArcadeMode(opts.mode)) {
+      this.startRun({ ...opts, pacts: [] });
+      return;
+    }
     if (!opts || opts.daily) {
       if (opts?.daily) this.ui.home();
       else this.startRun({ arena: 'proving', difficulty: 0, pacts: [] });
@@ -226,12 +235,18 @@ export class Game {
     this.runDay = dailyKey();
     this.pendingAt = 0;
     const seed = opts.seed ?? (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
-    const cfg = runConfig(this.profile, { ...opts, seed });
+    const l = this.profile.loadout;
+    const cfg = isArcadeMode(opts.mode) && this.profile.tutorialDone
+      ? arcadeRunConfig(opts.mode, seed, { stage: opts.stage, trail: this.profile.cosmetics.includes(l.trail) ? l.trail : 'classic' })
+      : runConfig(this.profile, { ...opts, seed });
     this.world = new World(cfg);
     this.demo = null;
     this.renderer.reset();
     // Research bought since the last settings change (Extended Scope, Chronometry) applies from this run on.
-    this.renderer.opts.previewBounces = this.previewBounces();
+    // Arcade boards set their own preview.
+    this.renderer.opts.previewBounces = this.world.arcade ? this.world.arcade.preview : this.previewBounces();
+    this.renderer.siegeBest = this.profile.arcade.siegeBest;
+    this.renderer.reboundBest = this.profile.arcade.reboundBest;
     this.mode = 'run';
     this.paused = false;
     this.acc = 0;
@@ -242,10 +257,15 @@ export class Game {
     // Name the battlefield as the run opens; the tutorial keeps the screen clear for its hints.
     const tier = w.asc.size ? i18n('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name;
     const diffName = w.gauntlet ? i18n('home.gauntletTag', { difficulty: tier }) : w.rift ? `${w.rift.icon} ${w.rift.name}` : tier;
-    if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : diffName);
+    const stage = cfg.stage ? STAGE_MAP[cfg.stage] : undefined;
+    if (w.arcade?.kind === 'trickshot' && stage) w.banner(stage.name.toUpperCase(), CHAPTER_MAP[stage.chapter]?.color ?? '#7ef0d2', stage.tip);
+    else if (w.arcade?.kind === 'rebound') w.banner(i18n('arcade.rebound').toUpperCase(), '#7ef0d2', i18n('arcade.reboundTip'));
+    else if (w.arcade) w.banner(i18n('arcade.siege').toUpperCase(), '#ffd166', i18n('arcade.siegeDesc'));
+    else if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : diffName);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
-      if (victory && !w.director.endless) {
+      if (w.arcade) this.finishRun();
+      else if (victory && !w.director.endless) {
         this.storePending(w);
         this.ui.victoryChoice(w);
       } else this.finishRun();
@@ -297,6 +317,10 @@ export class Game {
   finishRun(abandoned = false): void {
     const w = this.world;
     if (!w) return;
+    if (w.arcade) {
+      this.finishArcade(w, abandoned);
+      return;
+    }
     const s = w.summary();
     // Records before this run, so Results can flag a new personal best.
     const best = { combo: this.profile.stats.bestCombo, chain: this.profile.stats.maxWallChain };
@@ -323,6 +347,46 @@ export class Game {
     this.ui.postRun(s, report, abandoned, best);
   }
 
+  /** An arcade run pays its own rewards (no Mastery, contracts or achievements) and shows its own results. */
+  private finishArcade(w: World, abandoned: boolean): void {
+    const a = w.arcade!;
+    const result = a.result();
+    const report = applyArcade(this.profile, result);
+    // Play Again after a clear moves on to the next stage; otherwise it retries the same one.
+    if (result.mode === 'trickshot' && result.stage && this.runOpts) {
+      this.runOpts = { ...this.runOpts, stage: result.cleared ? stageAfter(this.profile, result.stage) ?? result.stage : result.stage };
+    }
+    analytics.emit(result.cleared ? 'RunCompleted' : 'RunFailed', { arena: w.arena.id, difficulty: 0, time: result.time, level: 0, kills: w.run.kills, build: [result.mode] });
+    this.save();
+    this.world = null;
+    this.mode = 'menu';
+    this.paused = false;
+    this.newDemo();
+    this.haptic(result.cleared ? 'victory' : abandoned ? 'select' : 'defeat');
+    this.ui.arcadeResults(result, report, abandoned);
+  }
+
+  /** Pause's Restart: the attempt ends (a Siege still pays the turns it held) and the same board starts over. */
+  restartArcade(mode: 'trickshot' | 'siege' | 'rebound', stage?: string): void {
+    const w = this.world;
+    if (!w?.arcade) return;
+    const report = applyArcade(this.profile, w.arcade.result());
+    this.save();
+    this.world = null;
+    this.startArcade(mode, stage);
+    if (report.coins > 0) this.ui.toast(i18n('arcade.restartPaid', { n: report.coins }), 'coin');
+  }
+
+  /** Starts an arcade run: a Trickshot stage or a Siege. */
+  startArcade(mode: 'trickshot' | 'siege' | 'rebound', stage?: string): void {
+    this.startRun({ arena: 'proving', difficulty: 0, pacts: [], mode, stage });
+  }
+
+  /** The stage the arcade results' Play button starts (the next one after a clear). */
+  get arcadeStage(): string | undefined {
+    return this.runOpts?.stage;
+  }
+
   // ------------------------------------------------------------------ input
   private toLogical(e: PointerEvent): { x: number; y: number } {
     const r = this.canvas.getBoundingClientRect();
@@ -333,6 +397,11 @@ export class Game {
   private aimAt(x: number, y: number): void {
     const w = this.world;
     if (!w) return;
+    // Rebound steers its paddle with the pointer instead of aiming the launcher.
+    if (w.arcade?.pointer) {
+      w.arcade.pointer(x, y);
+      return;
+    }
     if (this.profile.settings.aimMode === 'slingshot') {
       const dx = this.pointer.sx - x;
       const dy = this.pointer.sy - y;
@@ -357,7 +426,7 @@ export class Game {
       this.pointer.sy = p.y;
       surface.setPointerCapture(e.pointerId);
       w.beginAim();
-      if (this.profile.settings.aimMode === 'direct') this.aimAt(p.x, p.y);
+      if (this.profile.settings.aimMode === 'direct' || w.arcade?.pointer) this.aimAt(p.x, p.y);
     });
     surface.addEventListener('pointermove', (e) => {
       if (e.pointerId !== this.pointer.id || !this.controlsEnabled || !this.world?.aim.active) return;
@@ -389,7 +458,15 @@ export class Game {
       }
       if (e.code === 'Space' && w && !this.paused && w.state === 'playing') {
         e.preventDefault();
-        w.activateSurge();
+        // Rebound launches the docked ball with Space.
+        if (w.arcade?.pointer) { if (!e.repeat) { w.beginAim(); w.release(); } }
+        else w.activateSurge();
+      }
+      // Rebound's paddle also slides with the arrow keys.
+      if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'KeyA' || e.code === 'KeyD') && w?.arcade?.pointer && !this.paused) {
+        e.preventDefault();
+        const r = w.arcade as unknown as { paddle: { tx: number } };
+        w.arcade.pointer(r.paddle.tx + (e.code === 'ArrowLeft' || e.code === 'KeyA' ? -70 : 70), 0);
       }
       if (e.code === 'KeyR' && w && !this.paused && !e.repeat && w.state === 'playing') w.activateRecall();
       if (e.code === 'KeyM' && w && !this.paused && !e.repeat) this.ui.toggleDamageMeter();
@@ -414,8 +491,9 @@ export class Game {
 
   private tick(dt: number): void {
     if (this.slow.t > 0) this.slow.t -= dt;
-    const ts = (this.slow.t > 0 ? this.slow.scale : 1) * this.timeScale;
     const w = this.mode === 'run' ? this.world : this.demo;
+    // Siege fast-forwards long volleys.
+    const ts = (this.slow.t > 0 ? this.slow.scale : 1) * this.timeScale * (this.mode === 'run' ? this.world?.arcade?.timeScale ?? 1 : 1);
     if (!w) return;
 
     if (this.mode === 'menu' && this.demo) {

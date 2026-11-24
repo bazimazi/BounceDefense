@@ -271,6 +271,11 @@ export const TRAILS = [
   { id: 'infinite', name: 'Infinite', colors: ['#ffffff', '#ff4df0'] },
   // The Rifts: the summit's trail.
   { id: 'voidheart', name: 'Void Heart', colors: ['#ffe7ff', '#3a0066'] },
+  // Arcade milestones.
+  { id: 'trickster', name: 'Trickster', colors: ['#e9fffb', '#22d3c5'] },
+  { id: 'kaleido', name: 'Kaleidoscope', colors: ['#fff0fa', '#7a5cff'] },
+  { id: 'rampart', name: 'Rampart', colors: ['#fff6e0', '#e07a1f'] },
+  { id: 'ricochet', name: 'Ricochet', colors: ['#f2fffd', '#3fd9ff'] },
 ];
 
 localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);

@@ -124,6 +124,13 @@ export interface Enemy {
   dmgAccT: number;
   dmgAccCrit: boolean;
   wobble: number;
+  /** Seconds left on a Bounty mark (0: none). */
+  bounty: number;
+  /** A Linker's partner (enemy id, 0: none); the two are joined by a tether that deflects balls. */
+  partner: number;
+  /** Weak point (elites and bosses): the angle it faces, turning slowly, and seconds until it reopens after a hit. */
+  weakA: number;
+  weakCd: number;
 }
 
 export type PickupKind = 'xp' | 'coin' | 'core' | 'heal' | 'mystery' | 'relic';
@@ -177,7 +184,8 @@ export type Obstacle =
   | { kind: 'well'; x: number; y: number; r: number; strength: number }
   | { kind: 'spore'; x: number; y: number; r: number; alive: boolean; respawn: number }
   | { kind: 'pylon'; x: number; y: number; r: number; flash: number; cd: number }
-  | { kind: 'booster'; x: number; y: number; r: number; flash: number };
+  | { kind: 'booster'; x: number; y: number; r: number; flash: number }
+  | { kind: 'prism'; x: number; y: number; r: number; flash: number };
 
 /** Line segment collider. `owner` lets bosses own dynamic segments. */
 export interface Segment {

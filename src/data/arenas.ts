@@ -13,6 +13,8 @@ const COMMON_SQUADS: SquadDef[] = [
   { id: 'mended_tanks', members: [['healer', 1], ['brute', 2]], formation: 'cluster', minTime: 160, weight: 5 },
   { id: 'shield_hive', members: [['spawner', 1], ['shielder', 2]], formation: 'v', minTime: 230, weight: 3, minDiff: 1 },
   { id: 'mirror_swarm', members: [['reflector', 1], ['runner', 4]], formation: 'scatter', minTime: 250, weight: 3 },
+  // Linkers arrive in pairs: the director tethers each two of a squad together.
+  { id: 'tether_pair', members: [['linker', 2], ['grunt', 1]], formation: 'line', minTime: 150, weight: 4, minDiff: 1 },
 ];
 
 export const ARENAS: ArenaDef[] = [
@@ -85,6 +87,11 @@ export const ARENAS: ArenaDef[] = [
         { kind: 'well', x: 150, y: 360, r: 90, strength: 460 },
         { kind: 'well', x: 390, y: 360, r: 90, strength: 460 },
       ],
+      [
+        { kind: 'prism', x: 140, y: 470, r: 22 }, { kind: 'prism', x: 400, y: 470, r: 22 },
+        { kind: 'well', x: 270, y: 330, r: 90, strength: 440 },
+        { kind: 'portal', ax: 270, ay: 640, bx: 270, by: 200 },
+      ],
     ],
     squads: COMMON_SQUADS.concat([
       { id: 'blinkers', members: [['teleporter', 3]], formation: 'scatter', minTime: 60, weight: 6 },
@@ -147,6 +154,11 @@ export const ARENAS: ArenaDef[] = [
         { kind: 'pylon', x: 150, y: 470, r: 14 }, { kind: 'pylon', x: 390, y: 470, r: 14 },
         { kind: 'portal', ax: 70, ay: 620, bx: 470, by: 230 },
         { kind: 'booster', x: 270, y: 380, r: 36 },
+      ],
+      [
+        { kind: 'prism', x: 270, y: 450, r: 24 },
+        { kind: 'pylon', x: 120, y: 340, r: 15 }, { kind: 'pylon', x: 420, y: 340, r: 15 },
+        { kind: 'booster', x: 130, y: 590, r: 34 }, { kind: 'booster', x: 410, y: 590, r: 34 },
       ],
     ],
     squads: COMMON_SQUADS.concat([

@@ -113,6 +113,24 @@ export interface Profile {
   stars: Record<string, number>;
   /** Rifts cleared, in order (Rift n opens once n - 1 are cleared); each cleared Rift grants its Sigil. */
   rifts: number;
+  /** Arcade records: Trickshot stars and the Siege record. */
+  arcade: ArcadeRecord;
+}
+
+export interface ArcadeRecord {
+  /** Trickshot stage id -> best stars (1 to 3). */
+  stars: Record<string, number>;
+  /** Most turns held in a Siege. */
+  siegeBest: number;
+  /** Rebound: furthest wave reached and best score. */
+  reboundBest: number;
+  reboundScore: number;
+  /** Arcade milestones already paid. */
+  milestones: string[];
+  /** Trickshot chapters with every stage at three stars (their Research is paid once). */
+  perfect: number[];
+  /** Arcade runs finished. */
+  runs: number;
 }
 
 export interface RunSetup {
@@ -218,6 +236,10 @@ export interface RunSummary {
   depth?: number;
   /** Rift number played (Rift runs only, 1-based). */
   rift?: number;
+  /** Bounty marks claimed. */
+  bounties?: number;
+  /** Weak points struck. */
+  weakHits?: number;
 }
 
 export type Unlock =

@@ -10,6 +10,7 @@ import { MASTERY_TRAIL, masteryLevel, rankLevel, rankRewards } from '../data/met
 import { applyUnlock } from './progress';
 import { STAR_MAP } from '../data/descent';
 import { RIFTS } from '../data/rifts';
+import { STAGE_MAP } from '../data/trickshot';
 
 export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'bounce-defense-save';
@@ -59,6 +60,7 @@ export function defaultProfile(): Profile {
     descent: { best: 0, open: 1 },
     stars: {},
     rifts: 0,
+    arcade: { stars: {}, siegeBest: 0, reboundBest: 0, reboundScore: 0, milestones: [], perfect: [], runs: 0 },
   };
 }
 
@@ -148,6 +150,19 @@ export function migrate(raw: unknown): Profile {
   p.rifts = Math.min(RIFTS.length, whole(p.rifts, 0));
   p.setup.rift = Math.min(RIFTS.length, whole(p.setup.rift, 1));
   if (!['standard', 'gauntlet', 'descent', 'rift'].includes(p.setup.mode)) p.setup.mode = 'standard';
+  // Arcade: known stages only, whole stars from 1 to 3.
+  const trick: Record<string, number> = {};
+  for (const [id, n] of Object.entries(isObj(p.arcade.stars) ? p.arcade.stars : {})) {
+    const stars = whole(n, 0);
+    if (STAGE_MAP[id] && stars > 0) trick[id] = Math.min(3, stars);
+  }
+  p.arcade.stars = trick;
+  p.arcade.siegeBest = whole(p.arcade.siegeBest, 0);
+  p.arcade.reboundBest = whole(p.arcade.reboundBest, 0);
+  p.arcade.reboundScore = whole(p.arcade.reboundScore, 0);
+  p.arcade.runs = whole(p.arcade.runs, 0);
+  p.arcade.milestones = p.arcade.milestones.filter((id) => typeof id === 'string');
+  p.arcade.perfect = p.arcade.perfect.filter((n) => Number.isInteger(n));
   return p;
 }
 

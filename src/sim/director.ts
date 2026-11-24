@@ -4,7 +4,7 @@ import { APEX_BOSSES, BOSSES, BOSS_MAP, ELITE_MODS, ENEMY_MAP } from '../data/en
 import type { SquadDef } from '../data/types';
 import { BOSS_SCRIPTS, BOSS_SPAWN_Y } from './bosses';
 import { FIELD_TOP, W, type Enemy } from './types';
-import type { World } from './world';
+import { BOUNTY, type World } from './world';
 
 /** Endless multiplies enemy health by this much per minute survived past the victory. */
 export const ENDLESS_RAMP = 1.22;
@@ -50,6 +50,8 @@ export class Director {
   eventTime: number;
   miniDone = false;
   goldenTimer = 45;
+  /** Seconds until the next Bounty mark. */
+  bountyTimer = BOUNTY.first;
   endless = false;
   endlessCycle = 0;
   /** Run time when Endless began. */
@@ -174,6 +176,9 @@ export class Director {
       }
     }
 
+    // ---- bounty marks
+    this.updateBounties(dt);
+
     // ---- rare golden wisp
     this.goldenTimer -= dt;
     if (this.goldenTimer <= 0) {
@@ -184,6 +189,39 @@ export class Director {
         w.banner(i18n('fx.goldenWisp'), '#ffd84a', i18n('fx.goldenWispSub'));
       }
     }
+  }
+
+  private updateBounties(dt: number): void {
+    const w = this.w;
+    for (const e of w.enemies) {
+      if (e.bounty <= 0 || !e.alive) continue;
+      e.bounty -= dt;
+      if (e.bounty <= 0) {
+        e.bounty = 0;
+        w.emit({ t: 'text', x: e.x, y: e.y - e.r - 14, text: i18n('fx.bountyEscaped'), color: '#c9b38a' });
+      }
+    }
+    if (w.cfg.tutorial) return;
+    this.bountyTimer -= dt;
+    if (this.bountyTimer > 0) return;
+    if (this.bossActive || w.enemies.some((e) => e.bounty > 0)) {
+      this.bountyTimer = 6;
+      return;
+    }
+    let pick: Enemy | null = null;
+    for (const e of w.enemies) {
+      if (!e.alive || e.boss || e.phased || e.y > 520 || e.y < FIELD_TOP + 20 || ['golden', 'egg', 'pylon', 'minion'].includes(e.def.ai)) continue;
+      if (!pick || e.maxHp > pick.maxHp) pick = e;
+    }
+    if (!pick) {
+      this.bountyTimer = 5;
+      return;
+    }
+    pick.bounty = BOUNTY.time;
+    this.bountyTimer = BOUNTY.every * w.rng.range(0.85, 1.15);
+    w.banner(i18n('fx.bounty'), '#ffd166', i18n('fx.bountyMarkSub', { name: pick.def.name, n: BOUNTY.time }));
+    w.emit({ t: 'ring', x: pick.x, y: pick.y, r: pick.r + 30, color: '#ffd166', dur: 0.6 });
+    w.emit({ t: 'sfx', name: 'elite' });
   }
 
   /** Elite modifier count ramps up with time: one early, the difficulty's full count from 5 minutes. */
@@ -217,8 +255,20 @@ export class Director {
     // Elite traits on ordinary enemies phase in over the first 90 seconds.
     const base = w.diff.traitChance + (w.asc.has('traits') ? 0.1 : 0) + (w.asc.has('traits2') ? 0.15 : 0) + (w.afflictions.has('veiled') ? 0.15 : 0);
     const traitChance = base * Math.min(1, w.time / 90);
+    let linker: Enemy | null = null;
     for (const [id, x, y] of this.place(s)) {
       const e = w.spawnEnemy(id, x, y);
+      // Each two Linkers of a squad are tethered, spread wide enough for the beam to matter.
+      if (e && e.def.ai === 'linker') {
+        if (linker) {
+          e.partner = linker.id;
+          linker.partner = e.id;
+          const side = linker.x < W / 2 ? 1 : -1;
+          e.x = Math.max(e.r + 4, Math.min(W - e.r - 4, linker.x + side * 150));
+          e.y = linker.y;
+          linker = null;
+        } else linker = e;
+      }
       if (e && traitChance && w.rng.chance(traitChance)) {
         const m = w.rng.pick(['swift', 'armored', 'shield']);
         if (m === 'swift') e.speed *= 1.5;

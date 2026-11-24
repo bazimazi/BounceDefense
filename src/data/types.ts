@@ -94,7 +94,7 @@ export interface EnemyDef {
   material: Material;
   ai:
     | 'walker' | 'runner' | 'shielder' | 'healer' | 'spawner' | 'magnet' | 'teleporter' | 'warden' | 'golden' | 'boss' | 'minion'
-    | 'spitter' | 'phantom' | 'charger' | 'necro' | 'aegis' | 'pulsar' | 'egg' | 'pylon';
+    | 'spitter' | 'phantom' | 'charger' | 'necro' | 'aegis' | 'pulsar' | 'egg' | 'pylon' | 'linker';
   /** Elements that cannot affect this enemy (statuses, chains and reactions of that element). */
   immune?: Element[];
   /** Direct ball damage multiplier (reflector takes reduced direct hits). */
@@ -164,7 +164,9 @@ export type ObstacleTemplate =
   /** Tesla pylon: a solid post that arcs lightning into nearby enemies when a ball strikes it. */
   | { kind: 'pylon'; x: number; y: number; r: number }
   /** Booster pad: a floor plate that accelerates any ball crossing it. */
-  | { kind: 'booster'; x: number; y: number; r: number };
+  | { kind: 'booster'; x: number; y: number; r: number }
+  /** Prism gate: a launched ball passing through splits off two shards. */
+  | { kind: 'prism'; x: number; y: number; r: number };
 
 export interface ArenaDef {
   id: string;

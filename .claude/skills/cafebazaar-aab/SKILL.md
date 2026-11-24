@@ -31,10 +31,10 @@ notification. Options:
 | `-BundleSigner`       | `%USERPROFILE%\Desktop\bundlesigner-0.1.13.jar`      | newer bundlesigner version              |
 | `-Name`               | `bDefence`                                            | output file prefix                      |
 | `-OutDir`             | `src-tauri\gen\android\app\build\outputs\bundle\universalRelease` | where the .aab/.bin land   |
-| `-CopyTo`             | `%USERPROFILE%\Desktop\bDefence-bazaar`                 | extra copy of both files (`''` to skip) |
+| `-CopyTo`             | `%USERPROFILE%\Desktop\bazaar\bDefence-bazaar`                 | extra copy of both files (`''` to skip) |
 
 Output: `<OutDir>\bDefence-<version>.aab` and `bDefence-<version>.bin`, with a copy of
-both in `C:\Users\msynk\Desktop\bDefence-bazaar` (the folder the user uploads from).
+both in `C:\Users\msynk\Desktop\bazaar\bDefence-bazaar` (the folder the user uploads from).
 
 ## What the script does
 
@@ -52,7 +52,7 @@ both in `C:\Users\msynk\Desktop\bDefence-bazaar` (the folder the user uploads fr
    with values from `keystore.properties` (`storeFile`, `storePassword`,
    `keyPassword`, `keyAlias`). Passwords go through env vars only.
 5. Copies both `bDefence-<version>.aab` and `bDefence-<version>.bin` to `-CopyTo`
-   (`C:\Users\msynk\Desktop\bDefence-bazaar`), creating the folder if needed.
+   (`C:\Users\msynk\Desktop\bazaar\bDefence-bazaar`), creating the folder if needed.
 
 ## Before running
 
@@ -87,6 +87,6 @@ both in `C:\Users\msynk\Desktop\bDefence-bazaar` (the folder the user uploads fr
 
 ## After running
 
-Report both output paths (build folder and `Desktop\bDefence-bazaar` copy), their sizes, the `versionName`/`versionCode`, and
+Report both output paths (build folder and `Desktop\bazaar\bDefence-bazaar` copy), their sizes, the `versionName`/`versionCode`, and
 remind the user to upload **both** the `.aab` and the `.bin` in the Cafebazaar
 panel.

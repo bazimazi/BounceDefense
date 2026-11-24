@@ -4,7 +4,7 @@ import type { Element } from '../data/types';
 import { bossMitigation } from './bosses';
 import { ballSpeed, effectiveTier } from './physics';
 import { DEFENSE_Y, H, type Ball, type Enemy } from './types';
-import { TIER_CRIT, TIER_DMG, type World } from './world';
+import { TIER_CRIT, TIER_DMG, type World, WEAK_POINT, hasWeakPoint } from './world';
 
 export type DamageSource =
   | 'ball' | 'chain' | 'explosion' | 'burn' | 'bleed' | 'spark' | 'shatter' | 'barrel' | 'surge' | 'beam' | 'enemyBlast' | 'nova'
@@ -82,6 +82,24 @@ function bolster(w: World, dead: Enemy): void {
 
 // ------------------------------------------------------------------ direct hits
 /** Resolves a ball striking an enemy. Returns true when the ball passes through. */
+/** A ball meeting an elite or boss within its open weak point's arc: the spot flares, then closes and turns away. */
+function strikesWeakPoint(w: World, b: Ball, e: Enemy): boolean {
+  if (!hasWeakPoint(e) || e.weakCd > 0) return false;
+  const a = Math.atan2(b.y - e.y, b.x - e.x);
+  let d = Math.abs(a - e.weakA) % (Math.PI * 2);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  if (d > WEAK_POINT.arc) return false;
+  e.weakCd = WEAK_POINT.cooldown;
+  e.weakA += Math.PI;
+  w.run.weakHits++;
+  const x = e.x + Math.cos(a) * e.r, y = e.y + Math.sin(a) * e.r;
+  w.emit({ t: 'ring', x, y, r: 26, color: '#ffe066', dur: 0.35 });
+  w.emit({ t: 'burst', x, y, color: '#ffe066', n: 12, speed: 260, size: 2.5 });
+  w.emit({ t: 'text', x: e.x, y: e.y - e.r - 18, text: t('fx.weakPoint'), color: '#ffe066' });
+  w.emit({ t: 'sfx', name: 'crit', pitch: 1.35, vol: 0.7 });
+  return true;
+}
+
 export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
   const st = w.build.stats;
   const build = w.build;
@@ -95,6 +113,7 @@ export function ballHitEnemy(w: World, b: Ball, e: Enemy): boolean {
   if (build.has('relic_war_drum')) dmg *= 1 + Math.min(0.35, Math.floor(w.combo.count / 8) * 0.01);
   if (build.has('pyro_core') && e.st.burnT > 0) dmg *= 1.25;
   dmg *= targetMult(w, e);
+  if (strikesWeakPoint(w, b, e)) dmg *= WEAK_POINT.mult;
   const cc = st.critChance + (b.wallBounces > 0 ? st.bankCrit : 0) + TIER_CRIT[tier];
   const crit = w.rng.chance(cc);
   if (crit) dmg *= st.critMult + (build.has('snipers_nest') && e.y < FAR_Y ? 0.5 : 0);
@@ -325,6 +344,7 @@ function killEnemyInner(w: World, e: Enemy, info: HitInfo, overflow: number): vo
   }
   e.alive = false;
   e.killedBy = info.src;
+  if (e.bounty > 0) w.claimBounty(e);
   if (w.afflictions.has('bolster') && !e.boss) bolster(w, e);
   flushDamageNumber(w, e);
   const st = w.build.stats;

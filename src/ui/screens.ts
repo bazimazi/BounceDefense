@@ -26,7 +26,13 @@ import {
 } from '../meta/progress';
 import { defaultProfile } from '../meta/profile';
 import { talentPointsUsable } from '../meta/talents';
-import type { DiscoveryCat, RunSummary } from '../meta/types';
+import { ARCADE_MILESTONES, arcadeUnlocked, milestoneProgress, milestoneText, nextStage, stageAfter, stageOpen, totalStars, type ArcadeReport } from '../meta/arcade';
+import { CHAPTERS, CHAPTER_MAP, MAX_STARS, STAGES, STAGE_MAP } from '../data/trickshot';
+import { SiegeRun, TrickshotRun, type ArcadeKind, type ArcadeResult } from '../sim/arcade';
+import { ReboundRun } from '../sim/rebound';
+import type { DiscoveryCat, RunSetup, RunSummary } from '../meta/types';
+
+type SetupMode = RunSetup['mode'];
 import { createArenaSurface } from '../render/arena';
 import { feedsEvolutions, previewSynergies, type Offer } from '../sim/offers';
 import { STAT_FORMATS, statLabel, type StatKey } from '../sim/stats';
@@ -110,7 +116,7 @@ export class UI {
   private handEl: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private screenEl: HTMLElement | null = null;
-  private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>(), ascension: 0, mode: 'standard' as RunMode };
+  private setup = { arena: 'proving', difficulty: 0, pacts: new Set<string>(), ascension: 0, mode: 'standard' as SetupMode };
   private forgeSegment: ForgeSegment = 'workshop';
   private workshopTab: WorkshopTab = 'classic';
   private researchTab: ResearchTab = 'core';
@@ -121,6 +127,9 @@ export class UI {
   private banishMode = false;
   private interactionKey: string | null = null;
   private rerollLockedUntil = 0;
+  /** The Arcade sheet's chosen mode and Trickshot stage. */
+  private arcadeMode: ArcadeKind = 'trickshot';
+  private arcadeStage: string | null = null;
 
   constructor(root: HTMLElement, private game: Game) {
     this.root = root;
@@ -478,10 +487,13 @@ export class UI {
     // (after the first clear, which also opens the Daily Seed) or researched pacts.
     const configurable = choice.arena || choice.difficulty || choice.pacts;
     const daily = dailyRecord(p);
-    return h('div', { class: `battle ${configurable ? '' : 'lean'}` }, stage,
+    return h('div', { class: `battle ${configurable || arcadeUnlocked(p) ? '' : 'lean'}` }, stage,
       h('div', { class: 'battle-panel reveal' },
         configurable ? this.runCard(choice.arena) : null,
         h('div', { class: 'play-row' },
+          arcadeUnlocked(p) ? h('button', {
+            class: 'arcade-btn', 'aria-label': t('arcade.title'), title: t('arcade.title'), onclick: () => { this.click(); this.arcadeSheet(); },
+          }, icon('arcade'), h('span', {}, t('home.arcade')), h('small', { class: 'arcade-stars' }, `${formatNum(totalStars(p))}★`)) : null,
           choice.difficulty ? h('button', {
             class: 'daily-btn', 'aria-label': this.dailyLabel(), title: this.dailyLabel(), onclick: () => { this.click(); this.dailyRun(); },
           },
@@ -703,7 +715,7 @@ export class UI {
     const gauntletHint = h('p', { class: 'sheet-intro mode-hint' }, icon('lock'), t('setup.gauntletLocked', { n: beaten, max: BOSSES.length }));
     // Before any second mode opens, the next one shows as a goal with its progress.
     if (!gauntlet && !descent) return [gauntletHint];
-    const option = (mode: RunMode, title: string, desc: string) => h('button', {
+    const option = (mode: SetupMode, title: string, desc: string) => h('button', {
       role: 'radio', 'aria-checked': String(s.mode === mode), class: `mode-option ${s.mode === mode ? 'on' : ''}`, 'data-motion-key': `mode:${mode}`,
       onclick: () => { if (s.mode === mode) return; s.mode = mode; this.click(); update(); },
     }, h('b', {}, title), h('small', {}, desc));
@@ -1546,7 +1558,16 @@ export class UI {
     }, icon('chart')) as HTMLButtonElement;
     this.liveMeter.el.hidden = !this.p.settings.damageMeter;
     this.liveMeter.refresh(this.game.world);
-    this.hudEl =h('div', { class: 'game-hud' }, this.liveMeter.el, pause, this.meterBtn, surge, recall, telemetry);
+    if (this.game.world?.arcade) {
+      // Arcade boards have no Surge, damage meter or hull telemetry: Pause and Recall (end the shot or volley) only.
+      this.surgeBtn = null;
+      this.meterBtn = null;
+      this.compactTelemetry = null;
+      this.liveMeter.el.hidden = true;
+      // Rebound has no Recall either: calling the ball home would throw it away.
+      if (this.game.world.arcade.kind === 'rebound') this.recallBtn = null;
+      this.hudEl = h('div', { class: 'game-hud arcade-hud' }, pause, this.recallBtn);
+    } else this.hudEl = h('div', { class: 'game-hud' }, this.liveMeter.el, pause, this.meterBtn, surge, recall, telemetry);
     this.root.append(this.hudEl);
     enter(this.hudEl, 'hud', 0);
     revealItems(this.hudEl);
@@ -1576,6 +1597,7 @@ export class UI {
   }
 
   updateHud(w: World): void {
+    if (w.arcade && this.recallBtn) this.updateRecall(w);
     if (!this.surgeBtn) return;
     if (this.p.settings.damageMeter) this.liveMeter.update(w);
     const frac = w.surge.charge / w.surge.max;
@@ -1589,13 +1611,7 @@ export class UI {
     const label = this.surgeBtn.querySelector('.surge-text')!;
     const text = localizeDigits(w.surge.active > 0 ? t('hud.surgeActive') : ready ? t('hud.surgeReady') : `${Math.floor(frac * 100)}%`);
     if (label.textContent !== text) label.textContent = text;
-    if (this.recallBtn) {
-      this.recallBtn.disabled = !w.canRecall() || !this.game.controlsEnabled;
-      this.recallBtn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / w.build.stats.recallCooldown) * 100}%`);
-      const small = this.recallBtn.querySelector('small')!;
-      const status = localizeDigits(w.recallCooldown > 0 ? t('hud.seconds', { n: Math.ceil(w.recallCooldown) }) : w.canRecall() ? t('hud.ready') : t('hud.noBalls'));
-      if (small.textContent !== status) small.textContent = status;
-    }
+    if (this.recallBtn) this.updateRecall(w);
     if (this.compactTelemetry && this.root.hasAttribute('data-compact-hud')) {
       const signal = w.resonance.overdrive > 0 ? t('hud.overdrive', { n: Math.ceil(w.resonance.overdrive) }) :
         w.resonance.nodes.length ? t('hud.circuit', { lit: w.resonance.lit, n: Math.ceil(w.resonance.remaining) }) : t('hud.in', { n: Math.max(0, Math.ceil(w.resonance.cooldown)) });
@@ -1617,6 +1633,16 @@ export class UI {
       const xp = this.compactTelemetry.querySelector('.compact-xp > span') as HTMLElement;
       xp.style.width = `${Math.min(100, w.xp / w.xpNext * 100)}%`;
     }
+  }
+
+  private updateRecall(w: World): void {
+    const btn = this.recallBtn;
+    if (!btn) return;
+    btn.disabled = !w.canRecall() || !this.game.controlsEnabled;
+    btn.style.setProperty('--recall-p', `${(1 - w.recallCooldown / w.build.stats.recallCooldown) * 100}%`);
+    const small = btn.querySelector('small')!;
+    const status = localizeDigits(w.recallCooldown > 0 ? t('hud.seconds', { n: Math.ceil(w.recallCooldown) }) : w.canRecall() ? t('hud.ready') : t('hud.noBalls'));
+    if (small.textContent !== status) small.textContent = status;
   }
 
   hint(text: string | null): void {
@@ -1811,6 +1837,10 @@ export class UI {
 
   // ------------------------------------------------------------------ pause
   pauseMenu(w: World): void {
+    if (w.arcade) {
+      this.arcadePause(w);
+      return;
+    }
     // Balls include milestone balls, which are not an upgrade stat.
     const st = { ...w.build.stats, maxBalls: w.maxBallsAllowed() };
     const keys: StatKey[] = ['damage', 'critChance', 'critMult', 'speed', 'maxBalls', 'pierce', 'burnChance', 'chillChance', 'chainChance', 'explosionChance', 'splitChance', 'bleedChance', 'lifesteal', 'maxHp', 'armor'];
@@ -1854,6 +1884,191 @@ export class UI {
       ),
     );
     this.showOverlay(overlay, 'pause');
+  }
+
+  private arcadePause(w: World): void {
+    const a = w.arcade!;
+    const guide = (title: string, text: string) => h('div', { class: 'combat-guide' }, h('b', {}, title), h('p', {}, text));
+    const line = a instanceof TrickshotRun
+      ? t('arcade.pause.stage', { name: a.stage.name, n: Math.min(a.stage.shots, a.shotsUsed + 1), max: a.stage.shots })
+      : a instanceof SiegeRun ? t('arcade.pause.siege', { n: Math.max(1, a.turn - 1), balls: a.balls })
+        : a instanceof ReboundRun ? t('arcade.pause.rebound', { n: a.wave, lives: a.lives }) : '';
+    const restart = () => {
+      this.click();
+      const mode = a.kind;
+      const stage = a instanceof TrickshotRun ? a.stage.id : undefined;
+      // Restarting ends this attempt as abandoning would: a Siege still pays the turns it held (announced by a toast).
+      this.game.restartArcade(mode, stage);
+    };
+    const overlay = h('div', { class: 'levelup pause-overlay arcade-pause' },
+      h('div', { class: 'pause-head' },
+        h('div', { class: 'lvtitle' }, t('pause.title')),
+        h('div', { class: 'pause-run' }, line)),
+      h('div', { class: 'scroll pause-body' },
+        a instanceof TrickshotRun ? h('div', { class: 'arcade-stage-card', style: `--accent:${CHAPTER_MAP[a.stage.chapter]?.color ?? '#7ef0d2'}` },
+          h('b', {}, a.stage.name), h('p', {}, a.stage.tip),
+          h('small', {}, t('arcade.stageInfo', { shots: a.stage.shots, bounces: a.stage.bounces, par: a.stage.par }))) : null,
+        a.kind === 'trickshot' ? guide(t('arcade.manual.crystals'), t('arcade.manual.crystalsDesc'))
+          : a.kind === 'rebound' ? guide(t('arcade.manual.rebound'), t('arcade.manual.reboundDesc'))
+            : guide(t('arcade.manual.siege'), t('arcade.manual.siegeDesc'))),
+      h('div', { class: 'col overlay-actions' },
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.resume(); } }, icon('play'), t('pause.resume')),
+        h('div', { class: 'row' },
+          h('button', { style: 'flex:1', onclick: restart }, icon('restart'), t('arcade.pause.restart')),
+          h('button', { style: 'flex:1', onclick: () => { this.click(); this.settings(); } }, icon('gear'), t('pause.settings')),
+          h('button', { class: 'danger', style: 'flex:1', onclick: () => this.confirmAction(t('pause.endTitle'), t('pause.endMessage'), t('pause.endRun'), () => this.game.abandonRun(),
+            () => this.root.querySelector<HTMLButtonElement>('.pause-overlay .overlay-actions .danger')?.focus({ preventScroll: true })) }, icon('flag'), t('pause.abandon')))));
+    this.showOverlay(overlay, 'pause');
+  }
+
+  // ------------------------------------------------------------------ arcade
+  /** The Arcade: Trickshot's stage map (chapters of stage tiles with their stars) or the Siege record, with Play pinned below. */
+  arcadeSheet(mode?: ArcadeKind): void {
+    if (mode) this.arcadeMode = mode;
+    const p = this.p;
+    if (!this.arcadeStage || !STAGE_MAP[this.arcadeStage] || !stageOpen(p, this.arcadeStage)) this.arcadeStage = nextStage(p);
+    const title = t('arcade.title');
+    const build = () => this.arcadeBody();
+    const footer = () => [this.arcadePlayButton()];
+    this.arcadeRender = () => this.openSheetInPlace('arcade', title, build, footer);
+    this.openSheet('arcade', title, build, 'arcade-sheet', footer);
+  }
+
+  private arcadeRender: (() => void) | null = null;
+
+  private arcadePlayButton(): HTMLButtonElement {
+    const stage = this.arcadeMode === 'trickshot' ? STAGE_MAP[this.arcadeStage ?? ''] : undefined;
+    return h('button', {
+      class: 'primary big launch-button play-btn arcade-play',
+      onclick: () => { this.click(); this.game.startArcade(this.arcadeMode, stage?.id); },
+    }, icon('play'), h('strong', {}, t('arcade.play')),
+    stage ? h('small', { class: 'arcade-play-sub' }, t('arcade.result.stageLine', { chapter: stage.chapter, n: STAGES.filter(s => s.chapter === stage.chapter).indexOf(stage) + 1 })) : null) as HTMLButtonElement;
+  }
+
+  private arcadeBody(): (Node | null)[] {
+    const p = this.p;
+    const update = () => this.arcadeRender?.();
+    const option = (mode: ArcadeKind, glyph: IconName, title: string, desc: string, stat: string) => h('button', {
+      role: 'radio', 'aria-checked': String(this.arcadeMode === mode), class: `mode-option arcade-mode ${this.arcadeMode === mode ? 'on' : ''}`, 'data-motion-key': `arcade:${mode}`,
+      onclick: () => { if (this.arcadeMode === mode) return; this.arcadeMode = mode; this.click(); update(); },
+    }, h('span', { class: 'arcade-mode-icon' }, icon(glyph)), h('b', {}, title), h('small', {}, desc), h('span', { class: 'arcade-mode-stat' }, stat));
+    const stars = totalStars(p);
+    const milestones = (mode: ArcadeKind) => {
+      const have = milestoneProgress(p, mode);
+      return h('div', { class: 'arcade-milestones' }, ARCADE_MILESTONES.filter(m => m.mode === mode).map(m => {
+        const done = p.arcade.milestones.includes(m.id) || have >= m.at;
+        return h('div', { class: `arcade-milestone ${done ? 'done' : ''}` },
+          h('span', { class: 'arcade-milestone-icon' }, icon(done ? 'check' : mode === 'trickshot' ? 'star' : mode === 'rebound' ? 'paddle' : 'siege')),
+          h('span', { class: 'arcade-milestone-copy' }, h('b', {}, milestoneText(m)), h('small', {}, describeUnlock(m.reward))),
+          h('span', { class: 'arcade-milestone-progress num' }, `${formatNum(Math.min(have, m.at))}/${formatNum(m.at)}`));
+      }));
+    };
+    const body: (Node | null)[] = [
+      h('p', { class: 'sheet-intro' }, t('arcade.intro')),
+      h('div', { class: 'mode-options arcade-modes', role: 'radiogroup', 'aria-label': t('arcade.title') },
+        option('trickshot', 'crystal', t('arcade.trickshot'), t('arcade.trickshotDesc'), t('arcade.stars', { n: stars, max: MAX_STARS })),
+        option('siege', 'siege', t('arcade.siege'), t('arcade.siegeDesc'), p.arcade.siegeBest ? t('arcade.siegeBest', { n: p.arcade.siegeBest }) : t('arcade.siegeNoBest')),
+        option('rebound', 'paddle', t('arcade.rebound'), t('arcade.reboundDesc'), p.arcade.reboundBest ? t('arcade.reboundBest', { n: p.arcade.reboundBest }) : t('arcade.reboundNoBest'))),
+    ];
+    if (this.arcadeMode === 'rebound') {
+      body.push(
+        h('div', { class: 'arcade-siege-card arcade-rebound-card' },
+          h('div', { class: 'arcade-rebound-art', 'aria-hidden': 'true' },
+            ...[0, 1, 2].map(row => h('div', { class: 'brick-row' }, ...[0, 1, 2, 3, 4, 5, 6].map(i => h('i', { style: `--i:${i + row * 2}` })))),
+            h('span', { class: 'rebound-ball' }), h('span', { class: 'rebound-paddle' })),
+          h('b', {}, p.arcade.reboundBest ? t('arcade.reboundBest', { n: p.arcade.reboundBest }) : t('arcade.reboundNoBest')),
+          p.arcade.reboundScore ? h('small', { class: 'num' }, `${t('arcade.result.score')}: ${formatNum(p.arcade.reboundScore)}`) : null,
+          h('p', {}, t('arcade.manual.reboundDesc'))),
+        sectionTitle(t('arcade.milestones')), milestones('rebound'));
+      return body;
+    }
+    if (this.arcadeMode === 'siege') {
+      body.push(
+        h('div', { class: 'arcade-siege-card' },
+          h('div', { class: 'arcade-siege-art', 'aria-hidden': 'true' }, ...[3, 5, 2, 8, 4, 1, 6].map((n, i) => h('i', { style: `--i:${i}` }, String(n)))),
+          h('b', {}, p.arcade.siegeBest ? t('arcade.siegeBest', { n: p.arcade.siegeBest }) : t('arcade.siegeNoBest')),
+          h('p', {}, t('arcade.manual.siegeDesc'))),
+        sectionTitle(t('arcade.milestones')), milestones('siege'));
+      return body;
+    }
+    const chosen = STAGE_MAP[this.arcadeStage ?? ''] ?? STAGES[0];
+    for (const ch of CHAPTERS) {
+      const stages = STAGES.filter(s => s.chapter === ch.n);
+      const got = stages.reduce((n, s) => n + (p.arcade.stars[s.id] ?? 0), 0);
+      body.push(sectionTitle(t('arcade.chapter', { n: ch.n, name: ch.name }), h('span', { class: 'num chapter-stars' }, `${formatNum(got)}/${formatNum(stages.length * 3)}★`)));
+      body.push(h('div', { class: 'stage-grid', style: `--accent:${ch.color}`, role: 'radiogroup', 'aria-label': ch.name }, stages.map((s, i) => {
+        const open = stageOpen(p, s.id);
+        const st = p.arcade.stars[s.id] ?? 0;
+        return h('button', {
+          role: 'radio', 'aria-checked': String(s.id === chosen.id), disabled: !open, class: `stage-tile ${s.id === chosen.id ? 'on' : ''} ${st >= 3 ? 'perfect' : ''}`,
+          'aria-label': `${s.name} ${st}/3`, title: open ? s.name : t('arcade.stageLocked'), 'data-motion-key': `stage:${s.id}`,
+          onclick: () => { if (this.arcadeStage === s.id) return; this.arcadeStage = s.id; this.click(); update(); },
+        }, open ? h('b', { class: 'num' }, String(i + 1)) : icon('lock'), h('span', { class: 'stage-stars', 'aria-hidden': 'true' }, [0, 1, 2].map(k => h('i', { class: k < st ? 'got' : '' }))));
+      })));
+      if (chosen.chapter === ch.n) {
+        body.push(h('div', { class: 'arcade-stage-card', style: `--accent:${ch.color}` },
+          h('b', {}, chosen.name), h('p', {}, chosen.tip),
+          h('small', {}, t('arcade.stageInfo', { shots: chosen.shots, bounces: chosen.bounces, par: chosen.par }))));
+      }
+    }
+    body.push(sectionTitle(t('arcade.milestones')), milestones('trickshot'));
+    return body;
+  }
+
+  /** Arcade results: stars or turns, rewards counting up, milestones, and Next / Retry. */
+  arcadeResults(r: ArcadeResult, report: ArcadeReport, abandoned = false): void {
+    this.navigation.reset(() => this.home(), { key: 'results', restore: () => this.arcadeResults(r, report, abandoned) });
+    this.hideHud();
+    this.closeOverlay();
+    const trick = r.mode === 'trickshot';
+    const rebound = r.mode === 'rebound';
+    const stage = trick && r.stage ? STAGE_MAP[r.stage] : undefined;
+    const win = trick ? r.cleared : false;
+    const outcome = !trick ? 'siege' : win ? 'win' : abandoned ? 'ended' : 'lose';
+    const title = trick ? (r.cleared ? t('arcade.result.clear') : abandoned ? t('arcade.result.ended') : t('arcade.result.failed')) : rebound ? t('arcade.result.rebound') : t('arcade.result.siege');
+    const sub = stage ? `${stage.name} · ${t('arcade.result.stageLine', { chapter: stage.chapter, n: STAGES.filter(s => s.chapter === stage.chapter).indexOf(stage) + 1 })}`
+      : rebound ? t('arcade.result.reboundLine', { time: formatTime(r.time) }) : t('arcade.result.siegeLine', { time: formatTime(r.time) });
+    const reward = (currency: 'coins' | 'research', n: number) => h('div', { class: `reward-tile ${currency}` },
+      icon(currency === 'coins' ? 'coin' : 'flask'), h('b', { 'data-count': String(n) }, `+${formatNum(n)}`), h('span', {}, t(`common.${currency}`)));
+    const next = stage && r.cleared ? stageAfter(this.p, stage.id) : null;
+    const lines: [IconName, string][] = [
+      ...(trick && report.starsAfter > report.starsBefore ? [['star', t('arcade.result.newStars', { n: report.starsAfter - report.starsBefore })] as [IconName, string]] : []),
+      ...(report.perfected ? [['crystal', t('arcade.result.chapterDone', { n: report.research })] as [IconName, string]] : []),
+      ...(!trick && report.newBest ? [['trophy', t('arcade.result.newBest')] as [IconName, string]] : []),
+      ...report.unlocks.map((u): [IconName, string] => ['star', u]),
+    ];
+    const screen = h('div', { class: `screen solid results arcade-results ${outcome}` },
+      h('div', { class: 'results-head' },
+        h('div', { class: 'results-emblem', 'aria-hidden': 'true' }, icon(trick ? (r.cleared ? 'crystal' : abandoned ? 'flag' : 'skull') : rebound ? 'paddle' : 'siege')),
+        h('div', { class: `result-title ${win ? 'win' : abandoned ? 'ended' : 'lose'}` }, title),
+        h('div', { class: 'results-sub' }, sub)),
+      h('div', { class: 'scroll results-body' },
+        trick ? h('div', { class: 'result-stars', role: 'img', 'aria-label': `${r.stars ?? 0}/3` }, [0, 1, 2].map(k => h('span', { class: `result-star ${k < (r.stars ?? 0) ? 'got' : ''}`, style: `--k:${k}` }, icon('star')))) : null,
+        !trick ? h('div', { class: 'siege-score' }, h('b', { class: 'num' }, formatNum(rebound ? r.score ?? 0 : r.turns ?? 0)), h('span', {}, rebound ? t('arcade.result.score') : t('arcade.result.turns'))) : null,
+        report.coins || report.research ? h('div', { class: 'reward-row reveal' }, report.coins ? reward('coins', report.coins) : null, report.research ? reward('research', report.research) : null) : null,
+        lines.length ? h('div', { class: 'unlock-list reveal' }, lines.map(([glyph, text]) => h('div', { class: 'unlock-card' }, h('span', { class: 'unlock-icon' }, icon(glyph)), h('span', {}, text)))) : null,
+        h('div', { class: 'stat-grid reveal' },
+          ...(trick ? [
+            statTile(t('arcade.result.shots'), r.shots ?? 0),
+            statTile(t('arcade.result.par'), stage?.par ?? 0),
+            statTile(t('arcade.result.time'), formatTime(r.time)),
+          ] : rebound ? [
+            statTile(t('arcade.result.wave'), formatNum(r.wave ?? 0), report.newBest && (r.wave ?? 0) > report.bestBefore),
+            statTile(t('arcade.result.blocks'), formatNum(r.blocks ?? 0)),
+            statTile(t('arcade.result.time'), formatTime(r.time)),
+          ] : [
+            statTile(t('arcade.result.turns'), formatNum(r.turns ?? 0), report.newBest),
+            statTile(t('arcade.result.blocks'), formatNum(r.blocks ?? 0)),
+            statTile(t('arcade.result.balls'), formatNum(r.balls ?? 0)),
+          ])),
+        trick ? null : h('p', { class: 'difficulty-info' }, icon('trophy'), rebound ? t('arcade.reboundBest', { n: this.p.arcade.reboundBest }) : t('arcade.siegeBest', { n: this.p.arcade.siegeBest }))),
+      h('div', { class: 'results-actions' },
+        h('button', { class: 'home-btn', onclick: () => { this.click(); this.home(); this.arcadeSheet(r.mode); } }, icon('arcade'), t('arcade.title')),
+        h('button', { class: 'primary big', onclick: () => { this.click(); this.game.replay(); } }, icon(next ? 'play' : 'restart'),
+          next ? t('arcade.result.next') : t('arcade.result.retry'))),
+    );
+    this.show(screen);
+    this.celebrate(screen, win);
   }
 
   // ------------------------------------------------------------------ victory choice
@@ -1931,6 +2146,8 @@ export class UI {
           statTile(t('results.powerShots'), s.powerShots ?? 0),
           statTile(t('results.starfalls'), s.starfalls ?? 0),
           statTile(t('results.recalls'), s.recalls ?? 0),
+          (s.bounties ?? 0) > 0 ? statTile(t('results.bounties'), s.bounties ?? 0) : null,
+          (s.weakHits ?? 0) > 0 ? statTile(t('results.weakHits'), s.weakHits ?? 0) : null,
           // Unending asks for ten minutes of Endless: show how far this run got.
           (s.endlessTime ?? 0) > 0 ? statTile(t('results.endless'), formatTime(s.endlessTime ?? 0)) : null),
         s.damageBy?.length ? [sectionTitle(t('results.damageReport')), damageReport(s.damageBy, s.time)] : null,

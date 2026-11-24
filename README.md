@@ -20,6 +20,7 @@ npm test           # vitest unit + simulation tests (scripts/vitest.mjs runs Vit
 npm run sim -- --runs 20 --core striker,pyro,tesla --arena proving --diff 0 [--full] [--tutorial]
 npm run balance -- --runs 16 --core striker,pyro --diff 0,1,2 [--meta none|mid|max] [--full]
 npm run journey -- --runs 900 [--seed 1] [--draft smart]  # a whole career from a fresh profile: runs and hours to every milestone
+npx tsx scripts/trickshot-solve.ts [t1,t2] [--write]       # solve Trickshot stages; --write stores par, shots and solutions
 ```
 
 Browser smoke test (headless Chrome or Edge, with screenshots and console-error capture):
@@ -34,6 +35,7 @@ npm run test:ui                # all three engines: every tab, segment, sheet an
 npm run test:ui:back           # Back/forward across tabs, sheets, dialogs, paused runs and reload (ENGINE selects browser)
 npm run test:ui:motion         # tab/segment transitions, sheets, purchase feedback and the draft deal
 npm run test:ui:aim            # board-wide mouse/touch aiming, HUD layers and pointer capture
+npm run test:ui:arcade         # Arcade: Trickshot cleared at par by real drags, Next/Restart/abandon, Siege volleys, Back, Persian
 npm run test:ui:i18n           # Persian: device detection, language picker, every screen, RTL paging, run flow
 UI_LANG=fa npm run test:ui:layout # the full layout audit in Persian (right-to-left)
 ```
@@ -311,14 +313,14 @@ The pause screen includes a flight manual. Run results count power shots, starfa
 | Relics | 32 run-long artifacts (common, rare, legendary and cursed) found in relic caches; most are earned through Goals and Pilot Rank |
 | Talents | 4 persistent trees (Kinetics, Conduit, Warden, Havoc) of 11 nodes each across six tiers (44 nodes, 120 ranks), 4 capstones and 4 apex capstones; deep tiers need wins on Abyss, Singularity and Eternity; a 100-point budget whose later points cost more Mastery XP; free respecs |
 | Elemental reactions | 6 (Steam Burst, Overload, Supercharge, Combustion, Necrosis, Neurotoxin) |
-| Enemies | 22 behaviours (spitters, phantoms, juggernauts, necromancers, aegis drones, pulsars, element-immune golems…) plus fragments, eggs and a golden wisp; composition squads |
+| Enemies | 23 behaviours (Linker pairs whose tether deflects balls, spitters, phantoms, juggernauts, necromancers, aegis drones, pulsars, element-immune golems…) plus fragments, eggs and a golden wisp; composition squads |
 | Elite modifiers | 10, stackable (including Undying, Phasing, Fission and Commander) |
 | Bosses | 6 scripted fights: Fortress, Magnetar, Hydra, Broodmother (eggs and acid), Chronarch (time stop and stasis), Architect (walls and ward pylons); plus 4 apex bosses that close Abyss and every tier above it: Colossus (damage budget and quakes), Twin Eclipse (two bound bosses that revive each other), Overmind (shielded by its swarm) and Void Sovereign (three phases, sealed behind void shards) |
-| Arenas | 6 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells, spore pods, tesla pylons, booster pads |
+| Arenas | 6 with procedural layout variants: bumpers, deflectors, barrels, oil, crates, portals, gravity wells, spore pods, tesla pylons, booster pads, prism gates (a launched ball splits off two shards) |
 | Arena events | 12, five of them hostile (the only kind Abyss allows) |
 | Difficulty | 10 tiers (Normal to Abyss, then Oblivion, Cataclysm, Singularity, Pandemonium and Eternity, each with its own health pressure), a 30-step Ascension ladder (1–10 on Abyss and up, 11–20 on Singularity and up, 21–30 on Eternity) with stacking rules, growing pressure and growing rewards, and the endless Descent below Eternity (12 Afflictions), ten Rifts past Eternity and Boss Fury on the tiers above Abyss; 14 Risk Pacts (four of them Abyssal) |
 | Meta | Coins, Cores, Research and Aether (the Descent's currency); 10 Sigils from the Rifts; 5 endless Constellations (Might, Bastion, Ward, Ruin, Fortune); Workshop in four sections (14 Foundations, 17 Blueprints, 11 core Refits, 11 Overdrive lines of 50 levels each; 743 levels in all), 55-node Research tree in three branches (Foundations, Advanced, Apex; 667 points in all), Core Awakening (five Cores-bought ranks per core, the last a perk of its own), Mastery 1–30, Pilot Rank 1–100, 51 achievements, 44 challenges, daily and weekly contracts, Codex, 28 trails, build presets |
-| Modes | Standard run, the Gauntlet (every boss back to back, opened by defeating all six), the Descent (an endless ladder of depths below Eternity, opened by an Eternity win), the Rifts (ten handcrafted trials past Eternity, each granting a permanent Sigil), Endless continuation after a victory, Daily Seed (a shared seed played at your strength: the hardest difficulty you have won, the highest Ascension you have won there and, once Risk Pacts are researched, a pact of the day; the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; today's challenge and best are shown on Home) |
+| Modes | Arcade: Trickshot (24 puzzle stages), Siege (turn-based block breaker) and Rebound (real-time paddle waves), open after First Contact; Standard run, the Gauntlet (every boss back to back, opened by defeating all six), the Descent (an endless ladder of depths below Eternity, opened by an Eternity win), the Rifts (ten handcrafted trials past Eternity, each granting a permanent Sigil), Endless continuation after a victory, Daily Seed (a shared seed played at your strength: the hardest difficulty you have won, the highest Ascension you have won there and, once Risk Pacts are researched, a pact of the day; the first run each UTC day that lasts 90 seconds or wins pays +50% coins and +1 Research; today's challenge and best are shown on Home) |
 
 ### Damage types
 
@@ -336,6 +338,50 @@ Every damage type scales from the hit that caused it and has its own levers, cor
 | Shards | Split shards, echo clones and Gemini's twin, all at shard power | Gemini | shard power |
 
 Elemental power raises every status and arc.
+
+### Arcade
+
+The **Arcade** button beside Daily opens three modes with rules of their own. Every arcade board plays the
+same for everyone: a bare Striker Core with no parts, Workshop, talents or research, and no upgrades.
+Arcade runs pay their own rewards (no Mastery, contracts or achievements) and show their own results.
+
+- **Trickshot** is a puzzle mode: 24 stages in three chapters (First Light, Rift Geometry, The Spire), each a
+  fixed board of crystals, walls and arena devices cleared with a few single-ball shots. Each shot has a
+  bounce budget (walls, rails, bumpers and armor all count); past it the ball fizzles. Crystals: plain ones
+  shatter and let the ball fly on, armored ones take two hits, bank crystals only break after a bounce, bombs
+  crack everything nearby, and keys open every gate. Stars: three at par, two one shot over, one otherwise.
+  Stages open in order. New stars pay coins (more in later chapters), a chapter at three stars everywhere
+  pays Research, and 18/36/54/72 stars pay coins, the Trickster trail, Research and the Kaleidoscope trail.
+  Every stage's `solution` (in `src/data/trickshot.ts`) was found by `scripts/trickshot-solve.ts`, a beam
+  search that scores each angle by its worst result within ±0.5°, so par is reachable with human aim;
+  `tests/arcade.test.ts` replays every solution, and the same angles half a degree off.
+- **Siege** is turn-based: every ball fires in one volley; once the last one is home, the wall of numbered
+  blocks steps down a row and a new row arrives. A block's number is the hits it needs (they grow with the
+  turn; heavy blocks have twice as many). Orbs add a ball for the next volley, lasers strike their whole row
+  or column whenever a ball crosses them, bomb blocks blast their neighbours, and coins can be picked up.
+  Long volleys speed up to ×2 and ×3; Recall ends one early. A block reaching the line ends the siege. Turns
+  held and new records pay coins; 15/25/40/60 turns pay coins, Research and the Rampart trail.
+- **Rebound** is real time: the launcher sleeps and you slide a paddle along the line (drag anywhere, or the
+  arrow keys) to keep the ball in play; release or Space launches it. Where the ball meets the paddle sets its
+  angle (the edges send it wide, never straight up). Waves of bricks step down a row on a timer while a ball
+  is in play; clearing one brings a faster, tougher wave. Broken bricks may drop capsules to catch: multiball,
+  a wide paddle, a fire ball that burns through bricks, a slower ball, an extra life. A lost ball costs one of
+  three lives once none is left; a brick reaching the paddle, or the last life, ends the run. Score and waves
+  pay coins; waves 3/6/10/15 pay coins, Research and the Ricochet trail.
+- Three Arcade badges (Sharpshooter, Siege Breaker, Rebound Ace) count toward Goals like every other badge.
+
+### Field mechanics
+
+- **Bounty marks.** From 55 seconds, about every 80 seconds outside boss fights, the toughest enemy in the
+  upper field is marked for 18 seconds (a gold reticle with a closing timer). Killing it pays six coin drops,
+  experience and Surge charge, all doubled for a swift kill; Results count the bounties claimed.
+- **Linkers** (Veteran and up, from 2:30) arrive in pairs joined by an energy tether: a segment that deflects
+  balls like a shield wall until either Linker falls. The pair keeps its spacing as it marches.
+- **Weak points.** Every elite and boss carries a glowing arc on its rim that turns slowly. A ball striking
+  inside it deals 60% more damage; the spot then closes for a second and reopens on the far side. Results
+  count the weak points struck.
+- **Prism gates** (a layout in the Void Rift and the Chrono Spire): a launched ball passing through splits off
+  two four-second prism shards; shards and clones pass untouched, and each ball splits at most once a pass.
 
 ### Long-term progression
 

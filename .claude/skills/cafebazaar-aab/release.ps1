@@ -9,7 +9,7 @@
   3. Copies the bundle to <OutDir>\<Name>-<version>.aab.
   4. Runs `bundlesigner genbin` with the release keystore, producing
      <Name>-<version>.bin next to it.
-  5. Copies both files to -CopyTo (Desktop\bDefence-bazaar by default).
+  5. Copies both files to -CopyTo (Desktop\bazaar\bDefence-bazaar by default).
 
   Passwords are read from keystore.properties and handed to bundlesigner via
   environment variables, so they never appear on a command line or in output.
@@ -25,7 +25,7 @@ param(
   [string]$BundleSigner = (Join-Path $env:USERPROFILE 'Desktop\bundlesigner-0.1.13.jar'),
   [string]$Name = 'bDefence',
   [string]$OutDir,
-  [string]$CopyTo = (Join-Path $env:USERPROFILE 'Desktop\bDefence-bazaar'),
+  [string]$CopyTo = (Join-Path $env:USERPROFILE 'Desktop\bazaar\bDefence-bazaar'),
   [switch]$SkipBuild
 )
 

@@ -31,6 +31,7 @@
     "test:android:back": "node scripts/back-android.mjs",
     "test:ui:motion": "node scripts/motion-check.mjs",
     "test:ui:aim": "node scripts/aim-check.mjs",
+    "test:ui:arcade": "node --import tsx scripts/arcade-check.mjs",
     "test:ui:i18n": "node --import tsx scripts/i18n-check.mjs",
     "test:watch": "node scripts/vitest.mjs",
     "sim": "tsx scripts/simulate.ts",
