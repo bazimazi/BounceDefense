@@ -5,7 +5,7 @@ import { Rng } from '../core/rng';
 import { SpatialHash } from '../core/spatial';
 import { ARENA_MAP, DIFFICULTIES, EVENT_MAP, PACT_MAP } from '../data/arenas';
 import { CORE_MAP, PART_MAP, TRAILS } from '../data/balls';
-import { ENEMY_MAP, INTERNAL_ENEMIES } from '../data/enemies';
+import { BOSS_MAP, ENEMY_MAP, INTERNAL_ENEMIES } from '../data/enemies';
 import { ASCENSION_TIER, MAX_ASCENSION, ascensionDamage, ascensionHp, ascensionRules, type AscensionRule } from '../data/ascension';
 import { AWAKEN_MAX, AWAKEN_REROLL_RANK, awakenModifiers } from '../data/awakening';
 import { DESCENT, descentAfflictions, descentBossHp, descentDamage, descentHp, pressureAt, starModifiers, type AfflictionRule } from '../data/descent';
@@ -19,9 +19,10 @@ import type { DiscoveryCat, RunSummary } from '../meta/types';
 import { BEHAVIORS, type Behavior } from './behaviors';
 import { Build, buildName } from './build';
 import { applyChill, applyPoison, chainLightning, damageEnemy, densest, explode, meteor, nearestEnemy, sparkNearest } from './combat';
-import { Director } from './director';
+import { Director, FURY } from './director';
 import { updateEnemy } from './enemies';
-import { makeOffers, type Offer } from './offers';
+import { MAX_DISTINCT_UPGRADES, makeOffers, type Offer } from './offers';
+import { RIFTS, riftAt, sigilTotals, type RiftDef } from '../data/rifts';
 import { stepBall } from './physics';
 import { ResonanceCircuit } from './resonance';
 import type { Modifier } from './stats';
@@ -65,9 +66,13 @@ export interface RunConfig {
   depth?: number;
   /** Constellation levels (star id -> level), applied to every run. */
   stars?: Record<string, number>;
+  /** Rift number (mode `rift`, 1-based): an Eternity run with the Rift's power, rules and Rift Lords. */
+  rift?: number;
+  /** Sigils the profile holds (earned in the Rifts), applied to every run. */
+  sigils?: string[];
 }
 
-export type RunMode = 'standard' | 'gauntlet' | 'descent';
+export type RunMode = 'standard' | 'gauntlet' | 'descent' | 'rift';
 
 /** Where the Sentinel drones hover above the line. */
 export const SENTINEL_POS: [number, number][] = [[118, DEFENSE_Y - 26], [422, DEFENSE_Y - 26]];
@@ -273,6 +278,12 @@ export class World {
   gauntlet: boolean;
   /** Descent depth, 0 outside the Descent. */
   readonly depth: number;
+  /** The Rift this run is, if any. */
+  readonly rift: RiftDef | null;
+  /** Depth-worth of pressure: the Descent depth, or the Rift's power. */
+  readonly power: number;
+  /** Every Sigil effect this run carries. */
+  readonly sigils: ReturnType<typeof sigilTotals>;
   /** The depth's Afflictions. */
   readonly afflictions: Set<AfflictionRule>;
   /** Line damage multiplier from the depth and Ascension pressure. */
@@ -306,19 +317,23 @@ export class World {
     this.cfg = { ...cfg, talents: { ...this.talents } };
     this.rng = new Rng(cfg.seed);
     this.arena = ARENA_MAP[cfg.arena] ?? ARENA_MAP.proving;
-    // A Descent depth is always played on Eternity.
+    // A Descent depth or a Rift is always played on Eternity.
     this.depth = cfg.mode === 'descent' && !cfg.tutorial ? Math.max(0, Math.floor(cfg.depth ?? 0)) : 0;
-    this.diff = DIFFICULTIES[this.depth > 0 ? DESCENT.tier : clamp(cfg.difficulty, 0, DIFFICULTIES.length - 1)];
-    this.afflictions = new Set(descentAfflictions(this.depth));
+    this.rift = cfg.mode === 'rift' && !cfg.tutorial ? riftAt(cfg.rift) ?? null : null;
+    this.power = this.depth || this.rift?.power || 0;
+    this.sigils = sigilTotals(cfg.sigils);
+    this.diff = DIFFICULTIES[this.power > 0 ? DESCENT.tier : clamp(cfg.difficulty, 0, DIFFICULTIES.length - 1)];
+    this.afflictions = new Set(this.rift ? this.rift.afflictions : descentAfflictions(this.depth));
     this.pool = new Set(cfg.pool);
     this.flags = new Set(cfg.flags);
-    const pacts = cfg.pacts.map((p) => PACT_MAP[p]).filter(Boolean);
+    // A Rift adds its own pacts' rules (not their rewards).
+    const pacts = [...new Set([...cfg.pacts, ...(this.rift?.pacts ?? [])])].map((p) => PACT_MAP[p]).filter(Boolean);
     this.pacts = new Set(pacts.map((p) => p.rule ?? p.id));
     // Ascension only applies on the hardest tier.
     // Ascension only applies on the hardest tiers, and never inside the Descent (depths bring their own rules).
-    this.asc = ascensionRules(DIFFICULTIES.indexOf(this.diff) >= ASCENSION_TIER && !this.depth ? clamp(Math.floor(cfg.ascension ?? 0), 0, MAX_ASCENSION) : 0);
+    this.asc = ascensionRules(DIFFICULTIES.indexOf(this.diff) >= ASCENSION_TIER && !this.power ? clamp(Math.floor(cfg.ascension ?? 0), 0, MAX_ASCENSION) : 0);
     const asc = this.asc;
-    this.breachScale = descentDamage(this.depth) * ascensionDamage(asc.size);
+    this.breachScale = descentDamage(this.power) * ascensionDamage(asc.size);
     this.noHeal = pacts.some((p) => p.rule === 'noHeal');
     this.loneBall = pacts.some((p) => p.rule === 'loneBall');
     this.gauntlet = cfg.mode === 'gauntlet' && !cfg.tutorial;
@@ -327,11 +342,11 @@ export class World {
     this.enemySpeedMult = this.diff.speedMult * (pacts.some((p) => p.rule === 'haste') ? 1.4 : 1) * (asc.has('speed8') ? 1.08 : 1) * (asc.has('speed10') ? 1.1 : 1) * (aff.has('frenzy') ? 1.12 : 1);
     this.enemyHpMult = this.diff.hpMult * (this.arena.hpMult ?? 1) * (pacts.some((p) => p.rule === 'fortified') ? 1.35 : 1) * (pacts.some((p) => p.rule === 'tide') ? 1.15 : 1) *
       (asc.has('hp10') ? 1.1 : 1) * (asc.has('hp15') ? 1.15 : 1) * (asc.has('hp20') ? 1.2 : 1) * (asc.has('hp50') ? 1.5 : 1);
-    this.pressureHp = (this.diff.pressure ?? 1) * descentHp(this.depth) * ascensionHp(asc.size);
+    this.pressureHp = (this.diff.pressure ?? 1) * descentHp(this.power) * ascensionHp(asc.size);
     const noReroll = pacts.some((p) => p.rule === 'noReroll');
     const ws = (id: string) => cfg.workshop[id] ?? 0;
-    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) + ws('bp_draft') + (awakening >= AWAKEN_REROLL_RANK ? 1 : 0) - (asc.has('reroll') ? 1 : 0));
-    this.banishes = noReroll ? 0 : (this.flags.has('banish') ? 2 + (this.flags.has('banish2') ? 1 : 0) : 0) + ws('bp_exile');
+    this.rerolls = noReroll ? 0 : Math.max(0, 1 + (this.flags.has('reroll1') ? 1 : 0) + (this.flags.has('reroll2') ? 1 : 0) + (this.flags.has('reroll3') ? 1 : 0) + ws('bp_draft') + (awakening >= AWAKEN_REROLL_RANK ? 1 : 0) - (asc.has('reroll') ? 1 : 0) + this.sigils.rerolls);
+    this.banishes = noReroll ? 0 : (this.flags.has('banish') ? 2 + (this.flags.has('banish2') ? 1 : 0) : 0) + ws('bp_exile') + this.sigils.banishes;
     this.xpScale = asc.has('xp10') ? 1.1 : 1;
     this.xpNext = Math.ceil(xpForLevel(1) * this.xpScale);
     this.trailColors = (TRAILS.find((t) => t.id === cfg.trail) ?? TRAILS[0]).colors;
@@ -369,12 +384,13 @@ export class World {
     if (asc.has('surgeSlow')) mods.push({ stat: 'surgeGain', mult: -0.25 });
     if (aff.has('sapping')) mods.push({ stat: 'surgeGain', mult: -0.3 });
     if (aff.has('withering')) mods.push({ stat: 'healMult', mult: -0.5 }, { stat: 'regen', mult: -0.5 });
-    mods.push(...starModifiers(cfg.stars));
+    mods.push(...starModifiers(cfg.stars, this.sigils.starStep));
+    mods.push(...this.sigils.mods);
     if (this.flags.has('tactics')) mods.push({ stat: 'recallCooldown', add: -2 });
     if (this.flags.has('surge1')) mods.push({ stat: 'surgeGain', mult: 0.15 });
     for (const t of TALENTS) if (this.talents[t.id] && t.behavior) behaviors.push(t.behavior);
     // Workshop Spare Ball raises Extra Ball's ceiling: more balls late, no early power spike.
-    const spare = (ws('spare_ball') > 0 ? 1 : 0) + (ws('spare_ball') > 0 && ws('bp_magazine') > 0 ? 1 : 0);
+    const spare = (ws('spare_ball') > 0 ? 1 : 0) + (ws('spare_ball') > 0 && ws('bp_magazine') > 0 ? 1 : 0) + this.sigils.balls;
     const caps: Record<string, number> = spare ? { extra_ball: spare } : {};
     this.build = new Build(core.id, mods, behaviors, [], caps);
     for (const u of core.startUpgrades) this.build.addUpgrade(u);
@@ -393,8 +409,10 @@ export class World {
     this.discover('arenas', this.arena.id);
     if (ws('head_start') > 0) this.pendingLevels++;
     if (ws('head_start') > 0) this.pendingLevels += ws('bp_launch');
+    if (!cfg.tutorial) this.pendingLevels += this.sigils.picks;
     if (ws('relic_cache') > 0 && !cfg.tutorial) this.grantRelic(false);
     if (this.flags.has('unified') && !cfg.tutorial) this.grantRelic(false, 2);
+    for (let i = 0; i < this.sigils.relics && !cfg.tutorial; i++) this.grantRelic(false, 2);
     if (ws('bp_primed') > 0) this.surge.charge = this.surge.max * Math.min(1, ws('bp_primed') / 3);
   }
 
@@ -508,7 +526,7 @@ export class World {
     // Tier and arena toughness phase in over the opening ninety seconds, so early fodder still pops in a hit or two.
     const tier = 1 + (this.enemyHpMult - 1) * Math.min(1, 0.4 + this.time / 150);
     const crown = this.build.has('relic_cursed_crown') ? 1.25 : 1;
-    const bossAsc = def.boss ? (this.asc.has('boss20') ? 1.2 : 1) * (this.asc.has('boss40') ? 1.4 : 1) * (this.pacts.has('warlords') ? 1.5 : 1) * (this.afflictions.has('tyrant') ? 1.5 : 1) * descentBossHp(this.depth) * ascensionHp(this.asc.size) * (this.diff.pressure ?? 1) : 1;
+    const bossAsc = def.boss ? (this.asc.has('boss20') ? 1.2 : 1) * (this.asc.has('boss40') ? 1.4 : 1) * (this.pacts.has('warlords') ? 1.5 : 1) * (this.afflictions.has('tyrant') ? 1.5 : 1) * descentBossHp(this.power) * ascensionHp(this.asc.size) * (this.diff.pressure ?? 1) : 1;
     // Ascension 29 steepens the late ramp on every tier (tiers without one gain half).
     const late = 1 + ((this.diff.lateHp ?? 1) * (this.asc.has('late25') ? 1.5 : 1) - 1) * clamp((this.time - LATE_HP_START) / LATE_HP_RAMP, 0, 1);
     // Depth and Ascension pressure: ordinary enemies carry part of it in the opening and all of it by six minutes.
@@ -711,11 +729,34 @@ export class World {
     let amount = Math.max(1, dmg * this.diff.dmgMult * this.breachScale * st.damageTaken - st.armor);
     if (this.talents.last_bastion && this.hp <= this.maxHp * 0.35) amount *= 0.75;
     if (st.comboGuard > 0 && this.combo.count >= 30) amount *= 1 - Math.min(0.6, st.comboGuard);
+    this.emit({ t: 'shake', amt: Math.min(14, 4 + amount * 0.4) });
+    this.loseHull(amount, x);
+  }
+
+  /**
+   * Boss Fury: the line crumbles. Armor, barriers and damage reduction do not apply (it is a damage check,
+   * not a defence check), but the once-per-run saves still do.
+   */
+  erode(amount: number): void {
+    if (this.state === 'over' || this.endTimer >= 0 || this.time < this.invulnUntil) return;
+    this.emit({ t: 'shake', amt: 3 });
+    this.loseHull(amount, LAUNCHER_X);
+  }
+
+  /** Seconds a boss may stand before its Fury (0: never). Apex bosses get longer; the Sigil of Patience adds time. */
+  furyDelay(bossId: string): number {
+    const base = this.rift?.fury ?? this.diff.fury ?? 0;
+    if (base <= 0) return 0;
+    return base * (BOSS_MAP[bossId]?.apex ? FURY.apex : 1) + this.sigils.fury;
+  }
+
+  /** Takes hull away and runs the once-per-run saves (Phoenix, Unbreakable, Second Wind, Cryostasis). */
+  private loseHull(amount: number, x: number): void {
+    const st = this.build.stats;
     this.hp -= amount;
     this.run.damageTaken += amount;
     if (this.director.bossActive) this.run.bossNoDamage = false;
     this.emit({ t: 'hurt', x, dmg: amount });
-    this.emit({ t: 'shake', amt: Math.min(14, 4 + amount * 0.4) });
     this.emit({ t: 'sfx', name: 'hurt' });
     if (this.hp <= 0 && this.build.has('relic_phoenix') && !this.phoenixUsed && !this.noHeal) {
       this.phoenixUsed = true;
@@ -974,7 +1015,7 @@ export class World {
     const narrow = this.pacts.has('narrowFate') ? 1 : 0;
     const count = Math.max(2, Math.min(MAX_DRAFT_CARDS, (this.flags.has('fourth_card') ? 4 : 3) + wide + (this.build.has('relic_chaos_die') ? 1 : 0)) - narrow);
     this.offers = makeOffers({
-      build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished,
+      build: this.build, rng: this.rng, pool: this.pool, banished: inert.length ? new Set([...this.banished, ...inert]) : this.banished, slots: MAX_DISTINCT_UPGRADES + this.sigils.slots,
       count, levelIndex: this.levelUps, noHeal: this.noHeal, guaranteeRare: this.flags.has('fate'),
     });
     this.draft = 'upgrade';
@@ -1542,6 +1583,7 @@ export class World {
       ascension: this.asc.size,
       ...(this.gauntlet ? { mode: 'gauntlet' as const } : {}),
       ...(this.depth ? { mode: 'descent' as const, depth: this.depth } : {}),
+      ...(this.rift ? { mode: 'rift' as const, rift: RIFTS.indexOf(this.rift) + 1 } : {}),
       reactions: [...this.reactionsRun], synergies: [...this.build.synergies], evolutions: [...this.build.evolutions],
       upgrades: [...this.build.upgrades.entries()].map(([id, level]) => ({ id, level })),
       enemiesSeen: [...this.enemiesSeen], eventsSeen: this.eventsSeen,

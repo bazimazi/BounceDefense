@@ -13,6 +13,7 @@ import { buildName } from './sim/build';
 import type { Offer } from './sim/offers';
 import { DEFENSE_Y, LAUNCHER_X, LAUNCHER_Y, SIM_DT } from './sim/types';
 import { World, type RunMode } from './sim/world';
+import { RIFTS } from './data/rifts';
 import { UI } from './ui/screens';
 
 export interface RunOptions {
@@ -27,6 +28,8 @@ export interface RunOptions {
   mode?: RunMode;
   /** Descent depth. */
   depth?: number;
+  /** Rift number (1-based). */
+  rift?: number;
 }
 
 /** Owns the app lifecycle: menus, runs, input, the frame loop, saving. */
@@ -56,6 +59,8 @@ export class Game {
   private runOpts: RunOptions | null = null;
   /** The depth Play Again starts after a Descent run: the next one after a win, the same one after a loss. */
   nextDepth = 1;
+  /** The Rift Play Again starts after a Rift run: the next one after a first clear, the same one otherwise. */
+  nextRift = 1;
   /** UTC day the current run started on: a Daily Seed run that crosses midnight still belongs to its own day. */
   private runDay = '';
   /** Game time of the last pending-victory snapshot taken during Endless. */
@@ -169,7 +174,7 @@ export class Game {
       else this.startRun({ arena: 'proving', difficulty: 0, pacts: [] });
       return;
     }
-    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension, mode: opts.mode, depth: this.replayDepth() });
+    this.startRun({ arena: opts.arena, difficulty: opts.difficulty, pacts: [...opts.pacts], ascension: opts.ascension, mode: opts.mode, depth: this.replayDepth(), rift: opts.mode === 'rift' ? this.nextRift : undefined });
   }
 
   /** Play Again in the Descent goes on after a win and retries the same depth after a loss. */
@@ -236,7 +241,7 @@ export class Game {
     this.ui.beginRun(w);
     // Name the battlefield as the run opens; the tutorial keeps the screen clear for its hints.
     const tier = w.asc.size ? i18n('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name;
-    const diffName = w.gauntlet ? i18n('home.gauntletTag', { difficulty: tier }) : tier;
+    const diffName = w.gauntlet ? i18n('home.gauntletTag', { difficulty: tier }) : w.rift ? `${w.rift.icon} ${w.rift.name}` : tier;
     if (!cfg.tutorial) w.banner(w.arena.name.toUpperCase(), w.arena.theme.accent, opts.daily ? i18n('fx.dailySub', { difficulty: w.diff.name }) : diffName);
     w.bus.on('levelUp', () => this.ui.levelUp(w));
     w.bus.on('over', ({ victory }) => {
@@ -301,6 +306,11 @@ export class Game {
     if (s.mode === 'descent' && s.depth) {
       this.nextDepth = s.victory ? report.depthUnlocked ?? Math.min(this.profile.descent.open, s.depth + 1) : s.depth;
       this.profile.setup.depth = this.nextDepth;
+    }
+    // A first Rift clear moves Run setup on to the Rift it opened.
+    if (s.mode === 'rift' && s.rift) {
+      this.nextRift = report.sigil ? Math.min(s.rift + 1, Math.max(1, this.profile.rifts + 1), RIFTS.length) : s.rift;
+      this.profile.setup.rift = this.nextRift;
     }
     const build = s.upgrades.map((u) => u.id);
     analytics.emit(s.victory ? 'RunCompleted' : 'RunFailed', { arena: s.arena, difficulty: s.difficulty, time: s.time, level: s.level, kills: s.kills, build });

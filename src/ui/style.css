@@ -800,6 +800,14 @@ html[dir='rtl'] .arena-card::after { background: linear-gradient(270deg, #070b16
 .depth-info { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .depth-info .icon { width: 18px; height: 18px; }
 .depth-best { margin-inline-start: auto; color: var(--text-2); font-size: 12px; }
+.sigil-card { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; background: linear-gradient(115deg, #ffd27a1c, var(--surface) 65%); border: 1px solid #ffd27a4d; }
+.sigil-card.earned { border-color: #7dffa880; background: linear-gradient(115deg, #7dffa81c, var(--surface) 65%); }
+.sigil-card .check { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: #7dffa8; color: #062012; flex-shrink: 0; margin-inline-start: auto; }
+.sigil-card .check .icon { width: 16px; height: 16px; }
+.rift-status.cleared { color: #7dffa8; }
+.rift-status.open { color: #ffd27a; }
+.rift-status.locked { color: var(--text-2); }
+.rift-stepper .ascension-value b { font-size: 15px; }
 .star-btn { background: linear-gradient(180deg, #cdb4ff, #7b4fd6); color: #160634; border-color: #e6d9ff; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #4a2a8f; }
 .star-btn.cores { background: linear-gradient(180deg, #ffc2ee, #d4479f); border-color: #ffe0f5; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #8f2a6b; color: #33061f; }
 .star-btn.research { background: linear-gradient(180deg, #8de9ff, #2fa8cc); color: #04202b; border-color: #c6f6ff; box-shadow: inset 0 1px 0 #fff9, 0 3px 0 #1b6f8a; }

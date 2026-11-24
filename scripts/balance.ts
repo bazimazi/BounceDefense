@@ -20,6 +20,9 @@
  *                                           fire, lightning, ice, bleed, poison, explosion, swarm; see ARCHETYPES)
  *                      [--shares]          (print each cell's damage meter: average share of damage by source)
  *                      [--depth 1,5,10]    (Descent depths: Eternity runs scaled by depth, with its Afflictions; replaces --diff)
+ *                      [--rift 1,2,3]      (Rifts by number: each with its power, rules and Rift Lords; replaces --diff)
+ *                      [--sigils 4]        (the Sigils of the first N Rifts)
+ *                      [--draft smart]     (a deliberate drafter instead of the semi-random tuning bot; see scripts/drafter.ts)
  *                      [--stars 20]        (every Constellation at this level; --star '{"might":30}' sets them one by one)
  *
  * Meta presets: `mid` is roughly ten runs in (half the Workshop, 6 talent points); `max` is the
@@ -28,6 +31,8 @@
  *   none: Normal ~98%, Veteran ~82%, Nightmare ~55%      mid: Nightmare ~87%, Inferno ~64%
  *   max:  Inferno ~87%, Abyss ~43% (the Colossus closes Abyss; ~70% with --od 10)   end: Abyss ~70%
  * Endgame tiers with --meta end: Oblivion ~70% at --od 15, Singularity ~55% at --od 35, Eternity ~25% at --od 45.
+ * Since Boss Fury (Nov 2026) the tiers above Abyss are tuned for --draft smart, a deliberate drafter: at the entry kits
+ * (--od 5k --bp k-1 --refit k-1 --research k-1 --tp 30..70 for tier k = 5..9) it wins ~85/55/75/45/65%, the tuning bot ~50/35/45/10/25% (16 runs x 3 cores).
  */
 import { BLUEPRINTS, OVERDRIVE, REFITS, RESEARCH, SIGNATURE_UPGRADE } from '../src/data/meta';
 import { ASCENSION_TIER } from '../src/data/ascension';
@@ -35,6 +40,7 @@ import { computeRewards } from '../src/meta/progress';
 import { defaultConfig, FULL_POOL } from '../src/sim/bot';
 import { playHuman } from './human';
 import { RELICS } from '../src/data/relics';
+import { sigilsFor } from '../src/data/rifts';
 import { TALENTS, talentRequirement, type TalentRanks } from '../src/data/talents';
 import type { RunConfig } from '../src/sim/world';
 
@@ -74,7 +80,7 @@ const ARCHETYPES: Record<string, string[]> = {
 };
 
 function play(cfg: RunConfig, maxTime: number, noise: number) {
-  const { w, minHp } = playHuman(cfg, maxTime, noise);
+  const { w, minHp } = playHuman(cfg, maxTime, noise, drafter);
   return { s: w.summary(), minHp };
 }
 
@@ -91,7 +97,7 @@ const bpTier = Number(get('bp', '-1'));
 const refit = Number(get('refit', '0'));
 const workshop: Record<string, number> = {
   ...(get('workshop', '') ? JSON.parse(get('workshop', '{}')) : meta.workshop),
-  ...(od > 0 ? Object.fromEntries(OVERDRIVE.map((w) => [w.id, Math.min(w.maxLevel, od)])) : {}),
+  ...(od > 0 ? Object.fromEntries(OVERDRIVE.map((w) => [w.id, od])) : {}),
   ...(bpTier >= 0 ? Object.fromEntries(BLUEPRINTS.map((b) => [b.id, b.tiers!.filter((d) => d <= bpTier).length])) : {}),
   ...(refit > 0 ? Object.fromEntries(REFITS.map((r) => [r.id, Math.min(r.maxLevel, refit)])) : {}),
 };
@@ -120,17 +126,20 @@ const noise = Number(get('noise', '25'));
 const maxTime = Number(get('max', '1200'));
 const ascs = get('asc', '0').split(',').map(Number);
 const depths = get('depth', '') ? get('depth', '').split(',').map(Number) : [];
-const mode = depths.length ? 'descent' as const : get('mode', 'standard') === 'gauntlet' ? 'gauntlet' as const : 'standard' as const;
+const rifts = get('rift', '') ? get('rift', '').split(',').map(Number) : [];
+const sigils = sigilsFor(Number(get('sigils', '0')));
+const mode = rifts.length ? 'rift' as const : depths.length ? 'descent' as const : get('mode', 'standard') === 'gauntlet' ? 'gauntlet' as const : 'standard' as const;
 const starLevel = Number(get('stars', '0'));
 const stars: Record<string, number> = { ...(starLevel > 0 ? { might: starLevel, bastion: starLevel, ward: starLevel, ruin: starLevel } : {}), ...(get('star', '') ? JSON.parse(get('star', '{}')) : {}) };
 const awakening = Number(get('awaken', '0'));
 const archetype = get('build', '');
 if (archetype && !ARCHETYPES[archetype]) throw new Error(`unknown --build ${archetype}; one of ${Object.keys(ARCHETYPES).join(', ')}`);
 const showShares = args.includes('--shares');
+const drafter = get('draft', 'focused') === 'smart' ? 'smart' as const : 'focused' as const;
 
 console.log(`Human-like bot, ${runs} runs per cell${full ? ', full upgrade pool' : ''}${od ? `, Overdrive ${od}` : ''}${bpTier >= 0 ? `, Blueprints to tier ${bpTier}` : ''}${refit ? `, Refit ${refit}` : ''}${researchTier >= 0 ? `, Research to tier ${researchTier}` : ''}${tp ? `, ${tp} talent points` : ''}\n`);
-const cells: [number, number][] = depths.length ? depths.map((d) => [9, d]) : diffs.map((d) => [d, 0]);
-for (const arena of arenas) for (const [difficulty, depth] of cells) for (const ascension of difficulty >= ASCENSION_TIER && !depth ? ascs : [0]) for (const core of cores) {
+const cells: [number, number, number][] = rifts.length ? rifts.map((r) => [9, 0, r]) : depths.length ? depths.map((d) => [9, d, 0]) : diffs.map((d) => [d, 0, 0]);
+for (const arena of arenas) for (const [difficulty, depth, rift] of cells) for (const ascension of difficulty >= ASCENSION_TIER && !depth && !rift ? ascs : [0]) for (const core of cores) {
   let wins = 0, time = 0, level = 0, minHp = 0, kills = 0, coins = 0, aether = 0;
   const shares = new Map<string, number>();
   const deaths: number[] = [];
@@ -138,7 +147,7 @@ for (const arena of arenas) for (const [difficulty, depth] of cells) for (const 
   const finals: number[] = [];
   for (let i = 0; i < runs; i++) {
     const cfg = defaultConfig({
-      seed: 7000 + i * 977, core, arena, difficulty, pacts, tutorial, workshop, mode, awakening, depth, stars, talents: tp > 0 ? spendTalents(tp, Number(get('tpwin', String(difficulty - 1)))) : talents, ascension,
+      seed: 7000 + i * 977, core, arena, difficulty, pacts, tutorial, workshop, mode, awakening, depth, rift, sigils, stars, talents: tp > 0 ? spendTalents(tp, Number(get('tpwin', String(difficulty - 1)))) : talents, ascension,
       flags, bossLore: researchTier < 0 ? 0 : Math.min(10, 6 + researchTier), echoCore: studied.includes('echocore') ? (core === 'pyro' ? 'tesla' : 'pyro') : undefined, ...(meta.relics ? { relicPool: RELICS.map((r) => r.id) } : {}), ...(full ? { pool: FULL_POOL } : {}),
       ...(archetype ? { pool: [...SHARED_KIT, ...ARCHETYPES[archetype], SIGNATURE_UPGRADE[core]] } : {}),
     });
@@ -149,7 +158,7 @@ for (const arena of arenas) for (const [difficulty, depth] of cells) for (const 
     for (const [k, v] of r.s.damageBy ?? []) shares.set(k, (shares.get(k) ?? 0) + v / total / runs);
     time += r.s.time; level += r.s.level; minHp += r.minHp; kills += r.s.kills;
     coins += computeRewards(r.s, 0, flags, workshop).coins;
-    aether += computeRewards(r.s, 0, flags, workshop, stars).aether;
+    aether += computeRewards(r.s, 0, flags, workshop, stars, sigils.length).aether;
     fights.push(...r.s.bossFightTimes.map(Math.round));
     if (r.s.victory && r.s.bossFightTimes.length) finals.push(Math.round(r.s.bossFightTimes[r.s.bossFightTimes.length - 1]));
   }
@@ -158,10 +167,10 @@ for (const arena of arenas) for (const [difficulty, depth] of cells) for (const 
   finals.sort((a, b) => a - b);
   const median = (xs: number[]) => (xs.length ? `${xs[Math.floor(xs.length / 2)]}s` : '-');
   console.log(
-    `${arena.padEnd(8)} ${depth ? `D${depth}`.padEnd(6) : `d${difficulty}${ascension ? `a${ascension}`.padEnd(4) : '    '}`} ${core.padEnd(8)} win ${String(Math.round((wins / runs) * 100)).padStart(3)}%  ` +
+    `${arena.padEnd(8)} ${rift ? `R${rift}`.padEnd(6) : depth ? `D${depth}`.padEnd(6) : `d${difficulty}${ascension ? `a${ascension}`.padEnd(4) : '    '}`} ${core.padEnd(8)} win ${String(Math.round((wins / runs) * 100)).padStart(3)}%  ` +
     `avgTime ${(time / runs).toFixed(0).padStart(4)}s  lvl ${(level / runs).toFixed(1).padStart(4)}  kills ${(kills / runs).toFixed(0).padStart(4)}  ` +
     `minHp ${((minHp / runs) * 100).toFixed(0).padStart(3)}%  medianDeath ${median(deaths).padStart(5)}  medianBossFight ${median(fights).padStart(5)}  finalBoss ${median(finals).padStart(5)}  ` +
-    `coins ${(coins / runs).toFixed(0).padStart(6)}${depth ? `  aether ${(aether / runs).toFixed(0)}` : ''}${archetype ? `  [${archetype}]` : ''}`,
+    `coins ${(coins / runs).toFixed(0).padStart(6)}${depth || rift ? `  aether ${(aether / runs).toFixed(0)}` : ''}${archetype ? `  [${archetype}]` : ''}`,
   );
   if (showShares) {
     const top = [...shares].sort((a, b) => b[1] - a[1]).filter(([, v]) => v >= 0.02);

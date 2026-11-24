@@ -12,13 +12,15 @@ import { AWAKEN_MASTERY, AWAKEN_MAX, awakenRankText } from '../data/awakening';
 import { CONTRACT_MAP } from '../data/contracts';
 import { AFFLICTION_MAP, DESCENT, STARS, aetherFor, afflictionCount, descentAfflictions, descentBossHp, descentDamage, descentHp, fortuneMult } from '../data/descent';
 import { RELICS, RELIC_COLOR, RELIC_MAP } from '../data/relics';
+import { RIFTS, SIGIL_MAP, sigilTotals } from '../data/rifts';
+import { FURY } from '../sim/director';
 import { EVOLUTIONS, EVOLUTION_MAP, REACTIONS, SYNERGIES, SYNERGY_MAP } from '../data/synergies';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { TALENTS, talentSpent } from '../data/talents';
 import type { PartSlot, Rarity, Tag } from '../data/types';
 import {
   awaken, awakenCost, dailyOptions, buyPart, buyWorkshop, canAwaken, canResearch, canUnlockCore, contractBoard, contractSlotRewards, contractText, coreRequirementMet, dailyRecord, describeUnlock, doResearch,
-  buyStar, canBuyStar, descentOpen, descentUnlocked, overdriveDeep, starCost, starWallet, starsUnlocked,
+  buyStar, canBuyStar, descentOpen, descentUnlocked, overdriveDeep, starCost, starWallet, starsUnlocked, aetherMult, profileSigils, riftOpen, riftsUnlocked,
   gauntletUnlocked, isArenaUnlocked, isRelicUnlocked, maxDifficulty, nextGoals, overdriveOpen, partsForSlot, researchLock, rewardMultiplier, unlockCore, workshopCap, workshopCost, workshopLock,
   type Goal, type RunReport,
 } from '../meta/progress';
@@ -125,7 +127,7 @@ export class UI {
     // Restore the last Run setup; battlePage() still clamps it to what this profile has open.
     const saved = game.profile.setup;
     this.setup = { arena: saved.arena, difficulty: Math.max(0, Math.floor(saved.difficulty) || 0), pacts: new Set(saved.pacts),
-      ascension: Math.max(0, Math.floor(saved.ascension) || 0), mode: saved.mode === 'gauntlet' || saved.mode === 'descent' ? saved.mode : 'standard' };
+      ascension: Math.max(0, Math.floor(saved.ascension) || 0), mode: saved.mode === 'gauntlet' || saved.mode === 'descent' || saved.mode === 'rift' ? saved.mode : 'standard' };
     root.addEventListener('click', event => {
       if (!(event.target instanceof Element)) return;
       const control = event.target.closest<HTMLElement>('button, [role="button"]');
@@ -457,6 +459,7 @@ export class UI {
     s.difficulty = Math.min(s.difficulty, maxDifficulty(p));
     if (s.mode === 'gauntlet' && !gauntletUnlocked(p)) s.mode = 'standard';
     if (s.mode === 'descent' && !descentUnlocked(p)) s.mode = 'standard';
+    if (s.mode === 'rift' && !riftsUnlocked(p)) s.mode = 'standard';
     if (!choice.pacts) s.pacts.clear();
     for (const id of [...s.pacts]) if (!this.pactAvailable(id)) s.pacts.delete(id);
     if (!choice.arena) s.arena = ARENAS.find(a => isArenaUnlocked(p, a.id))?.id ?? 'proving';
@@ -483,22 +486,35 @@ export class UI {
             class: 'daily-btn', 'aria-label': this.dailyLabel(), title: this.dailyLabel(), onclick: () => { this.click(); this.dailyRun(); },
           },
             icon('daily'), h('span', {}, t('home.dailyShort')), daily.runs ? h('small', { class: 'daily-best' }, formatNum(daily.best)) : null, badge(!daily.claimed)) : null,
-          this.playButton(this.runOptions(), isArenaUnlocked(p, s.arena)))));
+          this.playButton(this.runOptions(), this.canLaunch()))));
   }
 
   /** Saves the Run setup (the chosen Ascension, not the clamped one) so the next visit opens on it. */
   private rememberSetup(): void {
     const s = this.setup;
-    this.p.setup = { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.ascension, mode: s.mode, depth: this.depthChoice() };
+    this.p.setup = { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.ascension, mode: s.mode, depth: this.depthChoice(), rift: this.riftChoice() };
     this.game.save();
   }
 
   /** The current setup as run options; Ascension only rides along on Abyss and above. */
-  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number; mode: RunMode; depth?: number } {
+  private runOptions(): { arena: string; difficulty: number; pacts: string[]; ascension: number; mode: RunMode; depth?: number; rift?: number } {
     const s = this.setup;
     if (s.mode === 'descent') return { arena: s.arena, difficulty: DESCENT.tier, pacts: [...s.pacts], ascension: 0, mode: s.mode, depth: this.depthChoice() };
+    // A Rift brings its own pacts.
+    if (s.mode === 'rift') return { arena: s.arena, difficulty: DESCENT.tier, pacts: [], ascension: 0, mode: s.mode, rift: this.riftChoice() };
     const gauntlet = s.mode === 'gauntlet';
     return { arena: s.arena, difficulty: s.difficulty, pacts: [...s.pacts], ascension: s.difficulty >= ASCENSION_TIER && !gauntlet ? this.ascensionFor(s.difficulty) : 0, mode: s.mode };
+  }
+
+  /** The chosen Rift (any of them can be browsed; only open ones can be played). */
+  private riftChoice(): number {
+    return Math.max(1, Math.min(RIFTS.length, Math.floor(this.p.setup.rift) || 1));
+  }
+
+  /** Play is live when the arena is open and, in the Rifts, the chosen Rift is open. */
+  private canLaunch(): boolean {
+    const s = this.setup;
+    return isArenaUnlocked(this.p, s.arena) && (s.mode !== 'rift' || this.riftChoice() <= riftOpen(this.p));
   }
 
   /** The chosen Descent depth, kept within the depths this profile has opened. */
@@ -559,7 +575,8 @@ export class UI {
     const opts = this.runOptions();
     const mult = rewardMultiplier(opts);
     const tier = opts.ascension ? t('home.ascensionTag', { difficulty: difficulty.name, n: opts.ascension }) : difficulty.name;
-    const diffName = opts.mode === 'gauntlet' ? t('home.gauntletTag', { difficulty: tier }) : opts.mode === 'descent' ? t('home.depthTag', { n: opts.depth ?? 1 }) : tier;
+    const diffName = opts.mode === 'gauntlet' ? t('home.gauntletTag', { difficulty: tier }) : opts.mode === 'descent' ? t('home.depthTag', { n: opts.depth ?? 1 })
+      : opts.mode === 'rift' ? t('home.riftTag', { n: opts.rift ?? 1 }) : tier;
     const card = h('button', {
       class: `run-card ${unlocked ? '' : 'locked'}`, style: `--accent:${arena.theme.accent}`, 'data-motion-key': `arena:${arena.id}`,
       onclick: () => { this.click(); this.runSheet(); },
@@ -603,7 +620,7 @@ export class UI {
       const mult = rewardMultiplier(opts);
       return [
         mult !== 1 ? h('div', { class: 'run-total' }, icon('star'), t('setup.multiplier', { n: mult.toFixed(2) })) : null,
-        this.playButton(opts, isArenaUnlocked(this.p, s.arena)),
+        this.playButton(opts, this.canLaunch()),
       ];
     };
     this.runSheetRender = () => this.openSheetInPlace('run', title, build, footer);
@@ -640,7 +657,8 @@ export class UI {
         card,
         iconButton('forward', t('home.nextArena'), () => move(1), 'carousel-btn')) : card,
       ...(s.mode === 'descent' ? this.depthPicker(update) : []),
-      ...(choice.difficulty && s.mode !== 'descent' ? [
+      ...(s.mode === 'rift' ? this.riftPicker(update) : []),
+      ...(choice.difficulty && s.mode !== 'descent' && s.mode !== 'rift' ? [
         sectionTitle(t('setup.difficulty')),
         // Unlocked tiers plus the next one as a visible goal; later tiers stay out of the way.
         h('div', { class: 'difficulty-options', role: 'radiogroup', 'aria-label': t('setup.difficulty') }, DIFFICULTIES.slice(0, maxDifficulty(p) + 2).map((d, i) => {
@@ -656,7 +674,7 @@ export class UI {
         difficulty.apex?.length ? h('p', { class: 'difficulty-info difficulty-apex' }, icon('skull'), difficulty.rules[0]) : null,
         ...(s.difficulty >= ASCENSION_TIER && s.mode !== 'gauntlet' ? this.ascensionPicker(update) : []),
       ] : []),
-      ...(choice.pacts ? [
+      ...(choice.pacts && s.mode !== 'rift' ? [
         sectionTitle(t('setup.pacts')),
         h('p', { class: 'sheet-intro' }, t('home.pactsIntro')),
         h('div', { class: 'pact-list' }, PACTS.filter(pc => this.pactAvailable(pc.id)).map(pc => h('button', {
@@ -694,10 +712,60 @@ export class UI {
       h('div', { class: 'mode-options', role: 'radiogroup', 'aria-label': t('setup.mode') },
         option('standard', t('setup.modeStandard'), t('setup.modeStandardDesc')),
         gauntlet ? option('gauntlet', t('setup.modeGauntlet'), t('setup.modeGauntletDesc')) : null,
-        descent ? option('descent', t('setup.modeDescent'), t('setup.modeDescentDesc')) : null),
+        descent ? option('descent', t('setup.modeDescent'), t('setup.modeDescentDesc')) : null,
+        riftsUnlocked(p) ? option('rift', t('setup.modeRift'), t('setup.modeRiftDesc')) : null),
       gauntlet ? null : gauntletHint,
       s.mode === 'gauntlet' && p.gauntlet >= 0 ? h('p', { class: 'difficulty-info' }, icon('trophy'), t('setup.gauntletBest', { name: DIFFICULTIES[p.gauntlet].name })) : null,
       descent ? null : h('p', { class: 'sheet-intro mode-hint' }, icon('lock'), t('setup.descentLocked', { name: DIFFICULTIES[DESCENT.tier].name })),
+    ];
+  }
+
+  /**
+   * The Rifts: a stepper over all ten (the locked ones can be studied too), with what the chosen Rift is
+   * (its pressure, rules, Rift Lords and Boss Fury) and the Sigil its first clear grants.
+   */
+  private riftPicker(update: () => void): (Node | null)[] {
+    const p = this.p;
+    const n = this.riftChoice();
+    const r = RIFTS[n - 1];
+    const open = riftOpen(p);
+    const set = (v: number) => { const c = Math.max(1, Math.min(RIFTS.length, v)); if (c === n) return; p.setup.rift = c; this.click(); update(); };
+    const minus = iconButton('back', t('setup.riftPrev'), () => set(n - 1), 'carousel-btn');
+    const plus = iconButton('forward', t('setup.riftNext'), () => set(n + 1), 'carousel-btn');
+    minus.disabled = n <= 1;
+    plus.disabled = n >= RIFTS.length;
+    const cleared = n <= p.rifts;
+    const status = cleared ? t('setup.riftCleared') : n <= open ? t('setup.riftOpen') : t('setup.riftLocked', { name: RIFTS[n - 2]?.name ?? '' });
+    const sigil = SIGIL_MAP[r.sigil];
+    const rules = [...r.pacts.map(id => PACT_MAP[id]).filter(Boolean).map(pc => ({ icon: pc.icon, name: pc.name, desc: pc.desc })),
+      ...r.afflictions.map(id => AFFLICTION_MAP[id]).map(a => ({ icon: a.icon, name: a.name, desc: a.desc }))];
+    const lords = r.lords.map(id => BOSS_MAP[id]?.name ?? id).join(' · ');
+    const held = profileSigils(p).map(id => SIGIL_MAP[id]).filter(Boolean);
+    return [
+      sectionTitle(t('setup.rift')),
+      h('div', { class: 'ascension-stepper rift-stepper', 'data-motion-key': 'rift' },
+        minus,
+        h('div', { class: 'ascension-value' },
+          h('b', {}, `${r.icon} ${r.name}`),
+          h('small', {}, t('setup.riftN', { n, total: RIFTS.length }))),
+        plus),
+      h('p', { class: `difficulty-info rift-status ${cleared ? 'cleared' : n <= open ? 'open' : 'locked'}` }, icon(cleared ? 'check' : n <= open ? 'play' : 'lock'), status),
+      h('p', { class: 'sheet-intro' }, r.desc),
+      h('p', { class: 'difficulty-info' }, icon('skull'), t('setup.riftPower', { n: r.power, hp: formatMult(descentHp(r.power)), boss: formatMult(descentBossHp(r.power)), dmg: formatMult(descentDamage(r.power)) })),
+      h('p', { class: 'difficulty-info' }, icon('skull'), t('setup.riftLords', { names: lords })),
+      h('p', { class: 'difficulty-info rift-fury' }, icon('fire'), t('setup.riftFury', { n: Math.round(r.fury + sigilTotals(profileSigils(p)).fury), m: Math.round(r.fury * FURY.apex + sigilTotals(profileSigils(p)).fury) })),
+      rules.length ? h('div', { class: 'affliction-list' }, rules.map(a => h('div', { class: 'affliction-row' },
+        h('span', { class: 'pact-icon' }, a.icon), h('span', { class: 'pact-copy' }, h('b', {}, a.name), h('small', {}, a.desc))))) : null,
+      sectionTitle(cleared ? t('setup.riftSigilEarned') : t('setup.riftSigil')),
+      h('div', { class: `sigil-card ${cleared ? 'earned' : ''}` },
+        h('span', { class: 'pact-icon' }, sigil.icon),
+        h('span', { class: 'pact-copy' }, h('b', {}, sigil.name), h('small', {}, sigil.desc)),
+        cleared ? h('span', { class: 'check' }, icon('check')) : null),
+      h('p', { class: 'difficulty-info depth-info' }, icon('aether'), t('setup.riftReward', { n: formatNum(Math.round(aetherFor(r.power) * aetherMult(p))) }),
+        cleared ? null : h('span', { class: 'depth-best' }, t('setup.riftFirstClear', { cores: r.cores, research: r.research }))),
+      held.length ? h('details', { class: 'ascension-rules sigil-list' },
+        h('summary', {}, t('setup.sigilsHeld'), h('b', {}, `${held.length}/${RIFTS.length}`)),
+        h('ol', {}, held.map(sg => h('li', {}, `${sg.icon} ${sg.name}: ${sg.desc}`)))) : h('p', { class: 'sheet-intro' }, t('setup.riftIntro')),
     ];
   }
 
@@ -1751,10 +1819,11 @@ export class UI {
     const overlay = h('div', { class: 'levelup pause-overlay' },
       h('div', { class: 'pause-head' },
         h('div', { class: 'lvtitle' }, t('pause.title')),
-        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.gauntlet ? t('home.gauntletTag', { difficulty: w.diff.name }) : w.depth ? t('home.depthTag', { n: w.depth }) : w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
+        h('div', { class: 'pause-run' }, t('pause.runLine', { arena: w.arena.name, difficulty: w.gauntlet ? t('home.gauntletTag', { difficulty: w.diff.name }) : w.depth ? t('home.depthTag', { n: w.depth }) : w.rift ? w.rift.name : w.asc.size ? t('home.ascensionTag', { difficulty: w.diff.name, n: w.asc.size }) : w.diff.name, time: formatTime(w.time), level: w.level, kills: formatNum(w.run.kills) }))),
       h('div', { class: 'scroll pause-body' },
         // A Descent depth's Afflictions stay readable mid-run.
-        w.afflictions.size ? h('div', { class: 'build-tags pause-afflictions', 'aria-label': t('pause.afflictions') },
+        w.afflictions.size || w.rift?.pacts.length ? h('div', { class: 'build-tags pause-afflictions', 'aria-label': t('pause.afflictions') },
+          (w.rift?.pacts ?? []).map(id => PACT_MAP[id]).filter(Boolean).map(pc => h('span', { class: 'tag affliction', title: pc.desc }, `${pc.icon} ${pc.name}`)),
           [...w.afflictions].map(id => h('span', { class: 'tag affliction', title: AFFLICTION_MAP[id].desc }, `${AFFLICTION_MAP[id].icon} ${AFFLICTION_MAP[id].name}`))) : null,
         h('div', { class: 'buildcard', style: `--core:${core.color}` },
           h('div', { class: 'buildcard-head' }, orb(core.color, 'small'), h('div', {}, h('small', {}, t('pause.currentBuild')), h('div', { class: 'buildname' }, this.game.buildName()))),
@@ -1792,7 +1861,7 @@ export class UI {
     const overlay = h('div', { class: 'levelup victory-overlay' },
       h('div', { class: 'victory-burst', 'aria-hidden': 'true' }, icon('trophy')),
       h('div', { class: 'result-title win' }, t('victory.title')),
-      h('div', { class: 'results-sub' }, t('victory.cleared', { arena: ARENA_MAP[w.arena.id].name, difficulty: w.depth ? t('home.depthTag', { n: w.depth }) : w.diff.name, time: formatTime(w.time) })),
+      h('div', { class: 'results-sub' }, t('victory.cleared', { arena: ARENA_MAP[w.arena.id].name, difficulty: w.depth ? t('home.depthTag', { n: w.depth }) : w.rift ? w.rift.name : w.diff.name, time: formatTime(w.time) })),
       h('div', { class: 'col victory-actions' },
         h('button', { class: 'primary big', onclick: () => { this.click(); this.closeOverlay(); this.game.finishRun(); } }, icon('trophy'), t('victory.claim')),
         h('button', { class: 'big endless-btn', onclick: () => { this.click(); this.closeOverlay(); this.game.continueEndless(); } }, icon('fire'), t('victory.endless')),
@@ -1818,6 +1887,7 @@ export class UI {
         ? t('results.ascensionBandShort', { n: r.ascensionUnlocked, difficulty: DIFFICULTIES[ascensionDifficulty(r.ascensionUnlocked)].name })
         : t('results.ascensionShort', { n: r.ascensionUnlocked })] as [IconName, string]] : []),
       ...(r.depthUnlocked ? [['aether', t('results.depthShort', { n: r.depthUnlocked })] as [IconName, string]] : []),
+      ...(r.sigil && SIGIL_MAP[r.sigil] ? [['star', t('results.sigilShort', { name: `${SIGIL_MAP[r.sigil].icon} ${SIGIL_MAP[r.sigil].name}` })] as [IconName, string]] : []),
       ...r.contracts.map((c): [IconName, string] => ['daily', t('results.contractShort', { name: c })]),
       ...(r.daily?.bonus ? [['daily', t('results.dailyBonusShort')] as [IconName, string]] : []),
       ...(r.daily?.newBest ? [['daily', t('results.dailyBestShort', { n: formatNum(r.daily.best) })] as [IconName, string]] : []),
@@ -1833,7 +1903,7 @@ export class UI {
       h('div', { class: 'results-head' },
         h('div', { class: 'results-emblem', 'aria-hidden': 'true' }, icon(s.victory ? 'trophy' : abandoned ? 'flag' : 'skull')),
         h('div', { class: `result-title ${outcome}` }, s.victory ? t('results.complete') : abandoned ? t('results.ended') : t('results.defeated')),
-        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.mode === 'gauntlet' ? t('results.gauntlet') : ''}${s.depth ? t('results.depthTag', { n: s.depth }) : ''}${s.daily ? t('results.daily') : ''}`)),
+        h('div', { class: 'results-sub' }, `${t('results.summary', { arena: ARENA_MAP[s.arena].name, difficulty: DIFFICULTIES[s.difficulty].name, time: formatTime(s.time) })}${s.ascension ? t('results.ascensionTag', { n: s.ascension }) : ''}${s.mode === 'gauntlet' ? t('results.gauntlet') : ''}${s.depth ? t('results.depthTag', { n: s.depth }) : ''}${s.rift && RIFTS[s.rift - 1] ? t('results.riftTag', { name: RIFTS[s.rift - 1].name }) : ''}${s.daily ? t('results.daily') : ''}`)),
       h('div', { class: 'scroll results-body' },
         h('div', { class: 'reward-row reveal' },
           reward('coins', r.rewards.coins),
@@ -1882,7 +1952,8 @@ export class UI {
       h('div', { class: 'results-actions' },
         h('button', { class: 'home-btn', onclick: () => { this.click(); this.home(); } }, icon('home'), t('results.home')),
         h('button', { class: 'primary big', onclick: () => { this.click(); this.game.replay(); } }, icon('play'),
-          s.depth && s.victory && !s.daily ? t('results.descend', { n: this.game.nextDepth }) : t('results.playAgain'))),
+          s.depth && s.victory && !s.daily ? t('results.descend', { n: this.game.nextDepth })
+            : s.rift && r.sigil && this.game.nextRift !== s.rift ? t('results.nextRift', { n: this.game.nextRift }) : t('results.playAgain'))),
     );
     this.show(screen);
     this.celebrate(screen, s.victory);

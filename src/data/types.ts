@@ -221,6 +221,11 @@ export interface DifficultyDef {
    * half-built kit from riding a lucky run through the top tiers.
    */
   pressure?: number;
+  /**
+   * Boss Fury: seconds a boss may stand before the line starts to crumble (apex bosses get longer; see
+   * `FURY`). Unset on the tiers below Oblivion, where boss fights never turn into a timer.
+   */
+  fury?: number;
   /** Bosses from the arena rotation fought before any apex boss (the arena's own boss first). */
   bosses: number;
   /** Apex bosses that close the run, in order, after the rotation bosses. */

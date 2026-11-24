@@ -94,7 +94,7 @@ describe('Ascension pressure', () => {
   it('grows with the square of the level: a step past Abyss at first, a wall at the top', () => {
     expect(ascensionHp(0)).toBe(1);
     expect(ascensionHp(10)).toBeGreaterThan(1.3);
-    expect(ascensionHp(10)).toBeLessThan(1.5);
+    expect(ascensionHp(10)).toBeLessThan(1.7);
     expect(ascensionHp(30)).toBeGreaterThan(15);
     expect(ascensionDamage(30)).toBeGreaterThan(2.5);
     const w = makeWorld({ difficulty: 9, ascension: 30 });

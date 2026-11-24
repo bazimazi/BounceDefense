@@ -13,17 +13,17 @@ export const DESCENT = {
   /** Difficulty index every depth is played on (Eternity). */
   tier: 9,
   /** Enemy health multiplier per depth, compounding (in full from `rampEnd` seconds on). */
-  hp: 1.15,
+  hp: 1.19,
   /** Share of the depth's health multiplier (as an exponent) that ordinary enemies carry at the start of a run. */
   early: 0.75,
   /** Run time by which ordinary enemies carry the depth's full health multiplier. */
   rampEnd: 360,
   /** Boss health multiplier per depth, compounding: late builds snowball, so the bosses are where depths bite. */
-  boss: 1.15,
+  boss: 1.19,
   /** Damage reaching the line, per depth, compounding. */
   damage: 1.05,
   /** Coin reward multiplier gained per depth (linear: coins stop keeping up with Overdrive's prices). */
-  coinsPerDepth: 0.06,
+  coinsPerDepth: 0.03,
 };
 
 /** Ordinary enemy health multiplier at a depth (1 at depth 0), in full: see `descentHpAt` for the opening. */
@@ -122,9 +122,10 @@ export interface StarDef {
   name: string;
   icon: string;
   currency: StarCurrency;
-  desc: (level: number) => string;
+  /** `extra`: added to the per-level step (the Sigil of the Firmament). */
+  desc: (level: number, extra?: number) => string;
   cost: (level: number) => number;
-  mods: (level: number) => Modifier[];
+  mods: (level: number, extra?: number) => Modifier[];
   /** What one level does, shown beside the level: `×1.03`, `+4%`. */
   step: string;
 }
@@ -150,29 +151,29 @@ export const STAR_STEP = { might: 0.03, bastion: 0.03, ward: 0.022, ruin: 0.03, 
  */
 export const STARS: StarDef[] = [
   { id: 'might', name: 'Might', icon: '✴️', currency: 'aether',
-    desc: (l) => `+${pct(compound(STAR_STEP.might, l) - 1)}% damage`,
-    cost: curve(10, STAR_GROWTH), mods: (l) => [{ stat: 'damage', mult: compound(STAR_STEP.might, l) - 1 }], step: `×${1 + STAR_STEP.might}` },
+    desc: (l, x = 0) => `+${pct(compound(STAR_STEP.might + x, l) - 1)}% damage`,
+    cost: curve(10, STAR_GROWTH), mods: (l, x = 0) => [{ stat: 'damage', mult: compound(STAR_STEP.might + x, l) - 1 }], step: `×${1 + STAR_STEP.might}` },
   { id: 'bastion', name: 'Bastion', icon: '🏰', currency: 'aether',
-    desc: (l) => `+${pct(compound(STAR_STEP.bastion, l) - 1)}% max HP`,
-    cost: curve(8, STAR_GROWTH), mods: (l) => [{ stat: 'maxHp', mult: compound(STAR_STEP.bastion, l) - 1 }], step: `×${1 + STAR_STEP.bastion}` },
+    desc: (l, x = 0) => `+${pct(compound(STAR_STEP.bastion + x, l) - 1)}% max HP`,
+    cost: curve(8, STAR_GROWTH), mods: (l, x = 0) => [{ stat: 'maxHp', mult: compound(STAR_STEP.bastion + x, l) - 1 }], step: `×${1 + STAR_STEP.bastion}` },
   { id: 'ward', name: 'Ward', icon: '🌀', currency: 'aether',
-    desc: (l) => `−${pct(1 - Math.pow(1 - STAR_STEP.ward, l))}% damage taken on the line`,
-    cost: curve(8, STAR_GROWTH), mods: (l) => [{ stat: 'damageTaken', mult: Math.pow(1 - STAR_STEP.ward, l) - 1 }], step: `×${1 - STAR_STEP.ward}` },
+    desc: (l, x = 0) => `−${pct(1 - Math.pow(1 - STAR_STEP.ward - x, l))}% damage taken on the line`,
+    cost: curve(8, STAR_GROWTH), mods: (l, x = 0) => [{ stat: 'damageTaken', mult: Math.pow(1 - STAR_STEP.ward - x, l) - 1 }], step: `×${1 - STAR_STEP.ward}` },
   { id: 'ruin', name: 'Ruin', icon: '☄️', currency: 'cores',
-    desc: (l) => `+${pct(compound(STAR_STEP.ruin, l) - 1)}% damage to elites and bosses`,
-    cost: curve(25, 1.07), mods: (l) => [{ stat: 'ruin', mult: compound(STAR_STEP.ruin, l) - 1 }], step: `×${1 + STAR_STEP.ruin}` },
+    desc: (l, x = 0) => `+${pct(compound(STAR_STEP.ruin + x, l) - 1)}% damage to elites and bosses`,
+    cost: curve(25, 1.07), mods: (l, x = 0) => [{ stat: 'ruin', mult: compound(STAR_STEP.ruin + x, l) - 1 }], step: `×${1 + STAR_STEP.ruin}` },
   { id: 'fortune', name: 'Fortune', icon: '🌠', currency: 'research',
     desc: (l) => `+${pct(l * STAR_STEP.fortune)}% Aether from every run`,
     cost: curve(8, 1.12), mods: () => [], step: `+${STAR_STEP.fortune * 100}%` },
 ];
 export const STAR_MAP: Record<string, StarDef> = Object.fromEntries(STARS.map((s) => [s.id, s]));
 
-/** Every modifier the profile's Constellations add to a run. */
-export function starModifiers(stars: Record<string, number> | undefined): Modifier[] {
+/** Every modifier the profile's Constellations add to a run (`extra`: the Sigil of the Firmament's step bonus). */
+export function starModifiers(stars: Record<string, number> | undefined, extra = 0): Modifier[] {
   const out: Modifier[] = [];
   for (const s of STARS) {
     const l = Math.max(0, Math.floor(stars?.[s.id] ?? 0));
-    if (l > 0) out.push(...s.mods(l));
+    if (l > 0) out.push(...s.mods(l, extra));
   }
   return out;
 }

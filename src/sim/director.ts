@@ -20,6 +20,15 @@ export const ENDLESS_RAMP = 1.22;
  */
 export const GAUNTLET = { first: 75, gap: 20, bossPicks: 1, bossHp: 3, bossRamp: 0.45, fightSquads: 0.35 };
 
+/**
+ * Boss Fury: on the tiers that set `fury` (and in the Descent and the Rifts), a boss left standing too long
+ * turns on the line. From then on the line erodes by `base` of its max HP per second, growing by that much
+ * again every `ramp` seconds, so a build has about half a minute left. Erosion ignores armor, barriers and
+ * damage reduction: it is a pure damage check, the wall that only long-term power climbs. Apex bosses get
+ * `apex` times as long; `warn` seconds before it starts the boss bar flashes a warning.
+ */
+export const FURY = { base: 0.01, ramp: 10, apex: 1.35, warn: 10 };
+
 const ELITE_POOL: [string, number][] = [
   ['grunt', 0], ['runner', 30], ['brute', 60], ['shielder', 80], ['splitter', 95], ['bomber', 120], ['healer', 160], ['magnet', 170],
 ];
@@ -45,6 +54,11 @@ export class Director {
   endlessCycle = 0;
   /** Run time when Endless began. */
   endlessStart = 0;
+  /** Run time when the current boss turns to Fury (Infinity when this fight has none). */
+  furyAt = Infinity;
+  /** Line erosion owed but not yet applied (applied in whole steps to keep the HUD calm). */
+  private furyDebt = 0;
+  private furyWarned = false;
   /** This run's boss fights in order: rotation bosses (the arena's own first), then the tier's apex bosses. */
   readonly queue: string[];
   /** Endless order: the run's queue, then every other boss, repeating. */
@@ -54,7 +68,8 @@ export class Director {
     const rotation = [w.arena.bossId, ...BOSSES.map((b) => b.id).filter((b) => b !== w.arena.bossId)];
     const gauntlet = w.gauntlet;
     const regular = gauntlet ? rotation.length : w.diff.bosses + (w.asc.has('thirdBoss') ? 1 : 0);
-    const apex = [...(w.diff.apex ?? [])];
+    // A Rift ends with its own Rift Lords instead of the tier's apex bosses.
+    const apex = [...(w.rift?.lords ?? w.diff.apex ?? [])];
     // Ascension 30 sends one more apex boss: the first one this tier does not already field.
     if (w.asc.has('apexPlus')) {
       const extra = APEX_BOSSES.map((b) => b.id).find((id) => !apex.includes(id));
@@ -250,6 +265,10 @@ export class Director {
     if (!e) return;
     BOSS_SCRIPTS[def.enemy]?.init(w, e);
     w.resonance.avoidBosses();
+    const fury = this.endless || w.gauntlet ? 0 : w.furyDelay(id);
+    this.furyAt = fury > 0 ? w.time + fury : Infinity;
+    this.furyDebt = 0;
+    this.furyWarned = false;
     this.bossActive = true;
     this.bossId = id;
     this.bossesSpawned++;
@@ -266,6 +285,37 @@ export class Director {
     for (const e of this.w.enemies) {
       if (e.alive && e.boss) BOSS_SCRIPTS[e.def.id]?.update(this.w, e, dt);
     }
+    this.updateFury(dt);
+  }
+
+  /** Seconds of Fury so far (0 before it starts). */
+  furyTime(): number {
+    return this.bossActive ? Math.max(0, this.w.time - this.furyAt) : 0;
+  }
+
+  private updateFury(dt: number): void {
+    const w = this.w;
+    if (!Number.isFinite(this.furyAt) || w.endTimer >= 0) return;
+    if (!this.furyWarned && w.time >= this.furyAt - FURY.warn) {
+      this.furyWarned = true;
+      w.banner(i18n('fx.furySoon'), '#ff3b5c', i18n('fx.furySoonSub', { n: FURY.warn }));
+      w.emit({ t: 'sfx', name: 'warning' });
+    }
+    if (w.time < this.furyAt) return;
+    const into = w.time - this.furyAt;
+    if (into < dt) {
+      w.banner(i18n('fx.fury'), '#ff2d55', i18n('fx.furySub'), true);
+      w.emit({ t: 'flash', color: '#ff2d55', a: 0.35 });
+      w.emit({ t: 'shake', amt: 10 });
+      w.emit({ t: 'sfx', name: 'boss' });
+    }
+    this.furyDebt += w.maxHp * FURY.base * (1 + into / FURY.ramp) * dt;
+    // Whole half-second steps: one readable hit on the line instead of a constant trickle.
+    if (this.furyDebt >= w.maxHp * FURY.base * 0.5) {
+      const amount = this.furyDebt;
+      this.furyDebt = 0;
+      w.erode(amount);
+    }
   }
 
   bosses(): Enemy[] {
@@ -278,6 +328,7 @@ export class Director {
     if (w.enemies.some((o) => o.alive && o.boss)) return;
     // boss defeated
     this.bossActive = false;
+    this.furyAt = Infinity;
     const fight = w.time - w.bossStart;
     w.run.bossesDefeated.push(this.bossId);
     w.run.bossFightTimes.push(fight);

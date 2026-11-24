@@ -15,6 +15,7 @@ import {
 } from '../sim/types';
 import { MOMENTUM_COLORS, momentumName, POWER_START, POWER_END, SENTINEL_POS, type World } from '../sim/world';
 import { effectiveTier } from '../sim/physics';
+import { FURY } from '../sim/director';
 import { Particles } from './particles';
 import { createArenaSurface, drawArenaAtmosphere } from './arena';
 import { drawResonance } from './resonance';
@@ -2492,6 +2493,30 @@ export class Renderer {
       ctx.fillStyle = '#fff';
       ctx.fillText(label, W / 2, y + 8.5, W - 100);
       ctx.lineJoin = 'miter';
+      // Boss Fury: a fuse under the bar burns down to the moment the line starts to crumble.
+      const furyAt = w.director.furyAt;
+      if (Number.isFinite(furyAt)) {
+        const span = Math.max(1, furyAt - w.bossStart);
+        const left = clamp((furyAt - w.time) / span, 0, 1);
+        const fy = y + 19;
+        ctx.fillStyle = 'rgba(2,3,8,0.85)';
+        roundRect(ctx, 96, fy, W - 192, 6, 3); ctx.fill();
+        if (left > 0) {
+          const soon = furyAt - w.time <= FURY.warn;
+          ctx.fillStyle = soon && Math.sin(w.time * 12) > 0 ? '#ff2d55' : '#ffb36b';
+          roundRect(ctx, 96, fy, (W - 192) * left, 6, 3); ctx.fill();
+        } else {
+          const pulse = 0.55 + 0.45 * Math.sin(w.time * 10);
+          ctx.fillStyle = `rgba(255,45,85,${pulse})`;
+          roundRect(ctx, 96, fy, W - 192, 6, 3); ctx.fill();
+          ctx.font = `900 ${smallText(10)}px ${FONT}`;
+          ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#1a0610';
+          ctx.strokeText(t('canvas.fury'), W / 2, fy + 14, W - 100);
+          ctx.fillStyle = '#ff6b81';
+          ctx.fillText(t('canvas.fury'), W / 2, fy + 14, W - 100);
+          ctx.lineJoin = 'miter';
+        }
+      }
     }
     // momentum readout of the lead ball
     const lead = w.balls.find((b) => b.kind === 'main' && b.state === 'flight');

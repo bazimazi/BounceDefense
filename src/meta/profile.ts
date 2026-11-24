@@ -9,6 +9,7 @@ import { talentProgress, talentWins } from './talents';
 import { MASTERY_TRAIL, masteryLevel, rankLevel, rankRewards } from '../data/meta';
 import { applyUnlock } from './progress';
 import { STAR_MAP } from '../data/descent';
+import { RIFTS } from '../data/rifts';
 
 export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'bounce-defense-save';
@@ -38,7 +39,7 @@ export function defaultProfile(): Profile {
       runs: 0, wins: 0, kills: 0, damage: 0, bestCombo: 0, maxWallChain: 0, explosionKills: 0, fireKills: 0,
       lightningKills: 0, frozen: 0, bleedKills: 0, healed: 0, coinsEarned: 0, evolutions: 0, maxBallsInFlight: 0,
       maxMomentumTier: 0, elitesKilled: 0, playTime: 0, poisonKills: 0, starfalls: 0, goldenCaught: 0, relicsFound: 0,
-      maxAscension: 0, contractsDone: 0, gauntletWins: 0, descentWins: 0,
+      maxAscension: 0, contractsDone: 0, gauntletWins: 0, descentWins: 0, riftWins: 0,
     },
     cleared: {},
     bossKills: {},
@@ -52,11 +53,12 @@ export function defaultProfile(): Profile {
     contracts: { day: '', daily: [], week: '', weekly: null },
     awakening: {},
     gauntlet: -1,
-    setup: { arena: 'proving', difficulty: 0, pacts: [], ascension: 0, mode: 'standard', depth: 1 },
+    setup: { arena: 'proving', difficulty: 0, pacts: [], ascension: 0, mode: 'standard', depth: 1, rift: 1 },
     pendingRun: null,
     aether: 0,
     descent: { best: 0, open: 1 },
     stars: {},
+    rifts: 0,
   };
 }
 
@@ -143,6 +145,9 @@ export function migrate(raw: unknown): Profile {
   }
   p.stars = stars;
   p.setup.depth = whole(p.setup.depth, 1);
+  p.rifts = Math.min(RIFTS.length, whole(p.rifts, 0));
+  p.setup.rift = Math.min(RIFTS.length, whole(p.setup.rift, 1));
+  if (!['standard', 'gauntlet', 'descent', 'rift'].includes(p.setup.mode)) p.setup.mode = 'standard';
   return p;
 }
 

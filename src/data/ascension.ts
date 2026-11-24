@@ -77,12 +77,12 @@ export function ascensionDifficulty(level: number): number {
 
 /**
  * Every Ascension level also toughens the run on top of its rule: enemy (and boss) health and the damage
- * reaching the line grow with the square of the level (A10 ×1.4 health, A20 ×3.6, A30 ×18), so the first
+ * reaching the line grow with the square of the level (A10 ×1.6 health, A20 ×6, A30 ×57), so the first
  * band stays a step past Abyss while the last one is a wall a finished Workshop alone cannot climb. The
  * Descent's Constellations are what carry a profile to the top. Ordinary enemies carry it with the same
  * soft opening as a Descent depth (see `descentHpAt`).
  */
-export const ASCENSION_PRESSURE = { hp: 0.0032, damage: 0.0011 };
+export const ASCENSION_PRESSURE = { hp: 0.0045, damage: 0.0014 };
 
 /** Enemy health multiplier from Ascension pressure, in full. */
 export function ascensionHp(level: number): number {

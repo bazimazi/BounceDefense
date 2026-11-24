@@ -8,6 +8,7 @@ import { Rng } from '../src/core/rng';
 import { botChoose } from '../src/sim/bot';
 import { LAUNCHER_X, LAUNCHER_Y, SIM_DT } from '../src/sim/types';
 import { World, type RunConfig } from '../src/sim/world';
+import { smartChoose } from './drafter';
 
 interface Hand { t: number; hold: number }
 
@@ -40,14 +41,17 @@ function humanStep(w: World, rng: Rng, react: Hand, noise: number): void {
 }
 
 /** Plays one run to the end (or `maxTime`) and returns the world with its summary and the lowest hull seen. */
-export function playHuman(cfg: RunConfig, maxTime: number, noise: number): { w: World; minHp: number } {
+/** `drafter`: 'focused' is the tuning bot's semi-random pick; 'smart' drafts with a plan and uses rerolls and banishes. */
+export type Drafter = 'focused' | 'smart';
+
+export function playHuman(cfg: RunConfig, maxTime: number, noise: number, drafter: Drafter = 'focused'): { w: World; minHp: number } {
   const w = new World(cfg);
   const rng = new Rng(cfg.seed ^ 0x5151);
   const react: Hand = { t: 0, hold: -1 };
   let minHp = 1;
   while (w.time < maxTime && w.state !== 'over') {
     if (w.state === 'levelup') {
-      w.choose(botChoose(w, rng, 'focused'));
+      w.choose(drafter === 'smart' ? smartChoose(w, rng) : botChoose(w, rng, 'focused'));
       continue;
     }
     humanStep(w, rng, react, noise);

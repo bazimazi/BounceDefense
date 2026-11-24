@@ -24,6 +24,8 @@ export interface OfferContext {
   levelIndex: number;
   /** Bloodless: healing offers would do nothing. */
   noHeal?: boolean;
+  /** Different upgrades a build may hold (MAX_DISTINCT_UPGRADES unless a Sigil raises it). */
+  slots?: number;
 }
 
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 100, rare: 48, epic: 18, legendary: 6 };
@@ -39,7 +41,7 @@ export function isOfferable(id: string, ctx: OfferContext): boolean {
   if (lvl >= ctx.build.maxLevel(id)) return false;
   if (lvl === 0) {
     if (!ctx.pool.has(id)) return false;
-    if (ctx.build.upgrades.size >= MAX_DISTINCT_UPGRADES) return false;
+    if (ctx.build.upgrades.size >= (ctx.slots ?? MAX_DISTINCT_UPGRADES)) return false;
   }
   return true;
 }

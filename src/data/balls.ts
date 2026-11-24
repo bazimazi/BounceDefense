@@ -269,6 +269,8 @@ export const TRAILS = [
   { id: 'fathom', name: 'Fathom', colors: ['#9ff6ff', '#062a5a'] },
   { id: 'starborn', name: 'Starborn', colors: ['#fff6c9', '#7a4dff'] },
   { id: 'infinite', name: 'Infinite', colors: ['#ffffff', '#ff4df0'] },
+  // The Rifts: the summit's trail.
+  { id: 'voidheart', name: 'Void Heart', colors: ['#ffe7ff', '#3a0066'] },
 ];
 
 localize('core', CORES, ['name', 'desc', 'passive', 'unlockReq.text']);

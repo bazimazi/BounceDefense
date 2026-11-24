@@ -56,6 +56,8 @@ export interface LifetimeStats {
   gauntletWins: number;
   /** Descent depths won (every win counts). */
   descentWins: number;
+  /** Rift runs won (every win counts). */
+  riftWins: number;
 }
 
 export type DiscoveryCat = 'enemies' | 'bosses' | 'synergies' | 'evolutions' | 'reactions' | 'upgrades' | 'arenas' | 'events' | 'relics';
@@ -109,6 +111,8 @@ export interface Profile {
   descent: { best: number; open: number };
   /** Constellation levels (star id -> level). */
   stars: Record<string, number>;
+  /** Rifts cleared, in order (Rift n opens once n - 1 are cleared); each cleared Rift grants its Sigil. */
+  rifts: number;
 }
 
 export interface RunSetup {
@@ -116,9 +120,11 @@ export interface RunSetup {
   difficulty: number;
   pacts: string[];
   ascension: number;
-  mode: 'standard' | 'gauntlet' | 'descent';
+  mode: 'standard' | 'gauntlet' | 'descent' | 'rift';
   /** The Descent depth last chosen. */
   depth: number;
+  /** The Rift last chosen (1-based). */
+  rift: number;
 }
 
 export interface PendingRun {
@@ -206,10 +212,12 @@ export interface RunSummary {
   /** Seconds survived after continuing into Endless. */
   endlessTime?: number;
   ascension?: number;
-  /** Set for Gauntlet and Descent runs; Standard runs leave it out. */
-  mode?: 'gauntlet' | 'descent';
+  /** Set for Gauntlet, Descent and Rift runs; Standard runs leave it out. */
+  mode?: 'gauntlet' | 'descent' | 'rift';
   /** Descent depth played (Descent runs only). */
   depth?: number;
+  /** Rift number played (Rift runs only, 1-based). */
+  rift?: number;
 }
 
 export type Unlock =

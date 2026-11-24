@@ -71,6 +71,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'fathomless', name: 'Fathomless', icon: '🌊', desc: 'Win Descent Depth 15.', progress: (p) => [p.descent?.best ?? 0, 15], rewards: [{ type: 'cores', amount: 30 }, { type: 'research', amount: 10 }] },
   { id: 'bottomless', name: 'Bottomless', icon: '🌀', desc: 'Win Descent Depth 40.', progress: (p) => [p.descent?.best ?? 0, 40], rewards: [{ type: 'cores', amount: 80 }, { type: 'research', amount: 25 }] },
   { id: 'starwright', name: 'Starwright', icon: '✨', desc: 'Raise Constellations 60 levels in all.', progress: (p) => [Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0), 60], rewards: [{ type: 'research', amount: 12 }] },
+  // The Rifts: trophies along the ten trials.
+  { id: 'riftwalker', name: 'Riftwalker', icon: '🌀', desc: 'Clear a Rift.', progress: (p) => [p.rifts ?? 0, 1], rewards: [{ type: 'research', amount: 8 }, { type: 'cores', amount: 15 }] },
+  { id: 'riftbreaker', name: 'Riftbreaker', icon: '💠', desc: 'Clear five Rifts.', progress: (p) => [p.rifts ?? 0, 5], rewards: [{ type: 'research', amount: 20 }, { type: 'cores', amount: 60 }] },
+  { id: 'void_heart', name: 'Heart of the Void', icon: '🕳️', desc: 'Clear all ten Rifts.', progress: (p) => [p.rifts ?? 0, 10], rewards: [{ type: 'cosmetic', id: 'voidheart' }, { type: 'cores', amount: 150 }, { type: 'research', amount: 40 }] },
 ];
 
 /** Cores at their final Awakening rank (five). */
@@ -264,7 +268,7 @@ export interface WorkshopDef {
  * Workshop price multipliers by section. The economy pays far more per run on the hard tiers than when the
  * Workshop was first priced, so these keep the kit a long project (measured with `npm run journey`).
  */
-export const PRICE = { foundations: 4, blueprints: 4, refits: 4, overdrive: 6 };
+export const PRICE = { foundations: 4, blueprints: 4, refits: 4, overdrive: 12 };
 const costCurve = (base: number, growth: number) => (lvl: number) => Math.round((base * PRICE.foundations * Math.pow(growth, lvl)) / 10) * 10;
 const fixed = (price: number) => () => price * PRICE.foundations;
 
